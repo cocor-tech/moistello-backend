@@ -3,21 +3,21 @@ environment: development
 server:
   port: 1100
   host: "0.0.0.0"
-  readTimeout: "10s"
-  writeTimeout: "30s"
-  maxHeaderBytes: 1048576
+  read_timeout: "10s"
+  write_timeout: "30s"
+  max_header_bytes: 1048576
 
 database:
-  maxOpenConns: 50
-  maxIdleConns: 10
-  connMaxLifetime: "30m"
-  migrationPath: ""
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: "30m"
+  migration_path: ""
 
 redis:
   url: "redis://localhost:6379"
   password: ""
   db: 0
-  poolSize: 20
+  pool_size: 20
 
 rabbitmq:
   url: "amqp://guest:guest@localhost:5672/"
@@ -28,59 +28,54 @@ rabbitmq:
 
 stellar:
   network: "testnet"
-  horizonUrl: "https://horizon-testnet.stellar.org"
-  sorobanRpcUrl: "https://soroban-testnet.stellar.org"
-  networkPassphrase: "Test SDF Network ; September 2015"
-  # ── SECURITY WARNING ──
-  # NEVER store a mainnet secret key (S...) in this file.
-  # For production, set via environment variable:
-  #   export MOISTELLO_STELLAR_MASTER_SECRET_KEY="S..."
-  # For development/testing only, it's acceptable in config.
-  masterPublicKey: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
-  masterSecretKey: "SDDBM2MKQSV2ZPEDKTSI3IWNEUSJU5DAWW5NSRWNKJ4FABXSYGYW72FO"
+  horizon_url: "https://horizon-testnet.stellar.org"
+  soroban_rpc_url: "https://soroban-testnet.stellar.org"
+  network_passphrase: "Test SDF Network ; September 2015"
+  master_public_key: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
+  master_secret_key: "SDDBM2MKQSV2ZPEDKTSI3IWNEUSJU5DAWW5NSRWNKJ4FABXSYGYW72FO"
 
 auth:
-  jwtPrivateKeyPath: "./config/keys/jwt-private.pem"
-  jwtPublicKeyPath: "./config/keys/jwt-public.pem"
-  accessTokenTTL: "15m"
-  refreshTokenTTL: "168h"
-  nonceTTL: "5m"
+  jwt_private_key_path: "./config/keys/jwt-private.pem"
+  jwt_public_key_path: "./config/keys/jwt-public.pem"
+  access_token_ttl: "15m"
+  refresh_token_ttl: "168h"
+  nonce_ttl: "5m"
 
 indexer:
-  pollInterval: "3s"
-  batchSize: 50
-  startLedger: 0
+  poll_interval: "3s"
+  batch_size: 50
+  start_ledger: 0
 
 notification:
   email:
     provider: ""
-    apiKey: ""
-    fromAddress: ""
+    api_key: ""
+    from_address: ""
   sms:
     provider: ""
-    accountSid: ""
-    authToken: ""
-    fromNumber: ""
+    account_sid: ""
+    auth_token: ""
+    from_number: ""
   push:
-    fcmServerKey: ""
+    fcm_server_key: ""
 
 cors:
-  allowedOrigins:
+  allowed_origins:
     - "http://localhost:1110"
-  allowedMethods:
+  allowed_methods:
     - "GET"
     - "POST"
     - "PATCH"
     - "DELETE"
     - "OPTIONS"
-  allowedHeaders:
+  allowed_headers:
     - "Authorization"
     - "Content-Type"
     - "X-Request-ID"
-  allowCredentials: true
-  maxAge: "24h"
+  allow_credentials: true
+  max_age: "24h"
 
-rateLimit:
+rate_limit:
   global: 100
   authenticated: 300
   auth: 10
@@ -89,8 +84,6 @@ logging:
   level: "debug"
   format: "json"
   output: "stdout"
-
-# Override for local dev
 
 # Deployed Contract IDs (Testnet)
 contracts:

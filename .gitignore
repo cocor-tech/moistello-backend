@@ -9,3 +9,4 @@ node_modules/
 .next/
 *.log
 /tmp/
+*.prod.yml

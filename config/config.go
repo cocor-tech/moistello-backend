@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -17,7 +18,7 @@ type Config struct {
 	Indexer      IndexerConfig
 	Notification NotificationConfig
 	CORS         CORSConfig
-	RateLimit    RateLimitConfig
+	RateLimit    RateLimitConfig `mapstructure:"rate_limit"`
 	Logging      LoggingConfig
 	Environment  string
 }
@@ -25,24 +26,24 @@ type Config struct {
 type ServerConfig struct {
 	Port           int           `mapstructure:"port"`
 	Host           string        `mapstructure:"host"`
-	ReadTimeout    time.Duration `mapstructure:"readTimeout"`
-	WriteTimeout   time.Duration `mapstructure:"writeTimeout"`
-	MaxHeaderBytes int           `mapstructure:"maxHeaderBytes"`
+	ReadTimeout    time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout   time.Duration `mapstructure:"write_timeout"`
+	MaxHeaderBytes int           `mapstructure:"max_header_bytes"`
 }
 
 type DatabaseConfig struct {
 	URL            string        `mapstructure:"url"`
-	MaxOpenConns   int           `mapstructure:"maxOpenConns"`
-	MaxIdleConns   int           `mapstructure:"maxIdleConns"`
-	ConnMaxLifetime time.Duration `mapstructure:"connMaxLifetime"`
-	MigrationPath  string        `mapstructure:"migrationPath"`
+	MaxOpenConns   int           `mapstructure:"max_open_conns"`
+	MaxIdleConns   int           `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+	MigrationPath  string        `mapstructure:"migration_path"`
 }
 
 type RedisConfig struct {
 	URL      string `mapstructure:"url"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
-	PoolSize int    `mapstructure:"poolSize"`
+	PoolSize int    `mapstructure:"pool_size"`
 }
 
 type RabbitMQConfig struct {
@@ -56,50 +57,50 @@ type RabbitMQConfig struct {
 
 type StellarConfig struct {
 	Network           string `mapstructure:"network"`
-	HorizonURL        string `mapstructure:"horizonUrl"`
-	SorobanRPCURL     string `mapstructure:"sorobanRpcUrl"`
-	NetworkPassphrase string `mapstructure:"networkPassphrase"`
-	MasterPublicKey   string `mapstructure:"masterPublicKey"`
-	MasterSecretKey   string `mapstructure:"masterSecretKey"`
+	HorizonURL        string `mapstructure:"horizon_url"`
+	SorobanRPCURL     string `mapstructure:"soroban_rpc_url"`
+	NetworkPassphrase string `mapstructure:"network_passphrase"`
+	MasterPublicKey   string `mapstructure:"master_public_key"`
+	MasterSecretKey   string `mapstructure:"master_secret_key"`
 }
 
 type AuthConfig struct {
-	JWTPrivateKeyPath string        `mapstructure:"jwtPrivateKeyPath"`
-	JWTPublicKeyPath  string        `mapstructure:"jwtPublicKeyPath"`
-	AccessTokenTTL    time.Duration `mapstructure:"accessTokenTTL"`
-	RefreshTokenTTL   time.Duration `mapstructure:"refreshTokenTTL"`
-	NonceTTL          time.Duration `mapstructure:"nonceTTL"`
+	JWTPrivateKeyPath string        `mapstructure:"jwt_private_key_path"`
+	JWTPublicKeyPath  string        `mapstructure:"jwt_public_key_path"`
+	AccessTokenTTL    time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
+	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
 }
 
 type IndexerConfig struct {
-	PollInterval time.Duration `mapstructure:"pollInterval"`
-	BatchSize    int           `mapstructure:"batchSize"`
-	StartLedger  int64         `mapstructure:"startLedger"`
+	PollInterval time.Duration `mapstructure:"poll_interval"`
+	BatchSize    int           `mapstructure:"batch_size"`
+	StartLedger  int64         `mapstructure:"start_ledger"`
 }
 
 type NotificationConfig struct {
 	Email struct {
 		Provider    string `mapstructure:"provider"`
 		APIKey      string `mapstructure:"apiKey"`
-		FromAddress string `mapstructure:"fromAddress"`
+		FromAddress string `mapstructure:"from_address"`
 	} `mapstructure:"email"`
 	SMS struct {
 		Provider   string `mapstructure:"provider"`
-		AccountSID string `mapstructure:"accountSid"`
-		AuthToken  string `mapstructure:"authToken"`
-		FromNumber string `mapstructure:"fromNumber"`
+		AccountSID string `mapstructure:"account_sid"`
+		AuthToken  string `mapstructure:"auth_token"`
+		FromNumber string `mapstructure:"from_number"`
 	} `mapstructure:"sms"`
 	Push struct {
-		FCMServerKey string `mapstructure:"fcmServerKey"`
+		FCMServerKey string `mapstructure:"fcm_server_key"`
 	} `mapstructure:"push"`
 }
 
 type CORSConfig struct {
-	AllowedOrigins   []string      `mapstructure:"allowedOrigins"`
-	AllowedMethods   []string      `mapstructure:"allowedMethods"`
-	AllowedHeaders   []string      `mapstructure:"allowedHeaders"`
-	AllowCredentials bool          `mapstructure:"allowCredentials"`
-	MaxAge           time.Duration `mapstructure:"maxAge"`
+	AllowedOrigins   []string      `mapstructure:"allowed_origins"`
+	AllowedMethods   []string      `mapstructure:"allowed_methods"`
+	AllowedHeaders   []string      `mapstructure:"allowed_headers"`
+	AllowCredentials bool          `mapstructure:"allow_credentials"`
+	MaxAge           time.Duration `mapstructure:"max_age"`
 }
 
 type RateLimitConfig struct {
@@ -123,39 +124,40 @@ func Load(path string) (*Config, error) {
 	v.AddConfigPath("/etc/moistello/")
 	v.SetEnvPrefix("MOISTELLO")
 	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	v.SetDefault("server.port", 1100)
 	v.SetDefault("server.host", "0.0.0.0")
-	v.SetDefault("server.readTimeout", "10s")
-	v.SetDefault("server.writeTimeout", "30s")
-	v.SetDefault("server.maxHeaderBytes", 1048576)
+	v.SetDefault("server.read_timeout", "10s")
+	v.SetDefault("server.write_timeout", "30s")
+	v.SetDefault("server.max_header_bytes", 1048576)
 	v.SetDefault("database.url", "postgres://moistello:moistello_dev@localhost:9811/moistello?sslmode=disable")
-	v.SetDefault("database.maxOpenConns", 50)
-	v.SetDefault("database.maxIdleConns", 10)
-	v.SetDefault("database.connMaxLifetime", "30m")
+	v.SetDefault("database.max_open_conns", 50)
+	v.SetDefault("database.max_idle_conns", 10)
+	v.SetDefault("database.conn_max_lifetime", "30m")
 	v.SetDefault("redis.url", "redis://localhost:6379")
-	v.SetDefault("redis.poolSize", 20)
+	v.SetDefault("redis.pool_size", 20)
 	v.SetDefault("rabbitmq.url", "amqp://guest:guest@localhost:5672/")
 	v.SetDefault("rabbitmq.exchange", "moistello.events")
 	v.SetDefault("rabbitmq.queues.notifications", "moistello.notifications")
 	v.SetDefault("rabbitmq.queues.webhooks", "moistello.webhooks")
 	v.SetDefault("stellar.network", "testnet")
-	v.SetDefault("stellar.horizonUrl", "https://horizon-testnet.stellar.org")
-	v.SetDefault("stellar.sorobanRpcUrl", "https://soroban-testnet.stellar.org")
-	v.SetDefault("stellar.networkPassphrase", "Test SDF Network ; September 2015")
-	v.SetDefault("auth.accessTokenTTL", "15m")
-	v.SetDefault("auth.refreshTokenTTL", "168h")
-	v.SetDefault("auth.nonceTTL", "5m")
-	v.SetDefault("indexer.pollInterval", "3s")
-	v.SetDefault("indexer.batchSize", 50)
-	v.SetDefault("cors.allowedOrigins", []string{"http://localhost:1110"})
-	v.SetDefault("cors.allowedMethods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
-	v.SetDefault("cors.allowedHeaders", []string{"Authorization", "Content-Type", "X-Request-ID"})
-	v.SetDefault("cors.allowCredentials", true)
-	v.SetDefault("cors.maxAge", "24h")
-	v.SetDefault("rateLimit.global", 100)
-	v.SetDefault("rateLimit.authenticated", 300)
-	v.SetDefault("rateLimit.auth", 10)
+	v.SetDefault("stellar.horizon_url", "https://horizon-testnet.stellar.org")
+	v.SetDefault("stellar.soroban_rpc_url", "https://soroban-testnet.stellar.org")
+	v.SetDefault("stellar.network_passphrase", "Test SDF Network ; September 2015")
+	v.SetDefault("auth.access_token_ttl", "15m")
+	v.SetDefault("auth.refresh_token_ttl", "168h")
+	v.SetDefault("auth.nonce_ttl", "5m")
+	v.SetDefault("indexer.poll_interval", "3s")
+	v.SetDefault("indexer.batch_size", 50)
+	v.SetDefault("cors.allowed_origins", []string{"http://localhost:1110"})
+	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
+	v.SetDefault("cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
+	v.SetDefault("cors.allow_credentials", true)
+	v.SetDefault("cors.max_age", "24h")
+	v.SetDefault("rate_limit.global", 100)
+	v.SetDefault("rate_limit.authenticated", 300)
+	v.SetDefault("rate_limit.auth", 10)
 	v.SetDefault("logging.level", "debug")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.output", "stdout")

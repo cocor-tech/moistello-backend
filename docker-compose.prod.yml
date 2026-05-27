@@ -1,0 +1,42 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: moistello
+      POSTGRES_USER: moistello
+      POSTGRES_PASSWORD: "${POSTGRES_PW}"
+    ports:
+      - "127.0.0.1:9811:5432"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    command: redis-server --requirepass "${REDIS_PW}" --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:9808:6379"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_USER: moistello
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PW}"
+    ports:
+      - "127.0.0.1:9809:5672"
+      - "127.0.0.1:9810:15672"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
