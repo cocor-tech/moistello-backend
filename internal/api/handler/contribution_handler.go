@@ -18,6 +18,18 @@ func NewContributionHandler(svc contribution.Service, repo contribution.Reposito
 	return &ContributionHandler{contribService: svc, contribRepo: repo}
 }
 
+// @Summary List contributions
+// @Description Returns paginated contributions filtered by userId, circleId, or the authenticated user's own contributions.
+// @Tags Contributions
+// @Produce json
+// @Security BearerAuth
+// @Param userId query string false "Filter by user ID"
+// @Param circleId query string false "Filter by circle ID"
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(20)
+// @Success 200 {object} response.Envelope{data=object{contributions=array},meta=response.PaginationMeta}
+// @Failure 500 {object} response.Envelope
+// @Router /contributions [get]
 func (h *ContributionHandler) ListContributions(c *gin.Context) {
 	userIDFilter := c.Query("userId")
 	circleIDFilter := c.Query("circleId")
@@ -52,6 +64,16 @@ func (h *ContributionHandler) ListContributions(c *gin.Context) {
 	response.OKWithMeta(c, gin.H{"contributions": contribs}, response.NewPaginationMeta(page, limit, total))
 }
 
+// @Summary Get a contribution
+// @Description Returns a single contribution by ID.
+// @Tags Contributions
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Contribution ID (UUID)"
+// @Success 200 {object} response.Envelope{data=object{contribution=object}}
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /contributions/{id} [get]
 func (h *ContributionHandler) GetContribution(c *gin.Context) {
 	id := c.Param("id")
 	uid, err := uuid.Parse(id)

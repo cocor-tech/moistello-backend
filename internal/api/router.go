@@ -4,9 +4,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"github.com/swaggo/files"
+	"github.com/swaggo/gin-swagger"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/api/middleware"
+	_ "github.com/moistello/backend/docs/api"
 )
 
 func NewRouter(
@@ -22,6 +25,7 @@ func NewRouter(
 	adminHandler *handler.AdminHandler,
 	webhookHandler *handler.WebhookHandler,
 	healthHandler *handler.HealthHandler,
+	verificationHandler *handler.VerificationHandler,
 	jwtSecret []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -34,6 +38,7 @@ func NewRouter(
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Ready)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := r.Group("/v1")
 	{
@@ -45,10 +50,14 @@ func NewRouter(
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh)
 			auth.POST("/logout", authHandler.Logout)
+			auth.POST("/verification/send", verificationHandler.SendCode)
+			auth.POST("/verification/verify", verificationHandler.VerifyCode)
+			auth.POST("/verification/resend", verificationHandler.ResendCode)
 		}
 
 		authenticated := api.Group("")
 		authenticated.Use(middleware.AuthMiddleware(jwtSecret))
+		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
 		{
 			authenticated.POST("/auth/me", authHandler.Me)
 

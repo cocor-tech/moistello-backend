@@ -13,6 +13,8 @@ type PaginationMeta struct {
 	TotalPages int `json:"totalPages"`
 }
 
+type Envelope = APIResponse
+
 type APIResponse struct {
 	Success bool            `json:"success"`
 	Data    any             `json:"data,omitempty"`

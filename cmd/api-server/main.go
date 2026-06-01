@@ -1,7 +1,24 @@
+// @title Moistello API
+// @version 1.0.0
+// @description Decentralized savings circles on Stellar. REST API for circles, contributions, payouts, reputation, and governance.
+// @termsOfService https://moistello.com/terms
+// @contact.name Moistello Support
+// @contact.email support@moistello.com
+// @contact.url https://moistello.com/support
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+// @host moistello.com
+// @BasePath /v1
+// @schemes https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT token obtained from /auth/verify or /auth/register. Format: "Bearer <token>"
 package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/moistello/backend/config"
@@ -16,6 +33,8 @@ import (
 	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/user"
+	"github.com/moistello/backend/internal/infrastructure/email"
+	"github.com/moistello/backend/internal/infrastructure/ratelimit"
 	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/postgres"
 	"github.com/moistello/backend/pkg/redis"
@@ -63,6 +82,17 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize auth service")
 	}
+
+	verifStore := auth.NewVerificationRepository(db)
+	brevoSender := email.NewBrevoSender(cfg.Brevo.APIKey, cfg.Brevo.FromEmail, cfg.Brevo.FromName)
+	redisLimiter := ratelimit.NewRedisRateLimiter(redisClient)
+	verifSvc := auth.NewVerificationService(verifStore, brevoSender, redisLimiter, auth.VerificationConfig{
+		CodeLength:       6,
+		CodeExpiry:       10 * time.Minute,
+		MaxAttempts:      5,
+		MaxSendsPerEmail: 3,
+		ResendCooldown:   60 * time.Second,
+	})
 	inviteSvc := invite.NewService(inviteRepo)
 	_ = reputationSvc
 	_ = contribSvc
@@ -74,7 +104,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to load JWT secret")
 	}
 
-	authH := handler.NewAuthHandler(authSvc, userSvc)
+	authH := handler.NewAuthHandler(authSvc, userSvc, redisClient, verifSvc)
 	userH := handler.NewUserHandler(userSvc)
 	circleH := handler.NewCircleHandler(circleSvc, inviteSvc)
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)
@@ -84,8 +114,9 @@ func main() {
 	adminH := handler.NewAdminHandler(userSvc, userRepo, circleSvc, auditRepo)
 	webhookH := handler.NewWebhookHandler()
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
+	verifH := handler.NewVerificationHandler(verifSvc)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, jwtSecret)
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, jwtSecret)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")

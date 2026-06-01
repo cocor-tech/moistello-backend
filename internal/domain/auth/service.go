@@ -91,11 +91,6 @@ func (s *authService) VerifySignature(ctx context.Context, walletAddress, signat
 		return false, fmt.Errorf("decoding signature hex: %w", err)
 	}
 
-	pubKeyBytes, err := hex.DecodeString(walletAddress[0 : len(walletAddress)-0])
-	if err != nil {
-		_ = pubKeyBytes
-	}
-
 	publicKey, err := decodeStellarPublicKey(walletAddress)
 	if err != nil {
 		return false, fmt.Errorf("decoding public key: %w", err)

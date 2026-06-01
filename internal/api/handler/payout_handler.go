@@ -18,6 +18,18 @@ func NewPayoutHandler(svc payout.Service, repo payout.Repository) *PayoutHandler
 	return &PayoutHandler{payoutService: svc, payoutRepo: repo}
 }
 
+// @Summary List payouts
+// @Description Returns paginated payouts filtered by userId, circleId, or the authenticated user's own payouts.
+// @Tags Payouts
+// @Produce json
+// @Security BearerAuth
+// @Param userId query string false "Filter by user ID"
+// @Param circleId query string false "Filter by circle ID"
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(20)
+// @Success 200 {object} response.Envelope{data=object{payouts=array},meta=response.PaginationMeta}
+// @Failure 500 {object} response.Envelope
+// @Router /payouts [get]
 func (h *PayoutHandler) ListPayouts(c *gin.Context) {
 	userIDFilter := c.Query("userId")
 	circleIDFilter := c.Query("circleId")
@@ -52,6 +64,16 @@ func (h *PayoutHandler) ListPayouts(c *gin.Context) {
 	response.OKWithMeta(c, gin.H{"payouts": payouts}, response.NewPaginationMeta(page, limit, total))
 }
 
+// @Summary Get a payout
+// @Description Returns a single payout by ID.
+// @Tags Payouts
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Payout ID (UUID)"
+// @Success 200 {object} response.Envelope{data=object{payout=object}}
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /payouts/{id} [get]
 func (h *PayoutHandler) GetPayout(c *gin.Context) {
 	id := c.Param("id")
 	uid, err := uuid.Parse(id)

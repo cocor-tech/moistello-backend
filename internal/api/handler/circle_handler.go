@@ -19,6 +19,17 @@ func NewCircleHandler(circleSvc circle.Service, inviteSvc invite.Service) *Circl
 	return &CircleHandler{circleService: circleSvc, inviteService: inviteSvc}
 }
 
+// @Summary List circles
+// @Description Returns a paginated list of savings circles with optional search, status, and type filters.
+// @Tags Circles
+// @Produce json
+// @Param search query string false "Search term"
+// @Param status query string false "Filter by status" Enums(pending,active,completed,cancelled)
+// @Param type query string false "Filter by type" Enums(fixed,flexible,auction)
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(20)
+// @Success 200 {object} response.Envelope{data=object{circles=array},meta=response.PaginationMeta}
+// @Router /circles [get]
 func (h *CircleHandler) ListCircles(c *gin.Context) {
 	page, limit, _ := pagination.Parse(c)
 	filter := circle.CircleFilter{
@@ -36,6 +47,17 @@ func (h *CircleHandler) ListCircles(c *gin.Context) {
 	response.OKWithMeta(c, gin.H{"circles": circles}, response.NewPaginationMeta(page, limit, total))
 }
 
+// @Summary Create a circle
+// @Description Creates a new savings circle. Requires authentication.
+// @Tags Circles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body circle.CreateCircleInput true "Circle configuration"
+// @Success 201 {object} response.Envelope{data=object{circle=object}}
+// @Failure 400 {object} response.Envelope
+// @Failure 422 {object} response.Envelope
+// @Router /circles [post]
 func (h *CircleHandler) CreateCircle(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	var input circle.CreateCircleInput
@@ -55,6 +77,14 @@ func (h *CircleHandler) CreateCircle(c *gin.Context) {
 	response.Created(c, gin.H{"circle": cir})
 }
 
+// @Summary Get a circle
+// @Description Returns a single savings circle by ID.
+// @Tags Circles
+// @Produce json
+// @Param id path string true "Circle ID"
+// @Success 200 {object} response.Envelope{data=object{circle=object}}
+// @Failure 404 {object} response.Envelope
+// @Router /circles/{id} [get]
 func (h *CircleHandler) GetCircle(c *gin.Context) {
 	id := c.Param("id")
 	cir, err := h.circleService.Get(c.Request.Context(), id)
@@ -91,6 +121,17 @@ func (h *CircleHandler) CancelCircle(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
+// @Summary Join a circle
+// @Description Joins an existing savings circle. Requires an invite code if the circle is private.
+// @Tags Circles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Param body body object{inviteCode=string} false "Invite code (optional for public circles)"
+// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Failure 400 {object} response.Envelope
+// @Router /circles/{id}/join [post]
 func (h *CircleHandler) JoinCircle(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)

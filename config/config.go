@@ -15,6 +15,7 @@ type Config struct {
 	RabbitMQ     RabbitMQConfig
 	Stellar      StellarConfig
 	Auth         AuthConfig
+	Brevo        BrevoConfig
 	Indexer      IndexerConfig
 	Notification NotificationConfig
 	CORS         CORSConfig
@@ -70,6 +71,12 @@ type AuthConfig struct {
 	AccessTokenTTL    time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
 	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
+}
+
+type BrevoConfig struct {
+	APIKey      string `mapstructure:"api_key"`
+	FromEmail   string `mapstructure:"from_email"`
+	FromName    string `mapstructure:"from_name"`
 }
 
 type IndexerConfig struct {
@@ -148,6 +155,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.access_token_ttl", "15m")
 	v.SetDefault("auth.refresh_token_ttl", "168h")
 	v.SetDefault("auth.nonce_ttl", "5m")
+	v.SetDefault("brevo.api_key", "")
+	v.SetDefault("brevo.from_email", "noreply@moistello.com")
+	v.SetDefault("brevo.from_name", "Moistello")
 	v.SetDefault("indexer.poll_interval", "3s")
 	v.SetDefault("indexer.batch_size", 50)
 	v.SetDefault("cors.allowed_origins", []string{"http://localhost:1110"})

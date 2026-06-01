@@ -1,0 +1,1522 @@
+basePath: /v1
+definitions:
+  circle.CircleCurrency:
+    enum:
+    - USDC
+    - XLM
+    type: string
+    x-enum-varnames:
+    - CurrencyUSDC
+    - CurrencyXLM
+  circle.CircleFrequency:
+    enum:
+    - daily
+    - weekly
+    - biweekly
+    - monthly
+    type: string
+    x-enum-varnames:
+    - FrequencyDaily
+    - FrequencyWeekly
+    - FrequencyBiweekly
+    - FrequencyMonthly
+  circle.CircleType:
+    enum:
+    - public
+    - private
+    type: string
+    x-enum-varnames:
+    - CircleTypePublic
+    - CircleTypePrivate
+  circle.CreateCircleInput:
+    properties:
+      circleType:
+        allOf:
+        - $ref: '#/definitions/circle.CircleType'
+        enum:
+        - public
+        - private
+      collateralPercent:
+        maximum: 100
+        minimum: 0
+        type: number
+      contributionAmount:
+        type: number
+      currency:
+        allOf:
+        - $ref: '#/definitions/circle.CircleCurrency'
+        enum:
+        - USDC
+        - XLM
+      description:
+        type: string
+      frequency:
+        allOf:
+        - $ref: '#/definitions/circle.CircleFrequency'
+        enum:
+        - daily
+        - weekly
+        - biweekly
+        - monthly
+      gracePeriodHours:
+        minimum: 0
+        type: integer
+      lateFeePercent:
+        maximum: 100
+        minimum: 0
+        type: number
+      maxMembers:
+        maximum: 100
+        minimum: 2
+        type: integer
+      maxStrikes:
+        maximum: 10
+        minimum: 1
+        type: integer
+      minMoiScore:
+        maximum: 1000
+        minimum: 0
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      payoutType:
+        allOf:
+        - $ref: '#/definitions/circle.PayoutType'
+        enum:
+        - random
+        - fixed
+        - auction
+        - vote
+    required:
+    - circleType
+    - contributionAmount
+    - currency
+    - frequency
+    - maxMembers
+    - name
+    - payoutType
+    type: object
+  circle.PayoutType:
+    enum:
+    - random
+    - fixed
+    - auction
+    - vote
+    type: string
+    x-enum-varnames:
+    - PayoutTypeRandom
+    - PayoutTypeFixed
+    - PayoutTypeAuction
+    - PayoutTypeVote
+  invite.GenerateInput:
+    properties:
+      circleId:
+        type: string
+      maxUses:
+        maximum: 100
+        minimum: 1
+        type: integer
+      ttlHours:
+        maximum: 720
+        minimum: 1
+        type: integer
+      userId:
+        type: string
+    required:
+    - circleId
+    - userId
+    type: object
+  response.Envelope:
+    properties:
+      data: {}
+      error:
+        type: string
+      meta:
+        $ref: '#/definitions/response.PaginationMeta'
+      success:
+        type: boolean
+    type: object
+  response.PaginationMeta:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  user.UpdateProfileInput:
+    properties:
+      countryCode:
+        type: string
+      displayName:
+        type: string
+      email:
+        type: string
+      phone:
+        type: string
+      preferredLanguage:
+        type: string
+    type: object
+host: moistello.com
+info:
+  contact:
+    email: support@moistello.com
+    name: Moistello Support
+    url: https://moistello.com/support
+  description: Decentralized savings circles on Stellar. REST API for circles, contributions,
+    payouts, reputation, and governance.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://moistello.com/terms
+  title: Moistello API
+  version: 1.0.0
+paths:
+  /admin/audit-log:
+    get:
+      description: Returns the system audit log. Admin only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    entries:
+                      type: array
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: '[Admin] Get audit log'
+      tags:
+      - Admin
+  /admin/circles:
+    get:
+      description: Lists all circles with pagination, search, and status filter. Admin
+        only.
+      parameters:
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    circles:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: '[Admin] List all circles'
+      tags:
+      - Admin
+  /admin/feature-flags:
+    post:
+      consumes:
+      - application/json
+      description: Enables or disables a feature flag. Admin only.
+      parameters:
+      - description: Feature flag name and value
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            flag:
+              type: string
+            value:
+              type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    flag:
+                      type: string
+                    value:
+                      type: boolean
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: '[Admin] Update feature flag'
+      tags:
+      - Admin
+  /admin/metrics:
+    get:
+      description: Returns platform-wide metrics (users, circles, volume). Admin only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    activeCircles:
+                      type: number
+                    totalCircles:
+                      type: number
+                    totalUsers:
+                      type: number
+                    totalVolumeUSD:
+                      type: number
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: '[Admin] Get system metrics'
+      tags:
+      - Admin
+  /admin/users:
+    get:
+      description: Lists all users with pagination and search. Admin only.
+      parameters:
+      - description: Search by wallet or email
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    users:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: '[Admin] List users'
+      tags:
+      - Admin
+  /auth/logout:
+    post:
+      description: Invalidates the current session.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - Authentication
+  /auth/me:
+    post:
+      description: Returns the authenticated user's profile. Requires Bearer token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Authentication
+  /auth/nonce:
+    post:
+      consumes:
+      - application/json
+      description: Returns a signed nonce for wallet authentication. The nonce must
+        be signed with the wallet's private key and sent to /auth/verify.
+      parameters:
+      - description: Wallet address
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    nonce:
+                      type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Get authentication nonce
+      tags:
+      - Authentication
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a valid refresh token for a new access token and refresh
+        token pair.
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    refreshToken:
+                      type: string
+                    token:
+                      type: string
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Refresh JWT tokens
+      tags:
+      - Authentication
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Verifies wallet signature and creates a user account with optional
+        profile fields (displayName, email, countryCode, language). Returns JWT tokens.
+      parameters:
+      - description: Registration payload
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    refreshToken:
+                      type: string
+                    token:
+                      type: string
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Register new user with profile
+      tags:
+      - Authentication
+  /auth/verify:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a signed nonce to prove wallet ownership. Creates a user
+        account if one doesn't exist. Returns JWT tokens.
+      parameters:
+      - description: Signature payload
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    refreshToken:
+                      type: string
+                    token:
+                      type: string
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Verify wallet signature and login
+      tags:
+      - Authentication
+  /circles:
+    get:
+      description: Returns a paginated list of savings circles with optional search,
+        status, and type filters.
+      parameters:
+      - description: Search term
+        in: query
+        name: search
+        type: string
+      - description: Filter by status
+        enum:
+        - pending
+        - active
+        - completed
+        - cancelled
+        in: query
+        name: status
+        type: string
+      - description: Filter by type
+        enum:
+        - fixed
+        - flexible
+        - auction
+        in: query
+        name: type
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    circles:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+      summary: List circles
+      tags:
+      - Circles
+    post:
+      consumes:
+      - application/json
+      description: Creates a new savings circle. Requires authentication.
+      parameters:
+      - description: Circle configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/circle.CreateCircleInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    circle:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Create a circle
+      tags:
+      - Circles
+  /circles/{id}:
+    get:
+      description: Returns a single savings circle by ID.
+      parameters:
+      - description: Circle ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    circle:
+                      type: object
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Get a circle
+      tags:
+      - Circles
+  /circles/{id}/invites:
+    get:
+      description: Lists all invite codes for a circle. Circle owner only.
+      parameters:
+      - description: Circle ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    invites:
+                      type: array
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List circle invites
+      tags:
+      - Invites
+    post:
+      consumes:
+      - application/json
+      description: Generates a new invite code for a circle. Circle owner only.
+      parameters:
+      - description: Circle ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Invite settings (maxUses, expiresInDays)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/invite.GenerateInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    invite:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Create an invite
+      tags:
+      - Invites
+  /circles/{id}/join:
+    post:
+      consumes:
+      - application/json
+      description: Joins an existing savings circle. Requires an invite code if the
+        circle is private.
+      parameters:
+      - description: Circle ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Invite code (optional for public circles)
+        in: body
+        name: body
+        schema:
+          properties:
+            inviteCode:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Join a circle
+      tags:
+      - Circles
+  /contributions:
+    get:
+      description: Returns paginated contributions filtered by userId, circleId, or
+        the authenticated user's own contributions.
+      parameters:
+      - description: Filter by user ID
+        in: query
+        name: userId
+        type: string
+      - description: Filter by circle ID
+        in: query
+        name: circleId
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    contributions:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List contributions
+      tags:
+      - Contributions
+  /contributions/{id}:
+    get:
+      description: Returns a single contribution by ID.
+      parameters:
+      - description: Contribution ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    contribution:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get a contribution
+      tags:
+      - Contributions
+  /health:
+    get:
+      description: Liveness probe — returns 200 if service is running.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+      summary: Health check
+      tags:
+      - Health
+  /invites/{code}:
+    delete:
+      description: Revokes an invite code so it can no longer be used.
+      parameters:
+      - description: Invite code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Revoke an invite
+      tags:
+      - Invites
+  /notifications:
+    get:
+      description: Returns paginated notifications for the authenticated user. Use
+        ?unread=true to filter unread only.
+      parameters:
+      - description: Filter unread only
+        in: query
+        name: unread
+        type: boolean
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    notifications:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List notifications
+      tags:
+      - Notifications
+  /notifications/{id}/read:
+    patch:
+      description: Marks a single notification as read.
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Mark notification as read
+      tags:
+      - Notifications
+  /notifications/preferences:
+    put:
+      consumes:
+      - application/json
+      description: Updates the authenticated user's notification channel preferences
+        and mute status.
+      parameters:
+      - description: Preferences
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            channels:
+              type: array
+            muted:
+              type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    preferences:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update notification preferences
+      tags:
+      - Notifications
+  /notifications/read-all:
+    patch:
+      description: Marks every unread notification for the authenticated user as read.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Mark all notifications as read
+      tags:
+      - Notifications
+  /payouts:
+    get:
+      description: Returns paginated payouts filtered by userId, circleId, or the
+        authenticated user's own payouts.
+      parameters:
+      - description: Filter by user ID
+        in: query
+        name: userId
+        type: string
+      - description: Filter by circle ID
+        in: query
+        name: circleId
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    payouts:
+                      type: array
+                  type: object
+                meta:
+                  $ref: '#/definitions/response.PaginationMeta'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List payouts
+      tags:
+      - Payouts
+  /payouts/{id}:
+    get:
+      description: Returns a single payout by ID.
+      parameters:
+      - description: Payout ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    payout:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get a payout
+      tags:
+      - Payouts
+  /ready:
+    get:
+      description: Readiness probe — checks database and Redis connectivity.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            properties:
+              error:
+                type: string
+              status:
+                type: string
+            type: object
+      summary: Readiness check
+      tags:
+      - Health
+  /users/{id}:
+    get:
+      description: Returns a user's public profile by wallet address or user ID.
+      parameters:
+      - description: User ID or wallet address
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      summary: Get user by ID
+      tags:
+      - Users
+  /users/me:
+    get:
+      description: Returns the authenticated user's profile.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get my profile
+      tags:
+      - Users
+    patch:
+      consumes:
+      - application/json
+      description: Updates the authenticated user's profile fields (displayName, email,
+        countryCode, preferredLanguage).
+      parameters:
+      - description: Profile updates
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.UpdateProfileInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update my profile
+      tags:
+      - Users
+  /users/me/circles:
+    get:
+      description: Returns all circles the authenticated user belongs to.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    circles:
+                      type: array
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get my circles
+      tags:
+      - Users
+  /users/me/kyc:
+    post:
+      description: Starts the KYC verification process for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    kycStatus:
+                      type: string
+                    user:
+                      type: object
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Initiate KYC verification
+      tags:
+      - Users
+  /users/me/kyc/status:
+    get:
+      description: Returns the current KYC verification status of the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    kycStatus:
+                      type: string
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get KYC status
+      tags:
+      - Users
+  /users/me/reputation:
+    get:
+      description: Returns the authenticated user's MoiScore reputation.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    reputation:
+                      type: number
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get my reputation score
+      tags:
+      - Users
+  /webhooks:
+    get:
+      description: Lists all registered webhooks for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    webhooks:
+                      type: array
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List webhooks
+      tags:
+      - Webhooks
+    post:
+      consumes:
+      - application/json
+      description: Registers a new webhook endpoint to receive event notifications.
+      parameters:
+      - description: Webhook config
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            events:
+              type: array
+            url:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    webhook:
+                      type: object
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Register a webhook
+      tags:
+      - Webhooks
+  /webhooks/{id}:
+    delete:
+      description: Deletes a registered webhook by ID.
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Envelope'
+            - properties:
+                data:
+                  properties:
+                    success:
+                      type: boolean
+                  type: object
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Delete a webhook
+      tags:
+      - Webhooks
+schemes:
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT token obtained from /auth/verify or /auth/register. Format:
+      "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
