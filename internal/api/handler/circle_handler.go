@@ -44,6 +44,9 @@ func (h *CircleHandler) ListCircles(c *gin.Context) {
 		response.InternalError(c, "failed to list circles")
 		return
 	}
+	if circles == nil {
+		circles = []circle.Circle{}
+	}
 	response.OKWithMeta(c, gin.H{"circles": circles}, response.NewPaginationMeta(page, limit, total))
 }
 
