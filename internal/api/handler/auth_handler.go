@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -158,6 +159,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	tokenPair, err := h.authService.CreateSession(c.Request.Context(), u.ID)
 	if err != nil {
+		log.Printf("CreateSession error for user %s: %v", u.ID.String(), err)
 		response.InternalError(c, "failed to create session")
 		return
 	}
