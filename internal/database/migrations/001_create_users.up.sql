@@ -6,7 +6,7 @@ CREATE TYPE user_role AS ENUM ('user', 'admin');
 
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    wallet_address VARCHAR(56) UNIQUE NOT NULL,
+    wallet_address VARCHAR(128) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE,
     phone VARCHAR(20),
     display_name VARCHAR(100),
