@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -11,6 +13,11 @@ import (
 
 	"github.com/moistello/backend/pkg/apperrors"
 )
+
+func hashEmail(email string) string {
+	h := sha256.Sum256([]byte(email))
+	return hex.EncodeToString(h[:])
+}
 
 type verificationPGRepo struct {
 	db *sqlx.DB
@@ -71,6 +78,7 @@ func (r *verificationPGRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r *verificationPGRepo) MarkEmailVerified(ctx context.Context, email string) error {
+	hashedEmail := hashEmail(email)
 	query := `
 		INSERT INTO user_emails (email, email_verified, verified_at, created_at)
 		VALUES ($1, TRUE, NOW(), NOW())
@@ -78,7 +86,7 @@ func (r *verificationPGRepo) MarkEmailVerified(ctx context.Context, email string
 			email_verified = TRUE,
 			verified_at = NOW()
 	`
-	_, err := r.db.ExecContext(ctx, query, email)
+	_, err := r.db.ExecContext(ctx, query, hashedEmail)
 	if err != nil {
 		return fmt.Errorf("marking email verified: %w", err)
 	}
@@ -86,9 +94,10 @@ func (r *verificationPGRepo) MarkEmailVerified(ctx context.Context, email string
 }
 
 func (r *verificationPGRepo) IsEmailVerified(ctx context.Context, email string) (bool, error) {
+	hashedEmail := hashEmail(email)
 	query := `SELECT email_verified FROM user_emails WHERE email = $1`
 	var verified bool
-	err := r.db.QueryRowxContext(ctx, query, email).Scan(&verified)
+	err := r.db.QueryRowxContext(ctx, query, hashedEmail).Scan(&verified)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
