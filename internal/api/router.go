@@ -2,14 +2,10 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"github.com/swaggo/files"
-	"github.com/swaggo/gin-swagger"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/api/middleware"
-	_ "github.com/moistello/backend/docs/api"
 )
 
 func NewRouter(
@@ -26,6 +22,7 @@ func NewRouter(
 	webhookHandler *handler.WebhookHandler,
 	healthHandler *handler.HealthHandler,
 	verificationHandler *handler.VerificationHandler,
+	passkeyCredentialHandler *handler.PasskeyCredentialHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -37,8 +34,13 @@ func NewRouter(
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Ready)
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
-	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Passkey credential storage — public, called from Next.js API routes
+	passkey := r.Group("/passkey")
+	{
+		passkey.POST("/credentials", passkeyCredentialHandler.StoreCredential)
+		passkey.GET("/credentials/:id", passkeyCredentialHandler.GetCredential)
+	}
 
 	api := r.Group("/v1")
 	{

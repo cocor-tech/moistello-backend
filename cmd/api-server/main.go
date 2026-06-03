@@ -115,8 +115,9 @@ func main() {
 	webhookH := handler.NewWebhookHandler()
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
 	verifH := handler.NewVerificationHandler(verifSvc, userSvc)
+	passkeyCredH := handler.NewPasskeyCredentialHandler(db)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, jwtPublicKey)
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, passkeyCredH, jwtPublicKey)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")
