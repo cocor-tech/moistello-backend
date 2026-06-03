@@ -1,6 +1,10 @@
 package middleware
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,13 +14,18 @@ import (
 )
 
 type Claims struct {
+	jwt.RegisteredClaims
 	UserID string `json:"sub"`
 	Wallet string `json:"wallet"`
 	Role   string `json:"role"`
-	jwt.RegisteredClaims
 }
 
-func AuthMiddleware(jwtSecret []byte) gin.HandlerFunc {
+func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
+	publicKey, err := parseRSAPublicKey(publicKeyPEM)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse JWT public key")
+	}
+
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -29,7 +38,7 @@ func AuthMiddleware(jwtSecret []byte) gin.HandlerFunc {
 			return
 		}
 		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) {
-			return jwtSecret, nil
+			return publicKey, nil
 		})
 		if err != nil || !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "error": "invalid or expired token"})
@@ -48,7 +57,12 @@ func AuthMiddleware(jwtSecret []byte) gin.HandlerFunc {
 	}
 }
 
-func OptionalAuthMiddleware(jwtSecret []byte) gin.HandlerFunc {
+func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
+	publicKey, err := parseRSAPublicKey(publicKeyPEM)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse JWT public key")
+	}
+
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -60,7 +74,7 @@ func OptionalAuthMiddleware(jwtSecret []byte) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) { return jwtSecret, nil })
+		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) { return publicKey, nil })
 		if err != nil || !token.Valid {
 			c.Next()
 			return
@@ -91,3 +105,19 @@ func AdminMiddleware() gin.HandlerFunc {
 func GetUserID(c *gin.Context) string { id, _ := c.Get("userID"); return id.(string) }
 func GetWallet(c *gin.Context) string  { w, _ := c.Get("wallet"); return w.(string) }
 func GetRole(c *gin.Context) string    { r, _ := c.Get("role"); return r.(string) }
+
+func parseRSAPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block for public key")
+	}
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing public key: %w", err)
+	}
+	rsaKey, ok := key.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("key is not RSA public key")
+	}
+	return rsaKey, nil
+}

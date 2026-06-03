@@ -26,7 +26,7 @@ func NewRouter(
 	webhookHandler *handler.WebhookHandler,
 	healthHandler *handler.HealthHandler,
 	verificationHandler *handler.VerificationHandler,
-	jwtSecret []byte,
+	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
 
@@ -56,7 +56,7 @@ func NewRouter(
 		}
 
 		authenticated := api.Group("")
-		authenticated.Use(middleware.AuthMiddleware(jwtSecret))
+		authenticated.Use(middleware.AuthMiddleware(jwtPublicKey))
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
 		{
 			authenticated.POST("/auth/me", authHandler.Me)
@@ -113,7 +113,7 @@ func NewRouter(
 		}
 
 		optional := api.Group("")
-		optional.Use(middleware.OptionalAuthMiddleware(jwtSecret))
+		optional.Use(middleware.OptionalAuthMiddleware(jwtPublicKey))
 		{
 			optional.GET("/circles", circleHandler.ListCircles)
 			optional.GET("/users/:id", userHandler.GetByID)

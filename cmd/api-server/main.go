@@ -99,9 +99,9 @@ func main() {
 	_ = payoutSvc
 	_ = auditRepo
 
-	jwtSecret, err := os.ReadFile(cfg.Auth.JWTPrivateKeyPath)
+	jwtPublicKey, err := os.ReadFile(cfg.Auth.JWTPublicKeyPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load JWT secret")
+		log.Fatal().Err(err).Msg("failed to load JWT public key")
 	}
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, redisClient, verifSvc)
@@ -116,7 +116,7 @@ func main() {
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
 	verifH := handler.NewVerificationHandler(verifSvc, userSvc)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, jwtSecret)
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, jwtPublicKey)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")
