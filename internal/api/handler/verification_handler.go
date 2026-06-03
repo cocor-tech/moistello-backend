@@ -5,18 +5,20 @@ import (
 	"net/http"
 	"strings"
 
-		"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 
 	"github.com/moistello/backend/internal/domain/auth"
+	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/response"
 )
 
 type VerificationHandler struct {
 	verificationSvc *auth.VerificationService
+	userSvc         user.Service
 }
 
-func NewVerificationHandler(svc *auth.VerificationService) *VerificationHandler {
-	return &VerificationHandler{verificationSvc: svc}
+func NewVerificationHandler(svc *auth.VerificationService, userSvc user.Service) *VerificationHandler {
+	return &VerificationHandler{verificationSvc: svc, userSvc: userSvc}
 }
 
 func (h *VerificationHandler) SendCode(c *gin.Context) {
@@ -29,6 +31,19 @@ func (h *VerificationHandler) SendCode(c *gin.Context) {
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Check for duplicate email before sending code
+	if h.userSvc != nil {
+		taken, err := h.userSvc.IsEmailTaken(c.Request.Context(), req.Email)
+		if err != nil {
+			response.InternalError(c, "failed to check email availability")
+			return
+		}
+		if taken {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "This email is already registered. Try logging in instead."})
+			return
+		}
+	}
 
 	result, err := h.verificationSvc.SendCode(c.Request.Context(), req.Email)
 	if err != nil {

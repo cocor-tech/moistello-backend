@@ -114,7 +114,7 @@ func main() {
 	adminH := handler.NewAdminHandler(userSvc, userRepo, circleSvc, auditRepo)
 	webhookH := handler.NewWebhookHandler()
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
-	verifH := handler.NewVerificationHandler(verifSvc)
+	verifH := handler.NewVerificationHandler(verifSvc, userSvc)
 
 	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, verifH, jwtSecret)
 
