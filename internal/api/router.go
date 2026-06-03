@@ -36,7 +36,7 @@ func NewRouter(
 	r.GET("/health/ready", healthHandler.Ready)
 
 	// Passkey credential storage — public, called from Next.js API routes
-	passkey := r.Group("/passkey")
+	passkey := r.Group("/v1/passkey")
 	{
 		passkey.POST("/credentials", passkeyCredentialHandler.StoreCredential)
 		passkey.GET("/credentials/:id", passkeyCredentialHandler.GetCredential)
