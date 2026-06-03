@@ -14,9 +14,10 @@ import (
 
 type Service interface {
 	GetByID(ctx context.Context, id string) (*User, error)
-	GetByWallet(ctx context.Context, walletAddress string) (*User, error)
-	Create(ctx context.Context, walletAddress string) (*User, error)
+	GetByWallet(ctx context.Context, wallet string) (*User, error)
+	Create(ctx context.Context, wallet string) (*User, error)
 	UpdateProfile(ctx context.Context, id string, updates UpdateProfileInput) (*User, error)
+	IsEmailTaken(ctx context.Context, email string) (bool, error)
 	GetMoiScore(ctx context.Context, id string) (*MoiScoreResponse, error)
 	GetCircles(ctx context.Context, id string) ([]any, error)
 }
@@ -208,6 +209,23 @@ func (s *userService) GetCircles(ctx context.Context, id string) ([]any, error) 
 	}
 
 	return []any{}, nil
+}
+
+func (s *userService) IsEmailTaken(ctx context.Context, email string) (bool, error) {
+	// Check users table
+	_, err := s.repo.FindByEmail(ctx, email)
+	if err == nil {
+		return true, nil
+	}
+	if err != nil && err != apperrors.ErrNotFound {
+		return false, fmt.Errorf("checking email availability in users: %w", err)
+	}
+	// Also check user_emails table for verified emails from previous registrations
+	exists, err := s.repo.EmailPreviouslyVerified(ctx, email)
+	if err != nil {
+		return false, fmt.Errorf("checking email availability in verifications: %w", err)
+	}
+	return exists, nil
 }
 
 func calcLevel(score int) string {

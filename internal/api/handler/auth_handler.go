@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -117,6 +118,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if h.verificationSvc != nil && req.Email != nil && *req.Email != "" {
+		// Check for duplicate email first — give a clear message
+		taken, err := h.userService.IsEmailTaken(c.Request.Context(), *req.Email)
+		if err != nil {
+			response.InternalError(c, "failed to check email availability")
+			return
+		}
+		if taken {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "This email is already registered. Try logging in instead."})
+			return
+		}
+
 		if req.VerificationID == "" {
 			response.Forbidden(c, "Email verification is required. Provide verificationId.")
 			return
@@ -141,6 +153,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.Unauthorized(c, "signature verification failed")
 		return
 	}
+
 	u, err := h.userService.Create(c.Request.Context(), req.WalletAddress)
 	if err != nil {
 		response.InternalError(c, "failed to create user")
