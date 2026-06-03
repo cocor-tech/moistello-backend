@@ -61,6 +61,9 @@ func (h *ContributionHandler) ListContributions(c *gin.Context) {
 		response.InternalError(c, "failed to list contributions")
 		return
 	}
+	if contribs == nil {
+		contribs = []contribution.Contribution{}
+	}
 	response.OKWithMeta(c, gin.H{"contributions": contribs}, response.NewPaginationMeta(page, limit, total))
 }
 
