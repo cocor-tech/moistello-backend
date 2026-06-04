@@ -27,12 +27,17 @@ rabbitmq:
     webhooks: "moistello.webhooks"
 
 stellar:
+  # For mainnet, set env vars:
+  #   MOISTELLO_STELLAR_MASTER_SECRET_KEY
+  #   MOISTELLO_STELLAR_MASTER_PUBLIC_KEY
   network: "testnet"
   horizon_url: "https://horizon-testnet.stellar.org"
   soroban_rpc_url: "https://soroban-testnet.stellar.org"
   network_passphrase: "Test SDF Network ; September 2015"
   master_public_key: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
   master_secret_key: "SDDBM2MKQSV2ZPEDKTSI3IWNEUSJU5DAWW5NSRWNKJ4FABXSYGYW72FO"
+  usdc_issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+  wallet_min_balance: 2.0
 
 auth:
   jwt_private_key_path: "./config/keys/jwt-private.pem"

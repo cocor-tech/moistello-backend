@@ -63,6 +63,8 @@ type StellarConfig struct {
 	NetworkPassphrase string `mapstructure:"network_passphrase"`
 	MasterPublicKey   string `mapstructure:"master_public_key"`
 	MasterSecretKey   string `mapstructure:"master_secret_key"`
+	USDCIssuer        string `mapstructure:"usdc_issuer"`
+	WalletMinBalance  float64 `mapstructure:"wallet_min_balance"`
 }
 
 type AuthConfig struct {

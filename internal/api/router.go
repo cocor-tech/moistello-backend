@@ -22,6 +22,7 @@ func NewRouter(
 	webhookHandler *handler.WebhookHandler,
 	healthHandler *handler.HealthHandler,
 	passkeyCredentialHandler *handler.PasskeyCredentialHandler,
+	walletHandler *handler.WalletHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -64,6 +65,12 @@ func NewRouter(
 			authenticated.GET("/users/me/reputation", userHandler.GetReputation)
 			authenticated.GET("/users/me/circles", userHandler.GetMyCircles)
 
+			// Wallet routes
+			authenticated.POST("/wallets", walletHandler.CreateWallet)
+			authenticated.GET("/wallets", walletHandler.ListWallets)
+			authenticated.DELETE("/wallets/:id", walletHandler.DeleteWallet)
+
+			// Circles
 			authenticated.POST("/circles", circleHandler.CreateCircle)
 			authenticated.GET("/circles/:id", circleHandler.GetCircle)
 			authenticated.PATCH("/circles/:id", circleHandler.UpdateCircle)

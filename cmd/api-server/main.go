@@ -19,7 +19,6 @@ package main
 import (
 	"os"
 
-	"github.com/rs/zerolog/log"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api"
 	"github.com/moistello/backend/internal/api/handler"
@@ -32,11 +31,12 @@ import (
 	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/user"
-
+	"github.com/moistello/backend/internal/domain/wallet"
 	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/postgres"
 	"github.com/moistello/backend/pkg/redis"
 	"github.com/moistello/backend/pkg/validator"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
@@ -104,7 +104,22 @@ func main() {
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
 	passkeyCredH := handler.NewPasskeyCredentialHandler(db)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, jwtPublicKey)
+	// Wallet service
+	walletCfg := wallet.Config{
+		MasterSecretKey:   cfg.Stellar.MasterSecretKey,
+		MasterPublicKey:   cfg.Stellar.MasterPublicKey,
+		HorizonURL:        cfg.Stellar.HorizonURL,
+		USDCIssuer:        cfg.Stellar.USDCIssuer,
+		NetworkPassphrase: cfg.Stellar.NetworkPassphrase,
+		MinBalanceXLM:     cfg.Stellar.WalletMinBalance,
+	}
+	walletSvc, err := wallet.NewService(wallet.NewRepository(db), walletCfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize wallet service")
+	}
+	walletH := handler.NewWalletHandler(walletSvc)
+
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, jwtPublicKey)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")
