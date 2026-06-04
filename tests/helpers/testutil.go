@@ -15,7 +15,6 @@ func NewTestUser(wallet string) *user.User {
 	return &user.User{
 		ID:                uuid.New(),
 		WalletAddress:     wallet,
-		KYCStatus:         user.KYCUnverified,
 		PreferredLanguage: "en",
 		MoiScore:          500,
 		Role:              user.RoleUser,

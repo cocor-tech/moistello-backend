@@ -45,10 +45,6 @@ func (m *Repository) Update(ctx context.Context, u *user.User) error {
 	return m.Called(ctx, u).Error(0)
 }
 
-func (m *Repository) UpdateKYCStatus(ctx context.Context, id uuid.UUID, status user.KYCStatus, providerRef string) error {
-	return m.Called(ctx, id, status, providerRef).Error(0)
-}
-
 func (m *Repository) UpdateMoiScore(ctx context.Context, id uuid.UUID, score int) error {
 	return m.Called(ctx, id, score).Error(0)
 }

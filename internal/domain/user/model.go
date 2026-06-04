@@ -6,15 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type KYCStatus string
-
-const (
-	KYCUnverified KYCStatus = "unverified"
-	KYCPending    KYCStatus = "pending"
-	KYCVerified   KYCStatus = "verified"
-	KYCRejected   KYCStatus = "rejected"
-)
-
 type Role string
 
 const (
@@ -29,8 +20,6 @@ type User struct {
 	Phone             *string   `json:"phone,omitempty" db:"phone"`
 	DisplayName       *string   `json:"displayName,omitempty" db:"display_name"`
 	AvatarIpfsHash    *string   `json:"avatarIpfsHash,omitempty" db:"avatar_ipfs_hash"`
-	KYCStatus         KYCStatus `json:"kycStatus" db:"kyc_status"`
-	KYCProviderRef    *string   `json:"-" db:"kyc_provider_ref"`
 	CountryCode       *string   `json:"countryCode,omitempty" db:"country_code"`
 	PreferredLanguage string    `json:"preferredLanguage" db:"preferred_language"`
 	MoiScore          int       `json:"moiScore" db:"moi_score"`

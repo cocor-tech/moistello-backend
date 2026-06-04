@@ -94,45 +94,6 @@ func (h *UserHandler) GetReputation(c *gin.Context) {
 	response.OK(c, gin.H{"reputation": score})
 }
 
-// @Summary Initiate KYC verification
-// @Description Starts the KYC verification process for the authenticated user.
-// @Tags Users
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} response.Envelope{data=object{kycStatus=string,user=object}}
-// @Failure 404 {object} response.Envelope
-// @Router /users/me/kyc [post]
-func (h *UserHandler) InitiateKYC(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	u, err := h.userService.GetByID(c.Request.Context(), userID)
-	if err != nil {
-		response.NotFound(c, "user not found")
-		return
-	}
-	response.OK(c, gin.H{
-		"kycStatus": user.KYCPending,
-		"user":      u,
-	})
-}
-
-// @Summary Get KYC status
-// @Description Returns the current KYC verification status of the authenticated user.
-// @Tags Users
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} response.Envelope{data=object{kycStatus=string}}
-// @Failure 404 {object} response.Envelope
-// @Router /users/me/kyc/status [get]
-func (h *UserHandler) GetKYCStatus(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	u, err := h.userService.GetByID(c.Request.Context(), userID)
-	if err != nil {
-		response.NotFound(c, "user not found")
-		return
-	}
-	response.OK(c, gin.H{"kycStatus": u.KYCStatus})
-}
-
 // @Summary Get my circles
 // @Description Returns all circles the authenticated user belongs to.
 // @Tags Users

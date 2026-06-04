@@ -108,7 +108,6 @@ func (s *userService) Create(ctx context.Context, wallet string) (*User, error) 
 	u := &User{
 		ID:                uuid.New(),
 		WalletAddress:     wallet,
-		KYCStatus:         KYCUnverified,
 		PreferredLanguage: "en",
 		MoiScore:          0,
 		Role:              RoleUser,

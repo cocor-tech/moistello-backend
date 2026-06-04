@@ -62,8 +62,6 @@ func NewRouter(
 			authenticated.GET("/users/me", userHandler.GetMe)
 			authenticated.PATCH("/users/me", userHandler.UpdateMe)
 			authenticated.GET("/users/me/reputation", userHandler.GetReputation)
-			authenticated.POST("/users/me/kyc", userHandler.InitiateKYC)
-			authenticated.GET("/users/me/kyc/status", userHandler.GetKYCStatus)
 			authenticated.GET("/users/me/circles", userHandler.GetMyCircles)
 
 			authenticated.POST("/circles", circleHandler.CreateCircle)

@@ -28,7 +28,6 @@ func TestUserService_Create_NewUser(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, u)
 	assert.Equal(t, wallet, u.WalletAddress)
-	assert.Equal(t, user.KYCUnverified, u.KYCStatus)
 	assert.Equal(t, user.RoleUser, u.Role)
 	assert.Equal(t, 0, u.MoiScore)
 	repo.AssertExpectations(t)

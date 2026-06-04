@@ -18,7 +18,6 @@ type Repository interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, u *User) error
 	Update(ctx context.Context, u *User) error
-	UpdateKYCStatus(ctx context.Context, id uuid.UUID, status KYCStatus, providerRef string) error
 	UpdateMoiScore(ctx context.Context, id uuid.UUID, score int) error
 	List(ctx context.Context, filter UserFilter) ([]User, error)
 	Count(ctx context.Context, filter UserFilter) (int, error)
