@@ -22,6 +22,7 @@ type Config struct {
 	RateLimit    RateLimitConfig `mapstructure:"rate_limit"`
 	Logging      LoggingConfig
 	Environment  string
+	YellowCard   YellowCardConfig `mapstructure:"yellow_card"`
 }
 
 type ServerConfig struct {
@@ -65,6 +66,11 @@ type StellarConfig struct {
 	MasterSecretKey   string `mapstructure:"master_secret_key"`
 	USDCIssuer        string `mapstructure:"usdc_issuer"`
 	WalletMinBalance  float64 `mapstructure:"wallet_min_balance"`
+}
+
+type YellowCardConfig struct {
+	APIKey    string `mapstructure:"api_key"`
+	APISecret string `mapstructure:"api_secret"`
 }
 
 type AuthConfig struct {

@@ -90,6 +90,10 @@ logging:
   format: "json"
   output: "stdout"
 
+yellow_card:
+  api_key: ""
+  api_secret: ""
+
 # Deployed Contract IDs (Testnet)
 contracts:
   circle_factory: "CADZWDGER6PYEWVHZDZ5HMEV6A5TKFVD4EY4DSPUTEKAM2KDPEABGJQU"

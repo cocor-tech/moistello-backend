@@ -23,6 +23,7 @@ func NewRouter(
 	healthHandler *handler.HealthHandler,
 	passkeyCredentialHandler *handler.PasskeyCredentialHandler,
 	walletHandler *handler.WalletHandler,
+	depositHandler *handler.DepositHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -69,6 +70,12 @@ func NewRouter(
 			authenticated.POST("/wallets", walletHandler.CreateWallet)
 			authenticated.GET("/wallets", walletHandler.ListWallets)
 			authenticated.DELETE("/wallets/:id", walletHandler.DeleteWallet)
+
+			// Deposit / Withdraw routes
+			authenticated.GET("/wallet/deposit/quote", depositHandler.GetDepositQuote)
+			authenticated.POST("/wallet/deposit", depositHandler.InitiateDeposit)
+			authenticated.POST("/wallet/withdraw", depositHandler.InitiateWithdraw)
+			authenticated.GET("/wallet/transactions/:yellowCardId", depositHandler.GetTransactionStatus)
 
 			// Circles
 			authenticated.POST("/circles", circleHandler.CreateCircle)
