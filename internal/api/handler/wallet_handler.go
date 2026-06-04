@@ -15,10 +15,17 @@ func NewWalletHandler(svc wallet.Service) *WalletHandler {
 	return &WalletHandler{walletSvc: svc}
 }
 
-// CreateWallet creates a new Stellar wallet for the authenticated user
+// CreateWallet creates a new Stellar wallet for the authenticated user, or returns existing
 // POST /v1/wallets
 func (h *WalletHandler) CreateWallet(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+
+	// Check if wallet already exists — idempotent
+	existing, err := h.walletSvc.GetWallets(c.Request.Context(), userID)
+	if err == nil && len(existing) > 0 {
+		response.OK(c, gin.H{"wallet": existing[0]})
+		return
+	}
 
 	var req struct {
 		PasskeySeed string `json:"passkeySeed" binding:"required"`
