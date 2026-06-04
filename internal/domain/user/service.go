@@ -213,7 +213,6 @@ func (s *userService) GetCircles(ctx context.Context, id string) ([]any, error) 
 }
 
 func (s *userService) IsEmailTaken(ctx context.Context, email string) (bool, error) {
-	// Check users table
 	_, err := s.repo.FindByEmail(ctx, email)
 	if err == nil {
 		return true, nil
@@ -221,12 +220,7 @@ func (s *userService) IsEmailTaken(ctx context.Context, email string) (bool, err
 	if err != nil && err != apperrors.ErrNotFound {
 		return false, fmt.Errorf("checking email availability in users: %w", err)
 	}
-	// Also check user_emails table for verified emails from previous registrations
-	exists, err := s.repo.EmailPreviouslyVerified(ctx, email)
-	if err != nil {
-		return false, fmt.Errorf("checking email availability in verifications: %w", err)
-	}
-	return exists, nil
+	return false, nil
 }
 
 func calcLevel(score int) string {

@@ -29,6 +29,14 @@ func (m *Repository) FindByWalletAddress(ctx context.Context, walletAddress stri
 	return args.Get(0).(*user.User), args.Error(1)
 }
 
+func (m *Repository) FindByEmail(ctx context.Context, email string) (*user.User, error) {
+	args := m.Called(ctx, email)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
 func (m *Repository) Create(ctx context.Context, u *user.User) error {
 	return m.Called(ctx, u).Error(0)
 }

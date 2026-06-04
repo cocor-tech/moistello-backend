@@ -22,7 +22,7 @@ func TestAuthHandler_Logout_Success(t *testing.T) {
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
 	r.POST("/v1/auth/logout", h.Logout)
@@ -47,7 +47,7 @@ func TestAuthHandler_Logout_NoAuthHeader(t *testing.T) {
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
 	r.POST("/v1/auth/logout", h.Logout)
@@ -64,7 +64,7 @@ func TestAuthHandler_Logout_InvalidAuthFormat(t *testing.T) {
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
 	r.POST("/v1/auth/logout", h.Logout)
@@ -82,7 +82,7 @@ func TestAuthHandler_Logout_InvalidToken(t *testing.T) {
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
 	r.POST("/v1/auth/logout", h.Logout)
@@ -103,7 +103,7 @@ func TestAuthHandler_Logout_WithRedisBlocklist(t *testing.T) {
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})
 	defer rdb.Close()
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, rdb, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, rdb)
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -133,7 +133,7 @@ func TestAuthHandler_Logout_ExpiredToken(t *testing.T) {
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
 	r.POST("/v1/auth/logout", h.Logout)

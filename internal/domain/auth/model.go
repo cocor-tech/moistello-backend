@@ -30,31 +30,3 @@ type TokenPair struct {
 	AccessToken  string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
 }
-
-type VerificationCode struct {
-	ID          string    `json:"id" db:"id"`
-	Email       string    `json:"email" db:"email"`
-	CodeHash    string    `json:"-" db:"code_hash"`
-	ExpiresAt   time.Time `json:"expiresAt" db:"expires_at"`
-	Attempts    int       `json:"attempts" db:"attempts"`
-	MaxAttempts int       `json:"maxAttempts" db:"max_attempts"`
-	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
-}
-
-type SendCodeResponse struct {
-	VerificationID    string `json:"verificationId"`
-	ExpiresAt         int64  `json:"expiresAt"`
-	RemainingAttempts int    `json:"remainingAttempts"`
-}
-
-type VerifyCodeResponse struct {
-	Verified bool `json:"verified"`
-}
-
-type VerificationConfig struct {
-	CodeLength       int           // 6
-	CodeExpiry       time.Duration // 10 minutes
-	MaxAttempts      int           // 5 per verification ID
-	MaxSendsPerEmail int           // 3 per 10 minutes
-	ResendCooldown   time.Duration // 60 seconds
-}

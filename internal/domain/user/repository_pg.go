@@ -96,16 +96,6 @@ func (r *pgRepo) FindByEmail(ctx context.Context, email string) (*User, error) {
 	return scanUser(r.db.QueryRowxContext(ctx, query, hashedEmail))
 }
 
-func (r *pgRepo) EmailPreviouslyVerified(ctx context.Context, email string) (bool, error) {
-	hashedEmail := hashUserEmail(email)
-	var count int
-	err := r.db.GetContext(ctx, &count, "SELECT COUNT(*) FROM user_emails WHERE email = $1 AND email_verified = true", hashedEmail)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
 func (r *pgRepo) Create(ctx context.Context, u *User) error {
 	query := `INSERT INTO users (id, wallet_address, email, phone, display_name,
 		avatar_ipfs_hash, kyc_status, kyc_provider_ref, country_code, preferred_language,

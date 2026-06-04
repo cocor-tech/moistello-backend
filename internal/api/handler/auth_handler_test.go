@@ -90,7 +90,7 @@ func TestAuthHandler_Nonce(t *testing.T) {
 	}
 	mockAuthSvc.On("GenerateNonce", mock.Anything, "GABC...").Return(nonceResp, nil)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/nonce", h.Nonce)
 
@@ -114,7 +114,7 @@ func TestAuthHandler_Nonce_MissingWallet(t *testing.T) {
 
 	mockAuthSvc.On("GenerateNonce", mock.Anything, mock.Anything).Return(nil, errors.New("missing wallet"))
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/nonce", h.Nonce)
 
@@ -136,7 +136,7 @@ func TestAuthHandler_Nonce_ServiceError(t *testing.T) {
 
 	mockAuthSvc.On("GenerateNonce", mock.Anything, "GABC...").Return(nil, errors.New("redis error"))
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/nonce", h.Nonce)
 
@@ -164,7 +164,7 @@ func TestAuthHandler_Verify_Success(t *testing.T) {
 		&auth.TokenPair{AccessToken: "jwt-token", RefreshToken: "refresh-token"}, nil,
 	)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/verify", h.Verify)
 
@@ -192,7 +192,7 @@ func TestAuthHandler_Verify_InvalidSignature(t *testing.T) {
 
 	mockAuthSvc.On("VerifySignature", mock.Anything, "GABC...", "sig-bad").Return(false, nil)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/verify", h.Verify)
 
@@ -223,7 +223,7 @@ func TestAuthHandler_Verify_MissingFields(t *testing.T) {
 		&auth.TokenPair{AccessToken: "jwt", RefreshToken: "rt"}, nil,
 	)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/verify", h.Verify)
 
@@ -247,7 +247,7 @@ func TestAuthHandler_Refresh_Success(t *testing.T) {
 		&auth.TokenPair{AccessToken: "new-jwt", RefreshToken: "new-refresh"}, nil,
 	)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/refresh", h.Refresh)
 
@@ -271,7 +271,7 @@ func TestAuthHandler_Refresh_Invalid(t *testing.T) {
 
 	mockAuthSvc.On("RefreshToken", mock.Anything, "bad-token").Return(nil, errors.New("invalid"))
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/refresh", h.Refresh)
 
@@ -300,7 +300,7 @@ func TestAuthHandler_Me_UserFound(t *testing.T) {
 	}
 	mockUserRepo.On("FindByID", mock.Anything, uid).Return(expectedUser, nil)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", uid.String())
@@ -324,7 +324,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo)
 
-	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil)
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()
 	r.POST("/auth/logout", h.Logout)
 

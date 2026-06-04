@@ -21,7 +21,6 @@ func NewRouter(
 	adminHandler *handler.AdminHandler,
 	webhookHandler *handler.WebhookHandler,
 	healthHandler *handler.HealthHandler,
-	verificationHandler *handler.VerificationHandler,
 	passkeyCredentialHandler *handler.PasskeyCredentialHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
@@ -52,9 +51,6 @@ func NewRouter(
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh)
 			auth.POST("/logout", authHandler.Logout)
-			auth.POST("/verification/send", verificationHandler.SendCode)
-			auth.POST("/verification/verify", verificationHandler.VerifyCode)
-			auth.POST("/verification/resend", verificationHandler.ResendCode)
 		}
 
 		authenticated := api.Group("")

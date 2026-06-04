@@ -31,7 +31,7 @@ type Transactor interface {
 type CreateCircleInput struct {
 	Name               string          `json:"name" validate:"required,min=3,max=100"`
 	Description        string          `json:"description"`
-	CircleType         CircleType      `json:"circleType" validate:"required,oneof=public private"`
+	CircleType         CircleType      `json:"circleType" validate:"required,oneof=public private org community premium"`
 	PayoutType         PayoutType      `json:"payoutType" validate:"required,oneof=random fixed auction vote"`
 	ContributionAmount float64         `json:"contributionAmount" validate:"required,gt=0"`
 	Currency           CircleCurrency  `json:"currency" validate:"required,oneof=USDC XLM"`

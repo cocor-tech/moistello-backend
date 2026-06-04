@@ -112,42 +112,6 @@ func TestAuthRateLimitMiddleware_ReturnsHeadersOnLimit(t *testing.T) {
 	}
 }
 
-func TestPerResourceRateLimitMiddleware_AllowsRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})
-	defer rdb.Close()
-
-	r := gin.New()
-	r.Use(middleware.PerResourceRateLimitMiddleware(rdb, "email_verification", 3, 0))
-	r.POST("/verify", func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true})
-	})
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/verify", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, 200, w.Code)
-}
-
-func TestPerResourceRateLimitMiddleware_SetsResourceHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})
-	defer rdb.Close()
-
-	r := gin.New()
-	r.Use(middleware.PerResourceRateLimitMiddleware(rdb, "email_verification", 3, 0))
-	r.POST("/verify", func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true})
-	})
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/verify", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, "3", w.Header().Get("X-RateLimit-Limit"))
-}
-
 func TestRateLimitMiddleware_AuthenticatedUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})

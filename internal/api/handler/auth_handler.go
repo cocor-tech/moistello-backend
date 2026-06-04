@@ -1,9 +1,7 @@
 package handler
 
 import (
-	"errors"
 	"log"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -16,18 +14,16 @@ import (
 )
 
 type AuthHandler struct {
-	authService      auth.Service
-	userService      user.Service
-	redisClient      *redis.Client
-	verificationSvc  *auth.VerificationService
+	authService auth.Service
+	userService user.Service
+	redisClient *redis.Client
 }
 
-func NewAuthHandler(authSvc auth.Service, userSvc user.Service, redisClient *redis.Client, verificationSvc *auth.VerificationService) *AuthHandler {
+func NewAuthHandler(authSvc auth.Service, userSvc user.Service, redisClient *redis.Client) *AuthHandler {
 	return &AuthHandler{
-		authService:     authSvc,
-		userService:     userSvc,
-		redisClient:     redisClient,
-		verificationSvc: verificationSvc,
+		authService: authSvc,
+		userService: userSvc,
+		redisClient: redisClient,
 	}
 }
 // @Summary Get authentication nonce
@@ -104,48 +100,16 @@ func (h *AuthHandler) Verify(c *gin.Context) {
 // @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
-		WalletAddress  string  `json:"walletAddress" binding:"required"`
-		Signature      string  `json:"signature" binding:"required"`
+		WalletAddress string  `json:"walletAddress" binding:"required"`
+		Signature     string  `json:"signature" binding:"required"`
 		DisplayName    *string `json:"displayName"`
 		Email          *string `json:"email"`
 		CountryCode    *string `json:"countryCode"`
 		Language       *string `json:"language"`
-		VerificationID string  `json:"verificationId"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
-	}
-
-	if h.verificationSvc != nil && req.Email != nil && *req.Email != "" {
-		// Check for duplicate email first — give a clear message
-		taken, err := h.userService.IsEmailTaken(c.Request.Context(), *req.Email)
-		if err != nil {
-			response.InternalError(c, "failed to check email availability")
-			return
-		}
-		if taken {
-			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "This email is already registered. Try logging in instead."})
-			return
-		}
-
-		if req.VerificationID == "" {
-			response.Forbidden(c, "Email verification is required. Provide verificationId.")
-			return
-		}
-		if err := h.verificationSvc.CheckEmailVerified(c.Request.Context(), *req.Email, req.VerificationID); err != nil {
-			var verifyErr *auth.VerifyError
-			if errors.As(err, &verifyErr) {
-				status := verifyErr.StatusCode
-				if status == 0 {
-					status = 403
-				}
-				c.JSON(status, gin.H{"success": false, "error": verifyErr.Message})
-				return
-			}
-			response.Forbidden(c, "Email not verified. Please complete email verification first.")
-			return
-		}
 	}
 
 	valid, err := h.authService.VerifySignature(c.Request.Context(), req.WalletAddress, req.Signature)
