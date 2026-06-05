@@ -24,6 +24,7 @@ func NewRouter(
 	passkeyCredentialHandler *handler.PasskeyCredentialHandler,
 	walletHandler *handler.WalletHandler,
 	depositHandler *handler.DepositHandler,
+	communityHandler *handler.CommunityHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -101,6 +102,23 @@ func NewRouter(
 
 			authenticated.GET("/payouts", payoutHandler.ListPayouts)
 			authenticated.GET("/payouts/:id", payoutHandler.GetPayout)
+
+			// Communities
+			authenticated.POST("/communities", communityHandler.Create)
+			authenticated.GET("/communities", communityHandler.List)
+			authenticated.GET("/communities/:id", communityHandler.Get)
+			authenticated.PATCH("/communities/:id", communityHandler.Update)
+			authenticated.DELETE("/communities/:id", communityHandler.Delete)
+			authenticated.POST("/communities/:id/join", communityHandler.Join)
+			authenticated.POST("/communities/:id/leave", communityHandler.Leave)
+			authenticated.GET("/communities/:id/members", communityHandler.GetMembers)
+			authenticated.GET("/communities/:id/membership", communityHandler.IsMember)
+			authenticated.POST("/communities/:id/announcements", communityHandler.CreateAnnouncement)
+			authenticated.GET("/communities/:id/announcements", communityHandler.GetAnnouncements)
+			authenticated.DELETE("/communities/:id/announcements/:announcementId", communityHandler.DeleteAnnouncement)
+			authenticated.POST("/communities/:id/announcements/:announcementId/like", communityHandler.LikeAnnouncement)
+			authenticated.GET("/communities/:id/activity", communityHandler.GetActivity)
+			authenticated.GET("/users/me/communities", communityHandler.GetMyCommunities)
 
 			authenticated.GET("/notifications", notificationHandler.ListNotifications)
 			authenticated.PATCH("/notifications/:id/read", notificationHandler.MarkRead)
