@@ -21,7 +21,7 @@ func TestAuthHandler_Logout_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
@@ -46,7 +46,7 @@ func TestAuthHandler_Logout_NoAuthHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
@@ -63,7 +63,7 @@ func TestAuthHandler_Logout_InvalidAuthFormat(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
@@ -81,7 +81,7 @@ func TestAuthHandler_Logout_InvalidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()
@@ -99,7 +99,7 @@ func TestAuthHandler_Logout_WithRedisBlocklist(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})
 	defer rdb.Close()
 
@@ -132,7 +132,7 @@ func TestAuthHandler_Logout_ExpiredToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 
 	r := gin.New()

@@ -34,7 +34,7 @@ func newRegisterHandler(t *testing.T) (
 	t.Helper()
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 	return mockAuthSvc, mockUserRepo, userSvc, handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 }
 

@@ -16,7 +16,7 @@ import (
 
 func TestUserService_Create_NewUser(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	wallet := "GABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
 
@@ -35,7 +35,7 @@ func TestUserService_Create_NewUser(t *testing.T) {
 
 func TestUserService_Create_ExistingUser(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	wallet := "GABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
 
@@ -54,7 +54,7 @@ func TestUserService_Create_ExistingUser(t *testing.T) {
 
 func TestUserService_Create_DBError(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	wallet := "GABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
 
@@ -70,7 +70,7 @@ func TestUserService_Create_DBError(t *testing.T) {
 
 func TestUserService_UpdateProfile(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 
@@ -91,7 +91,7 @@ func TestUserService_UpdateProfile(t *testing.T) {
 
 func TestUserService_UpdateProfile_AllFields(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 
@@ -127,7 +127,7 @@ func TestUserService_UpdateProfile_AllFields(t *testing.T) {
 
 func TestUserService_UpdateProfile_NotFound(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 
@@ -143,7 +143,7 @@ func TestUserService_UpdateProfile_NotFound(t *testing.T) {
 
 func TestUserService_GetByID_NotFound(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 
@@ -158,7 +158,7 @@ func TestUserService_GetByID_NotFound(t *testing.T) {
 
 func TestUserService_GetByID_InvalidUUID(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 
 	u, err := svc.GetByID(ctx, "not-a-uuid")
@@ -169,7 +169,7 @@ func TestUserService_GetByID_InvalidUUID(t *testing.T) {
 
 func TestUserService_GetByID_Success(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 
@@ -188,7 +188,7 @@ func TestUserService_GetByID_Success(t *testing.T) {
 
 func TestUserService_GetMoiScore(t *testing.T) {
 	repo := new(userMocks.Repository)
-	svc := user.NewService(repo)
+	svc := user.NewService(repo, nil)
 	ctx := context.Background()
 	uid := uuid.New()
 

@@ -63,7 +63,7 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 	}
 
 	// 3. Set USDC trustline
-	if err := s.setTrustline(kp.Address()); err != nil {
+	if err := s.setTrustline(kp); err != nil {
 		return nil, fmt.Errorf("setting trustline: %w", err)
 	}
 
@@ -137,16 +137,96 @@ func (s *service) fundAccount(destination string) error {
 	return nil
 }
 
-func (s *service) setTrustline(publicKey string) error {
-	// TODO: implement trustline setting via a sponsored transaction
-	// For now, this requires the user to have XLM to sign a trustline op
+func (s *service) setTrustline(kp *keypair.Full) error {
+	account, err := s.horizon.AccountDetail(horizonclient.AccountRequest{
+		AccountID: kp.Address(),
+	})
+	if err != nil {
+		return fmt.Errorf("loading account for trustline: %w", err)
+	}
+
+	tx, err := txnbuild.NewTransaction(
+		txnbuild.TransactionParams{
+			SourceAccount:        &account,
+			IncrementSequenceNum: true,
+			Operations: []txnbuild.Operation{
+				&txnbuild.ChangeTrust{
+					Line: txnbuild.ChangeTrustAssetWrapper{
+						Asset: txnbuild.CreditAsset{
+							Code:   "USDC",
+							Issuer: s.cfg.USDCIssuer,
+						},
+					},
+				},
+			},
+			BaseFee: txnbuild.MinBaseFee,
+			Preconditions: txnbuild.Preconditions{
+				TimeBounds: txnbuild.NewInfiniteTimeout(),
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("building trustline tx: %w", err)
+	}
+
+	tx, err = tx.Sign(s.cfg.NetworkPassphrase, kp)
+	if err != nil {
+		return fmt.Errorf("signing trustline tx: %w", err)
+	}
+
+	txe, err := tx.Base64()
+	if err != nil {
+		return fmt.Errorf("encoding trustline tx: %w", err)
+	}
+
+	_, err = s.horizon.SubmitTransactionXDR(txe)
+	if err != nil {
+		return fmt.Errorf("submitting trustline tx: %w", err)
+	}
+
 	return nil
 }
 
 func (s *service) SignTransaction(ctx context.Context, walletID string, passkeySeed []byte, txnXDR string) (string, error) {
-	// This gets the encrypted key, decrypts it with passkey seed,
-	// signs the transaction, and returns the signed XDR
-	return "", fmt.Errorf("not implemented")
+	wallet, err := s.repo.FindByID(ctx, walletID)
+	if err != nil {
+		return "", fmt.Errorf("wallet not found: %w", err)
+	}
+	if len(wallet.EncryptedSecretKey) == 0 || len(wallet.EncryptionNonce) == 0 {
+		return "", fmt.Errorf("wallet has no encrypted secret key")
+	}
+
+	secretKey, err := decryptSecret(wallet.EncryptedSecretKey, wallet.EncryptionNonce, passkeySeed)
+	if err != nil {
+		return "", fmt.Errorf("decrypting secret key: %w", err)
+	}
+
+	kp, err := keypair.ParseFull(secretKey)
+	if err != nil {
+		return "", fmt.Errorf("parsing keypair: %w", err)
+	}
+
+	genericTx, err := txnbuild.TransactionFromXDR(txnXDR)
+	if err != nil {
+		return "", fmt.Errorf("parsing transaction XDR: %w", err)
+	}
+
+	tx, ok := genericTx.Transaction()
+	if !ok {
+		return "", fmt.Errorf("unsupported transaction type (expected a regular Transaction, not FeeBump)")
+	}
+
+	tx, err = tx.Sign(s.cfg.NetworkPassphrase, kp)
+	if err != nil {
+		return "", fmt.Errorf("signing transaction: %w", err)
+	}
+
+	signedXDR, err := tx.Base64()
+	if err != nil {
+		return "", fmt.Errorf("encoding signed XDR: %w", err)
+	}
+
+	return signedXDR, nil
 }
 
 func (s *service) GetWallets(ctx context.Context, userID string) ([]Wallet, error) {

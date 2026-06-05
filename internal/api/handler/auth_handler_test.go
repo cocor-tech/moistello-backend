@@ -82,7 +82,7 @@ func TestAuthHandler_Nonce(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	nonceResp := &auth.Nonce{
 		WalletAddress: "GABC...",
@@ -110,7 +110,7 @@ func TestAuthHandler_Nonce_MissingWallet(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("GenerateNonce", mock.Anything, mock.Anything).Return(nil, errors.New("missing wallet"))
 
@@ -132,7 +132,7 @@ func TestAuthHandler_Nonce_ServiceError(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("GenerateNonce", mock.Anything, "GABC...").Return(nil, errors.New("redis error"))
 
@@ -155,7 +155,7 @@ func TestAuthHandler_Verify_Success(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("VerifySignature", mock.Anything, "GABC...", "sig-valid").Return(true, nil)
 	mockUserRepo.On("FindByWalletAddress", mock.Anything, "GABC...").Return(nil, apperrors.ErrNotFound)
@@ -188,7 +188,7 @@ func TestAuthHandler_Verify_InvalidSignature(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("VerifySignature", mock.Anything, "GABC...", "sig-bad").Return(false, nil)
 
@@ -214,7 +214,7 @@ func TestAuthHandler_Verify_MissingFields(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("VerifySignature", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	mockUserRepo.On("FindByWalletAddress", mock.Anything, mock.Anything).Return(nil, apperrors.ErrNotFound)
@@ -241,7 +241,7 @@ func TestAuthHandler_Refresh_Success(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("RefreshToken", mock.Anything, "refresh-token").Return(
 		&auth.TokenPair{AccessToken: "new-jwt", RefreshToken: "new-refresh"}, nil,
@@ -267,7 +267,7 @@ func TestAuthHandler_Refresh_Invalid(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	mockAuthSvc.On("RefreshToken", mock.Anything, "bad-token").Return(nil, errors.New("invalid"))
 
@@ -290,7 +290,7 @@ func TestAuthHandler_Me_UserFound(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	uid := uuid.New()
 	expectedUser := &user.User{
@@ -322,7 +322,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
-	userSvc := user.NewService(mockUserRepo)
+	userSvc := user.NewService(mockUserRepo, nil)
 
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
 	r := gin.New()

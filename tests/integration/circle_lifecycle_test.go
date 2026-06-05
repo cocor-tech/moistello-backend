@@ -24,7 +24,7 @@ func TestCircleLifecycle(t *testing.T) {
 	contribRepo := new(contribMocks.Repository)
 	payoutRepo := new(payoutMocks.Repository)
 
-	userSvc := user.NewService(userRepo)
+	userSvc := user.NewService(userRepo, nil)
 	circleSvc := circle.NewService(circleRepo, nil)
 	contribSvc := contribution.NewService(contribRepo, nil)
 	payoutSvc := payout.NewService(payoutRepo)

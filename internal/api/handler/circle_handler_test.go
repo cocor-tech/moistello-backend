@@ -33,7 +33,7 @@ func TestCircleHandler_CreateCircle_Valid(t *testing.T) {
 	repo.On("Create", mock.Anything, mock.AnythingOfType("*circle.Circle")).Return(nil)
 	repo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", orgID.String())
@@ -67,7 +67,7 @@ func TestCircleHandler_CreateCircle_InvalidPayload(t *testing.T) {
 	repo := new(circleMocks.Repository)
 	svc := circle.NewService(repo, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", uuid.New().String())
@@ -103,7 +103,7 @@ func TestCircleHandler_ListCircles_Empty(t *testing.T) {
 	repo.On("List", mock.Anything, filter).Return([]circle.Circle{}, nil)
 	repo.On("Count", mock.Anything, filter).Return(0, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.GET("/circles", h.ListCircles)
 
@@ -125,7 +125,7 @@ func TestCircleHandler_ListCircles_ServiceError(t *testing.T) {
 	filter := circle.CircleFilter{Page: 1, Limit: 20}
 	repo.On("List", mock.Anything, filter).Return(nil, apperrors.ErrInternal)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.GET("/circles", h.ListCircles)
 
@@ -149,7 +149,7 @@ func TestCircleHandler_GetCircle_Exists(t *testing.T) {
 	}
 	repo.On("FindByID", mock.Anything, cid).Return(expected, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.GET("/circles/:id", h.GetCircle)
 
@@ -171,7 +171,7 @@ func TestCircleHandler_GetCircle_NotFound(t *testing.T) {
 
 	repo.On("FindByID", mock.Anything, cid).Return(nil, circle.ErrCircleNotFound)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.GET("/circles/:id", h.GetCircle)
 
@@ -200,7 +200,7 @@ func TestCircleHandler_JoinCircle_Success(t *testing.T) {
 	repo.On("FindMemberByCircleAndUser", mock.Anything, cid, uid).Return(nil, apperrors.ErrNotFound)
 	repo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", uid.String())
@@ -233,7 +233,7 @@ func TestCircleHandler_JoinCircle_CircleFull(t *testing.T) {
 	repo.On("FindByID", mock.Anything, cid).Return(c, nil)
 	repo.On("GetMemberCount", mock.Anything, cid).Return(5, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", uid.String())
@@ -261,7 +261,7 @@ func TestCircleHandler_GetMembers(t *testing.T) {
 	repo.On("FindByID", mock.Anything, cid).Return(c, nil)
 	repo.On("GetMembers", mock.Anything, cid).Return([]circle.CircleMember{}, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.GET("/circles/:id/members", h.GetMembers)
 
@@ -289,7 +289,7 @@ func TestCircleHandler_CancelCircle_Success(t *testing.T) {
 	repo.On("FindByID", mock.Anything, cid).Return(c, nil)
 	repo.On("Update", mock.Anything, mock.AnythingOfType("*circle.Circle")).Return(nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", orgID.String())
@@ -320,7 +320,7 @@ func TestCircleHandler_CancelCircle_NotOrganizer(t *testing.T) {
 	}
 	repo.On("FindByID", mock.Anything, cid).Return(c, nil)
 
-	h := handler.NewCircleHandler(svc, nil)
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", notOrg.String())

@@ -82,3 +82,11 @@ func (m *Repository) FindMemberByCircleAndUser(ctx context.Context, circleID, us
 	}
 	return args.Get(0).(*circle.CircleMember), args.Error(1)
 }
+
+func (m *Repository) FindCirclesByUserID(ctx context.Context, userID uuid.UUID) ([]circle.Circle, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]circle.Circle), args.Error(1)
+}

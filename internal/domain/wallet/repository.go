@@ -9,6 +9,7 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, w *Wallet) error
+	FindByID(ctx context.Context, id string) (*Wallet, error)
 	FindByUserID(ctx context.Context, userID string) ([]Wallet, error)
 	FindByPublicKey(ctx context.Context, publicKey string) (*Wallet, error)
 	Delete(ctx context.Context, id string) error
@@ -31,6 +32,17 @@ func (r *pgRepo) Create(ctx context.Context, w *Wallet) error {
 		w.UserID, w.PublicKey, w.EncryptedSecretKey, w.EncryptionNonce,
 		w.WalletType, w.IsPrimary,
 	).Scan(&w.ID, &w.CreatedAt, &w.UpdatedAt)
+}
+
+func (r *pgRepo) FindByID(ctx context.Context, id string) (*Wallet, error) {
+	var w Wallet
+	err := r.db.GetContext(ctx, &w,
+		`SELECT id, user_id, public_key, encrypted_secret_key, encryption_nonce, wallet_type, is_primary, created_at, updated_at
+		 FROM wallets WHERE id = $1`, id)
+	if err != nil {
+		return nil, fmt.Errorf("finding wallet by id: %w", err)
+	}
+	return &w, nil
 }
 
 func (r *pgRepo) FindByUserID(ctx context.Context, userID string) ([]Wallet, error) {
