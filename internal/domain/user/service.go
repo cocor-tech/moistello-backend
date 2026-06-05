@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 )
 
@@ -50,15 +51,16 @@ type MonthlyScore struct {
 }
 
 type userService struct {
-	repo Repository
-	db   interface {
+	repo      Repository
+	circleRepo circle.Repository
+	db        interface {
 		QueryRowxContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 		SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	}
 }
 
-func NewService(repo Repository) Service {
-	return &userService{repo: repo}
+func NewService(repo Repository, circleRepo circle.Repository) Service {
+	return &userService{repo: repo, circleRepo: circleRepo}
 }
 
 func parseUUID(id string) (uuid.UUID, error) {
@@ -208,7 +210,16 @@ func (s *userService) GetCircles(ctx context.Context, id string) ([]any, error) 
 		return nil, fmt.Errorf("finding user for circles: %w", err)
 	}
 
-	return []any{}, nil
+	circles, err := s.circleRepo.FindCirclesByUserID(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("finding circles for user: %w", err)
+	}
+
+	result := make([]any, len(circles))
+	for i := range circles {
+		result[i] = circles[i]
+	}
+	return result, nil
 }
 
 func (s *userService) IsEmailTaken(ctx context.Context, email string) (bool, error) {

@@ -71,7 +71,7 @@ func main() {
 	inviteRepo := invite.NewRepository(db)
 	auditRepo := audit.NewRepository(db)
 
-	userSvc := user.NewService(userRepo)
+	userSvc := user.NewService(userRepo, circleRepo)
 	circleSvc := circle.NewService(circleRepo, circle.NewTransactor(db))
 	contribSvc := contribution.NewService(contribRepo, contribution.NewTransactor(db))
 	payoutSvc := payout.NewService(payoutRepo)
@@ -84,8 +84,6 @@ func main() {
 
 	inviteSvc := invite.NewService(inviteRepo)
 	_ = reputationSvc
-	_ = contribSvc
-	_ = payoutSvc
 	_ = auditRepo
 
 	jwtPublicKey, err := os.ReadFile(cfg.Auth.JWTPublicKeyPath)
@@ -95,7 +93,7 @@ func main() {
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, redisClient)
 	userH := handler.NewUserHandler(userSvc)
-	circleH := handler.NewCircleHandler(circleSvc, inviteSvc)
+	circleH := handler.NewCircleHandler(circleSvc, inviteSvc, contribSvc, payoutSvc)
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)
 	payoutH := handler.NewPayoutHandler(payoutSvc, payoutRepo)
 	inviteH := handler.NewInviteHandler(inviteSvc)

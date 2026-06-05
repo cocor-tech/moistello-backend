@@ -333,6 +333,36 @@ func (r *pgRepo) FindMemberByCircleAndUser(ctx context.Context, circleID, userID
 	return scanCircleMember(r.db.QueryRowxContext(ctx, query, circleID, userID))
 }
 
+func (r *pgRepo) FindCirclesByUserID(ctx context.Context, userID uuid.UUID) ([]Circle, error) {
+	query := `SELECT c.id, c.contract_id, c.name, c.description, c.circle_type, c.payout_type,
+		c.contribution_amount, c.currency, c.frequency, c.max_members, c.min_moi_score,
+		c.collateral_percent, c.late_fee_percent, c.grace_period_hours, c.max_strikes,
+		c.start_date, c.end_date, c.status, c.current_round, c.total_contributions,
+		c.organizer_id, c.created_at, c.updated_at
+		FROM circles c
+		INNER JOIN circle_members cm ON cm.circle_id = c.id
+		WHERE cm.user_id = $1 AND cm.status = 'active'
+		ORDER BY c.created_at DESC`
+	rows, err := r.db.QueryxContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("finding circles by user ID: %w", err)
+	}
+	defer rows.Close()
+
+	var circles []Circle
+	for rows.Next() {
+		c, err := scanCircle(rows)
+		if err != nil {
+			return nil, err
+		}
+		circles = append(circles, *c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating circles: %w", err)
+	}
+	return circles, nil
+}
+
 func isUniqueViolationPg(err error) bool {
 	if err == nil {
 		return false

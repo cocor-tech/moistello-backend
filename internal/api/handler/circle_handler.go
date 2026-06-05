@@ -4,19 +4,28 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/circle"
+	"github.com/moistello/backend/internal/domain/contribution"
 	"github.com/moistello/backend/internal/domain/invite"
+	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
 	"github.com/moistello/backend/pkg/validator"
 )
 
 type CircleHandler struct {
-	circleService circle.Service
-	inviteService invite.Service
+	circleService   circle.Service
+	inviteService   invite.Service
+	contribService  contribution.Service
+	payoutService   payout.Service
 }
 
-func NewCircleHandler(circleSvc circle.Service, inviteSvc invite.Service) *CircleHandler {
-	return &CircleHandler{circleService: circleSvc, inviteService: inviteSvc}
+func NewCircleHandler(circleSvc circle.Service, inviteSvc invite.Service, contribSvc contribution.Service, payoutSvc payout.Service) *CircleHandler {
+	return &CircleHandler{
+		circleService:  circleSvc,
+		inviteService:  inviteSvc,
+		contribService: contribSvc,
+		payoutService:  payoutSvc,
+	}
 }
 
 // @Summary List circles
@@ -170,9 +179,20 @@ func (h *CircleHandler) Contribute(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	_ = circleID
-	_ = userID
-	response.OK(c, gin.H{"success": true, "message": "contribution recorded"})
+
+	contrib, err := h.contribService.Record(c.Request.Context(), contribution.RecordInput{
+		CircleID:    circleID,
+		UserID:      userID,
+		RoundNumber: req.RoundNumber,
+		Amount:      req.Amount,
+		TxnHash:     req.TxnHash,
+	})
+	if err != nil {
+		response.InternalError(c, "failed to record contribution: "+err.Error())
+		return
+	}
+
+	response.Created(c, gin.H{"success": true, "contribution": contrib})
 }
 
 func (h *CircleHandler) ExitCircle(c *gin.Context) {
@@ -202,17 +222,68 @@ func (h *CircleHandler) GetRounds(c *gin.Context) {
 		response.NotFound(c, "circle not found")
 		return
 	}
+
+	contribs, _, err := h.contribService.GetCircleHistory(c.Request.Context(), circleID, 1, 100)
+	if err != nil {
+		contribs = nil
+	}
+
+	payouts, _, err := h.payoutService.GetCircleHistory(c.Request.Context(), circleID, 1, 100)
+	if err != nil {
+		payouts = nil
+	}
+
+	roundMap := make(map[int]map[string]any)
+	if contribs != nil {
+		for _, c := range contribs {
+			entry, ok := roundMap[c.RoundNumber]
+			if !ok {
+				entry = map[string]any{
+					"roundNumber":  c.RoundNumber,
+					"contributions": []any{},
+				}
+				roundMap[c.RoundNumber] = entry
+			}
+			entry["contributions"] = append(entry["contributions"].([]any), c)
+		}
+	}
+	if payouts != nil {
+		for _, p := range payouts {
+			entry, ok := roundMap[p.RoundNumber]
+			if !ok {
+				entry = map[string]any{
+					"roundNumber":  p.RoundNumber,
+					"contributions": []any{},
+				}
+				roundMap[p.RoundNumber] = entry
+			}
+			entry["payout"] = p
+		}
+	}
+
+	rounds := make([]map[string]any, 0, len(roundMap))
+	for _, v := range roundMap {
+		rounds = append(rounds, v)
+	}
+
 	response.OK(c, gin.H{
-		"rounds":        []any{},
-		"currentRound":  cir.CurrentRound,
-		"totalMembers":  cir.MaxMembers,
+		"rounds":       rounds,
+		"currentRound": cir.CurrentRound,
+		"totalMembers": cir.MaxMembers,
 	})
 }
 
 func (h *CircleHandler) GetPayouts(c *gin.Context) {
 	circleID := c.Param("id")
-	_ = circleID
-	response.OK(c, gin.H{"payouts": []any{}})
+	payouts, total, err := h.payoutService.GetCircleHistory(c.Request.Context(), circleID, 1, 50)
+	if err != nil {
+		response.InternalError(c, "failed to get payouts")
+		return
+	}
+	if payouts == nil {
+		payouts = []payout.Payout{}
+	}
+	response.OKWithMeta(c, gin.H{"payouts": payouts}, response.NewPaginationMeta(1, 50, total))
 }
 
 func (h *CircleHandler) Dispute(c *gin.Context) {

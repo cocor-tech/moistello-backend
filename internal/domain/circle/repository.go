@@ -28,4 +28,5 @@ type Repository interface {
 	GetMemberCount(ctx context.Context, circleID uuid.UUID) (int, error)
 	UpdateMemberStatus(ctx context.Context, circleID, userID uuid.UUID, status MemberStatus) error
 	FindMemberByCircleAndUser(ctx context.Context, circleID, userID uuid.UUID) (*CircleMember, error)
+	FindCirclesByUserID(ctx context.Context, userID uuid.UUID) ([]Circle, error)
 }
