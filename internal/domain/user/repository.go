@@ -21,4 +21,5 @@ type Repository interface {
 	UpdateMoiScore(ctx context.Context, id uuid.UUID, score int) error
 	List(ctx context.Context, filter UserFilter) ([]User, error)
 	Count(ctx context.Context, filter UserFilter) (int, error)
+	ClaimNextName(ctx context.Context) (int64, error)
 }

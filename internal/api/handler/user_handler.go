@@ -102,6 +102,15 @@ func (h *UserHandler) GetReputation(c *gin.Context) {
 // @Success 200 {object} response.Envelope{data=object{circles=array}}
 // @Failure 500 {object} response.Envelope
 // @Router /users/me/circles [get]
+func (h *UserHandler) ClaimName(c *gin.Context) {
+	name, err := h.userService.ClaimName(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "failed to generate name")
+		return
+	}
+	response.OK(c, gin.H{"name": name})
+}
+
 func (h *UserHandler) GetMyCircles(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	circles, err := h.userService.GetCircles(c.Request.Context(), userID)

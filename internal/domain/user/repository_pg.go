@@ -215,6 +215,15 @@ func (r *pgRepo) Count(ctx context.Context, filter UserFilter) (int, error) {
 	return count, nil
 }
 
+func (r *pgRepo) ClaimNextName(ctx context.Context) (int64, error) {
+	var value int64
+	err := r.db.QueryRowxContext(ctx, `UPDATE user_name_counter SET value = value + 1 WHERE id = 1 RETURNING value`).Scan(&value)
+	if err != nil {
+		return 0, fmt.Errorf("claiming name: %w", err)
+	}
+	return value, nil
+}
+
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false

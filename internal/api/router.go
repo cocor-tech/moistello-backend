@@ -67,6 +67,9 @@ func NewRouter(
 			authenticated.GET("/users/me/reputation", userHandler.GetReputation)
 			authenticated.GET("/users/me/circles", userHandler.GetMyCircles)
 
+		// Public — claim a unique anonymous name (before auth)
+		api.POST("/claim-name", userHandler.ClaimName)
+
 			// Wallet routes
 			authenticated.POST("/wallets", walletHandler.CreateWallet)
 			authenticated.GET("/wallets", walletHandler.ListWallets)

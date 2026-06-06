@@ -1,0 +1,110 @@
+package user
+
+import "fmt"
+
+var adjectives = []string{
+	"Stealth", "Swift", "Quiet", "Bold", "Fierce", "Noble", "Silent", "Brave", "Cosmic", "Wild",
+	"Ancient", "Bright", "Calm", "Deep", "Eager", "Frozen", "Golden", "Hidden", "Icy", "Jade",
+	"Keen", "Lucky", "Misty", "Neon", "Odd", "Proud", "Royal", "Sharp", "Tough", "Urban",
+	"Vivid", "Wise", "Young", "Zesty", "Amber", "Bliss", "Crisp", "Dusk", "Elite", "Frost",
+	"Grand", "Hazy", "Iron", "Jolly", "Kind", "Lunar", "Merry", "Nova", "Olive", "Pearl",
+	"Quest", "Rapid", "Solar", "Topaz", "Ultra", "Velvet", "Warm", "Azure", "Blaze", "Coral",
+	"Dawn", "Ember", "Flint", "Glade", "Heath", "Ivory", "Jewel", "Karma", "Lark", "Moss",
+	"Nimbus", "Onyx", "Plush", "Raven", "Sage", "Thorn", "Umber", "Vale", "Wren", "Yarrow",
+	"Zephyr", "Alpine", "Birch", "Cedar", "Drift", "Echo", "Fjord", "Glen", "Haven", "Isle",
+	"Juniper", "Krill", "Lagoon", "Meadow", "Nacre", "Orbit", "Pine", "Quartz", "Reef", "Storm",
+	"Tide", "Urchin", "Veil", "Whisper", "Aura", "Bloom", "Cliff", "Dune", "Ever", "Flare",
+	"Grove", "Hollow", "Indigo", "Knot", "Loom", "Mirth", "Nectar", "Oaken", "Plume",
+	"Ridge", "Shale", "Thistle", "Under", "Violet", "Wisp", "Zen", "Arcane", "Beryl", "Crypt",
+	"Dragon", "Elf", "Fairy", "Giant", "Harpy", "Imp", "Jinn", "Kraken", "Lyre", "Mage",
+	"Nymph", "Ogre", "Phoenix", "Quill", "Rune", "Sprite", "Troll", "Unicorn", "Valkyrie", "Wyrm",
+	"Yeti", "Abyss", "Brine", "Crest", "Delve", "Ebony", "Fathom", "Glyph", "Horde",
+	"Kaleid", "Lumen", "Mirage", "Nebula", "Oracle", "Prism", "Quasar", "Ripple", "Sable", "Tidal",
+	"Vertex", "Warp", "Aegis", "Bolt", "Cipher", "Dynamo", "Epoch", "Flux", "Gauss", "Helix",
+	"Kernel", "Logic", "Matrix", "Neural", "Octal", "Pixel", "Quantum", "Radar", "Sigma", "Turbo",
+	"Union", "Vector", "Watt", "Xenon", "Yield", "Zetta", "Agile", "Brisk", "Chill", "Dapper",
+	"Elastic", "Fleet", "Gleam", "Humble", "Jovial", "Lithe", "Mellow", "Nimble", "Pebble", "Rustic",
+	"Snug", "Tender", "Upbeat", "Vibrant", "Whimsy", "Ample", "Bouncy", "Cozy", "Dimple", "Fizzy",
+	"Giddy", "Hilarious", "Jazzy", "Loopy", "Mimic", "Nutty", "Perky", "Quirky", "Silly", "Tipsy",
+	"Wacky", "Zany", "Breezy", "Curly", "Dizzy", "Frumpy", "Goofy", "Huffy", "Jumpy", "Kooky",
+	"Lanky", "Moppy", "Nerdy", "Plucky", "Rusty", "Sassy", "Tacky", "Weedy", "Brawny", "Chunky",
+	"Drafty", "Fluffy", "Grumpy", "Hefty", "Jumbo", "Lumpy", "Muddy", "Plump", "Scruffy", "Stocky",
+	"Sturdy", "Bulky", "Crafty", "Drowsy", "Frugal", "Gloomy", "Hungry", "Jaunty", "Lively", "Moody",
+	"Peppy", "Roomy", "Shady", "Sleepy", "Spiffy", "Testy", "Wily", "Woozy", "Beefy", "Bumpy",
+	"Canny", "Dingy", "Feisty", "Hasty", "Lacy", "Manky", "Nifty", "Paltry",
+	"Randy", "Saucy", "Tawdry", "Vasty", "Yucky", "Balky", "Cagey", "Dicey", "Flimsy",
+	"Gauzy", "Hokey", "Jiffy", "Mimsy", "Pithy", "Risky", "Seedy", "Tricky", "Veiny",
+	"Wispy", "Crisp", "Dusky", "Frosty", "Glist", "Hazel", "Jasper", "Lilac", "Mauve",
+	"Ochre", "Plum", "Russet", "Sienna", "Vermil", "Wheat", "Auburn", "Beryl",
+	"Cerise", "Denim", "Fawn", "Ginger", "Indigo", "Khaki", "Lemon", "Maroon", "Navy", "Olive",
+	"Peach", "Rust", "Salmon", "Teal", "Blond", "Chest", "Dun", "Fallow", "Honey",
+	"Ivory", "Jade", "Lime", "Mint", "Plum", "Rose", "Ruby", "Slate", "Taupe", "Violet",
+	"Abrupt", "Blunt", "Chaste", "Dire", "Earnest", "Fond", "Grim", "Hale", "Irate", "Jaded",
+	"Keen", "Lax", "Mild", "Naive", "Obtuse", "Pert", "Rash", "Stern", "Terse", "Uptight",
+	"Vain", "Wary", "Yawning", "Zealous", "Arid", "Boggy", "Chilly", "Damp", "Frigid", "Gusty",
+	"Humid", "Muggy", "Raw", "Soggy", "Tepid", "Windy", "Balmy", "Crisp", "Drizzly",
+	"Frosty", "Glacial", "Hazy", "Misty", "Rainy", "Showery", "Steamy", "Temperate", "Breezy", "Cloudy",
+	"Dewy", "Foggy", "Gloomy", "Overcast", "Smoggy", "Sunny", "Thundery", "Blustery", "Calm", "Dry",
+	"Electric", "Fair", "Grey", "Mild", "Severe", "Stormy", "Warm", "Wet", "Angry", "Crowded",
+	"Desolate", "Fertile", "Green", "Lush", "Pristine", "Rocky", "Sandy", "Untamed", "Vast", "Wooded",
+	"Barren", "Crystal", "Dark", "Enchanted", "Fallen", "Ghostly", "Haunted", "Lonely", "Misty", "Mystic",
+	"Peaceful", "Quiet", "Restless", "Sacred", "Silent", "Tranquil", "Wild", "Ancient", "Blessed", "Cursed",
+	"Forbidden", "Hidden", "Lost", "Magical", "Mythic", "Sacred", "Secret", "Silent", "Twilight", "Untold",
+	"Arctic", "Boreal", "Coastal", "Desert", "Forest", "Glacial", "Highland", "Island", "Lowland", "Mountain",
+	"Oceanic", "Polar", "River", "Sea", "Sky", "Summit", "Tundra", "Valley", "Volcanic", "Wetland",
+	"Amber", "Bronze", "Copper", "Gold", "Iron", "Nickel", "Platinum", "Silver", "Steel", "Tin",
+	"Titanium", "Zinc", "Brass", "Chrome", "Lead", "Mercury", "Quicksilver", "Alabaster", "Bone", "Coral",
+	"Crystal", "Diamond", "Emerald", "Flint", "Granite", "Ivory", "Jade", "Lapis", "Marble", "Onyx",
+	"Opal", "Pearl", "Quartz", "Ruby", "Sapphire", "Topaz", "Turquoise", "Agate", "Beryl", "Citrine",
+	"Garnet", "Jet", "Malachite", "Obsidian", "Pyrite", "Spinel", "Amethyst", "Azurite", "Bloodstone", "Coal",
+}
+
+var animals = []string{
+	"Eel", "Fox", "Hawk", "Wolf", "Bear", "Lion", "Deer", "Owl", "Tiger", "Hawk",
+	"Ant", "Bat", "Cat", "Dog", "Elk", "Fawn", "Gnu", "Hare", "Ibex", "Jay",
+	"Koala", "Lynx", "Mole", "Newt", "Oryx", "Pig", "Quail", "Roach", "Seal", "Toad",
+	"Urchin", "Vole", "Wren", "Yak", "Zebra", "Anole", "Badger", "Camel", "Dove", "Emu",
+	"Finch", "Gecko", "Heron", "Iguana", "Jackal", "Kite", "Lemur", "Manta", "Narwhal", "Okapi",
+	"Panther", "Raven", "Salmon", "Turtle", "Viper", "Whale", "Xerus", "Alpaca", "Beaver", "Coyote",
+	"Dingo", "Ermine", "Ferret", "Gopher", "Hyena", "Impala", "Jaguar", "Koala", "Llama", "Mink",
+	"Numbat", "Otter", "Panda", "Quokka", "Raccoon", "Skunk", "Tapir", "Urial", "Vicuna", "Wallaby",
+	"Xenops", "Yapok", "Zorilla", "Aardvark", "Buffalo", "Cheetah", "Dolphin", "Elephant", "Flamingo", "Gazelle",
+	"Hamster", "Ibis", "Jellyfish", "Kangaroo", "Lobster", "Monkey", "Nightingale", "Octopus", "Penguin", "Rhinoceros",
+	"Squirrel", "Tiger", "Umbrellabird", "Vulture", "Walrus", "Yak", "Anglerfish", "Barracuda", "Chameleon", "Dragonfly",
+	"Earthworm", "Falcon", "Gorilla", "Hedgehog", "Jackrabbit", "Kingfisher", "Ladybug", "Manatee", "Newt", "Ocelot",
+	"Parrot", "Rattlesnake", "Salamander", "Tarantula", "Vampirebat", "Wolverine", "Axolotl", "Bison", "Caribou", "Duckbill",
+	"Echidna", "Frog", "Giraffe", "Hippo", "Jaguarundi", "Kookaburra", "Loris", "Moose", "Nutria", "Orangutan",
+	"Peacock", "Rhea", "Sloth", "Toucan", "Uakari", "Viperfish", "Wombat", "Xrayfish", "Zebu", "Ape",
+	"Bobcat", "Cobra", "Dikdik", "Eagle", "Fossa", "Gavial", "Hornet", "Insect", "Jaguar", "Keelbill",
+	"Lizard", "Marmot", "Nautilus", "Oyster", "Porpoise", "Rabbit", "Scorpion", "Tuna", "Urutu", "Viper",
+	"Wasp", "Yabby", "Zander", "Anaconda", "Boa", "Condor", "Dartfrog", "Eft", "Firefly", "Grasshopper",
+	"Hornedowl", "Irukandji", "Jabiru", "Kestrel", "Leech", "Mantis", "Nudibranch", "Opossum", "Puffin", "Rattler",
+	"Sawfish", "Tern", "Umbrette", "Vervet", "Weasel", "Xenops", "Yaffle", "Zebra", "Addax", "Bongo",
+	"Civet", "Dugong", "Eland", "Fennec", "Gaur", "Hartebeest", "Indri", "Jaco", "Kiang", "Langur",
+	"Margay", "Nyala", "Oribi", "Puku", "Quoll", "Ratel", "Sable", "Tamarind", "Uinta", "Visacha",
+	"Wildebeest", "Xerus", "Yellowjacket", "Agouti", "Bushbaby", "Capybara", "Dikdik", "Echidna", "Fossa", "Gelada",
+	"Hierofalcon", "Ivorybill", "Jaguarondi", "Kinkajou", "Linsang", "Macaque", "Nilgai", "Ouessant", "Pademelon", "Quetzal",
+	"Rosella", "Siamang", "Tamarin", "Udzungwa", "Vanga", "Wagtail", "Xanthic", "Yellowthroat", "Zebrawood", "Aardwolf",
+	"Bandedpalm", "Cacomistle", "Dibbler", "Earedseal", "Falsegharial", "Grysbok", "Humpback", "Isabelline", "Javan", "Korrigum",
+	"Lechwe", "Muntjac", "Neddicky", "Oliveback", "Pronghorn", "Quelea", "Rorqual", "Screamer", "Tinamou", "Uguisu",
+	"Viscacha", "Waterbuck", "Xiphias", "Yellowlegs", "Zebra", "Albatross", "Bettong", "Cuscus", "Dunnart", "Echymipera",
+	"Falanouc", "Gundi", "Hutia", "Igel", "Jerdon", "Kowari", "Luatung", "Monito", "Nabarlek", "Olingo",
+	"Potoroo", "Quokka", "Rufous", "Solenodon", "Tenrec", "Ualabee", "Vombat", "Wallaroo", "Xenotrich", "Yapok",
+	"Zino", "Anchovy", "Blenny", "Clownfish", "Damselfish", "Eel", "Flounder", "Goby", "Haddock", "Icefish",
+	"Jackfish", "Killifish", "Lamprey", "Mackerel", "Needlefish", "Opah", "Parrotfish", "Rays", "Sardine", "Tetra",
+	"Uhu", "Vendace", "Wrasse", "Yellowtail", "Zebrafish", "Arowana", "Betta", "Catfish", "Dogfish", "Escolar",
+	"Flounder", "Grouper", "Halibut", "Inanga", "JohnDory", "Koi", "Lungfish", "MahiMahi", "Neontetra", "Oscar",
+	"Pufferfish", "Rasbora", "Siamese", "Triggerfish", "Umbrella", "Volitans", "Whiting", "XRay", "Yellowfin", "Angelfish",
+}
+
+func generateName(counter int64) string {
+	adjLen := int64(len(adjectives))
+	animLen := int64(len(animals))
+	suffixLen := int64(90)
+
+	adjIdx := counter % adjLen
+	animIdx := (counter / adjLen) % animLen
+	numSuffix := 10 + (counter / (adjLen * animLen)) % suffixLen
+
+	return fmt.Sprintf("%s-%s-%d", adjectives[adjIdx], animals[animIdx], numSuffix)
+}

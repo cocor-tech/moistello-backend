@@ -21,6 +21,7 @@ type Service interface {
 	IsEmailTaken(ctx context.Context, email string) (bool, error)
 	GetMoiScore(ctx context.Context, id string) (*MoiScoreResponse, error)
 	GetCircles(ctx context.Context, id string) ([]any, error)
+	ClaimName(ctx context.Context) (string, error)
 }
 
 type UpdateProfileInput struct {
@@ -194,6 +195,14 @@ func (s *userService) GetMoiScore(ctx context.Context, id string) (*MoiScoreResp
 		},
 		History: make([]MonthlyScore, 0),
 	}, nil
+}
+
+func (s *userService) ClaimName(ctx context.Context) (string, error) {
+	counter, err := s.repo.ClaimNextName(ctx)
+	if err != nil {
+		return "", fmt.Errorf("claiming name: %w", err)
+	}
+	return generateName(counter), nil
 }
 
 func (s *userService) GetCircles(ctx context.Context, id string) ([]any, error) {
