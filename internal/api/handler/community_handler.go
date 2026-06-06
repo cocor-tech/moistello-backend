@@ -186,6 +186,48 @@ func (h *CommunityHandler) LikeAnnouncement(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
+func (h *CommunityHandler) PinAnnouncement(c *gin.Context) {
+	id := c.Param("announcementId")
+	userID := middleware.GetUserID(c)
+	var req struct {
+		Pinned bool `json:"pinned"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if err := h.communitySvc.PinAnnouncement(c.Request.Context(), id, userID, req.Pinned); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true})
+}
+
+func (h *CommunityHandler) RemoveMember(c *gin.Context) {
+	communityID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	targetID := c.Param("memberId")
+	if err := h.communitySvc.RemoveMember(c.Request.Context(), communityID, userID, targetID); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true})
+}
+
+func (h *CommunityHandler) TransferOwnership(c *gin.Context) {
+	communityID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	var req struct {
+		NewOwnerID string `json:"newOwnerId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := h.communitySvc.TransferOwnership(c.Request.Context(), communityID, userID, req.NewOwnerID); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.OK(c, gin.H{"success": true})
+}
+
 func (h *CommunityHandler) GetActivity(c *gin.Context) {
 	communityID := c.Param("id")
 	events, err := h.communitySvc.GetActivity(c.Request.Context(), communityID, 50)

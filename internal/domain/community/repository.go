@@ -25,12 +25,14 @@ type Repository interface {
 	GetAnnouncements(ctx context.Context, communityID uuid.UUID, pinned bool) ([]Announcement, error)
 	DeleteAnnouncement(ctx context.Context, id uuid.UUID) error
 	LikeAnnouncement(ctx context.Context, id uuid.UUID) error
+	SetAnnouncementPin(ctx context.Context, id uuid.UUID, pinned bool) error
 
 	RecordActivity(ctx context.Context, e *ActivityEvent) error
 	GetActivity(ctx context.Context, communityID uuid.UUID, limit int) ([]ActivityEvent, error)
 
 	UpdateTotalSaved(ctx context.Context, communityID uuid.UUID) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]Community, error)
+	UpdateOwner(ctx context.Context, communityID, newOwnerID uuid.UUID) error
 }
 
 type CommunityFilter struct {

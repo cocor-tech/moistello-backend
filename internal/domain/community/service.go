@@ -28,6 +28,9 @@ type Service interface {
 	DeleteAnnouncement(ctx context.Context, id, userID string) error
 	LikeAnnouncement(ctx context.Context, id string) error
 
+	PinAnnouncement(ctx context.Context, id, userID string, pinned bool) error
+	RemoveMember(ctx context.Context, communityID, userID, targetID string) error
+	TransferOwnership(ctx context.Context, communityID, userID, newOwnerID string) error
 	GetActivity(ctx context.Context, communityID string, limit int) ([]ActivityEvent, error)
 	GetMyCommunities(ctx context.Context, userID string) ([]Community, error)
 	RecordActivity(ctx context.Context, communityID, eventType string, actorID string, targetID string, metadata map[string]interface{}) error
@@ -294,6 +297,68 @@ func (s *communityService) LikeAnnouncement(ctx context.Context, id string) erro
 		return err
 	}
 	return s.repo.LikeAnnouncement(ctx, uid)
+}
+
+func (s *communityService) PinAnnouncement(ctx context.Context, id, userID string, pinned bool) error {
+	annID, err := parseUUID(id)
+	if err != nil {
+		return err
+	}
+	return s.repo.SetAnnouncementPin(ctx, annID, pinned)
+}
+
+func (s *communityService) RemoveMember(ctx context.Context, communityID, userID, targetID string) error {
+	cid, err := parseUUID(communityID)
+	if err != nil {
+		return err
+	}
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+	tid, err := parseUUID(targetID)
+	if err != nil {
+		return err
+	}
+
+	c, err := s.repo.FindByID(ctx, cid)
+	if err != nil {
+		return err
+	}
+	if c.OwnerID != uid {
+		return apperrors.ErrForbidden
+	}
+
+	return s.repo.RemoveMember(ctx, cid, tid)
+}
+
+func (s *communityService) TransferOwnership(ctx context.Context, communityID, userID, newOwnerID string) error {
+	cid, err := parseUUID(communityID)
+	if err != nil {
+		return err
+	}
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+	nid, err := parseUUID(newOwnerID)
+	if err != nil {
+		return err
+	}
+
+	c, err := s.repo.FindByID(ctx, cid)
+	if err != nil {
+		return err
+	}
+	if c.OwnerID != uid {
+		return apperrors.ErrForbidden
+	}
+
+	if err := s.repo.UpdateOwner(ctx, cid, nid); err != nil {
+		return fmt.Errorf("transferring ownership: %w", err)
+	}
+
+	return s.repo.UpdateMemberRole(ctx, cid, uid, "member")
 }
 
 func (s *communityService) GetActivity(ctx context.Context, communityID string, limit int) ([]ActivityEvent, error) {

@@ -239,6 +239,11 @@ func (r *pgRepo) LikeAnnouncement(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (r *pgRepo) SetAnnouncementPin(ctx context.Context, id uuid.UUID, pinned bool) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE community_announcements SET is_pinned = $1 WHERE id = $2`, pinned, id)
+	return err
+}
+
 func (r *pgRepo) RecordActivity(ctx context.Context, e *ActivityEvent) error {
 	_, err := r.db.NamedExecContext(ctx, `INSERT INTO community_activity_events (id, community_id, event_type, actor_id, target_id, metadata, created_at) VALUES (:id, :community_id, :event_type, :actor_id, :target_id, :metadata, :created_at)`, e)
 	return err
@@ -284,6 +289,11 @@ func (r *pgRepo) FindByUserID(ctx context.Context, userID uuid.UUID) ([]Communit
 		communities = append(communities, *c)
 	}
 	return communities, nil
+}
+
+func (r *pgRepo) UpdateOwner(ctx context.Context, communityID, newOwnerID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE communities SET owner_id = $1 WHERE id = $2`, newOwnerID, communityID)
+	return err
 }
 
 func isUniqueViolation(err error) bool {

@@ -117,6 +117,9 @@ func NewRouter(
 			authenticated.GET("/communities/:id/announcements", communityHandler.GetAnnouncements)
 			authenticated.DELETE("/communities/:id/announcements/:announcementId", communityHandler.DeleteAnnouncement)
 			authenticated.POST("/communities/:id/announcements/:announcementId/like", communityHandler.LikeAnnouncement)
+			authenticated.PATCH("/communities/:id/announcements/:announcementId/pin", communityHandler.PinAnnouncement)
+			authenticated.DELETE("/communities/:id/members/:memberId", communityHandler.RemoveMember)
+			authenticated.POST("/communities/:id/transfer-ownership", communityHandler.TransferOwnership)
 			authenticated.GET("/communities/:id/activity", communityHandler.GetActivity)
 			authenticated.GET("/users/me/communities", communityHandler.GetMyCommunities)
 
