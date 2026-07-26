@@ -191,6 +191,9 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
+	if cfg.Stellar.MasterSecretKey == "" {
+		return nil, fmt.Errorf("stellar master secret key must be set via MOISTELLO_STELLAR_MASTER_SECRET_KEY env var")
+	}
 	cfg.Environment = v.GetString("environment")
 	return &cfg, nil
 }

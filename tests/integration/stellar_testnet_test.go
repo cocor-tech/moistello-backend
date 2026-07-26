@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -15,10 +16,16 @@ import (
 
 const (
 	masterPublicKey = "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
-	masterSecretKey = "SDDBM2MKQSV2ZPEDKTSI3IWNEUSJU5DAWW5NSRWNKJ4FABXSYGYW72FO"
 	horizonURL      = "https://horizon-testnet.stellar.org"
 	testnetPassphrase = "Test SDF Network ; September 2015"
 )
+
+func masterSecretKey() string {
+	if sk := os.Getenv("MOISTELLO_STELLAR_MASTER_SECRET_KEY"); sk != "" {
+		return sk
+	}
+	return os.Getenv("STELLAR_MASTER_SECRET_KEY")
+}
 
 type horizonAccount struct {
 	ID        string `json:"id"`
@@ -162,8 +169,8 @@ func TestStellar_KeypairFormat(t *testing.T) {
 	assert.Equal(t, "G", string(masterPublicKey[0]))
 
 	// Stellar secret keys start with S and are 56 chars base32
-	assert.Len(t, masterSecretKey, 56)
-	assert.Equal(t, "S", string(masterSecretKey[0]))
+	assert.Len(t, masterSecretKey(), 56)
+	assert.Equal(t, "S", string(masterSecretKey()[0]))
 
 	t.Logf("Public key format: ✓ (G...56 chars)")
 	t.Logf("Secret key format: ✓ (S...56 chars)")
@@ -172,7 +179,7 @@ func TestStellar_KeypairFormat(t *testing.T) {
 // ── Test 9: Config Values Loaded ──
 func TestStellar_ConfigValuesNonEmpty(t *testing.T) {
 	assert.NotEmpty(t, masterPublicKey, "master public key must be set")
-	assert.NotEmpty(t, masterSecretKey, "master secret key must be set")
+	assert.NotEmpty(t, masterSecretKey(), "master secret key must be set via env var")
 	assert.NotEmpty(t, horizonURL, "horizon URL must be set")
 	assert.NotEmpty(t, testnetPassphrase, "network passphrase must be set")
 }

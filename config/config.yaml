@@ -35,7 +35,6 @@ stellar:
   soroban_rpc_url: "https://soroban-testnet.stellar.org"
   network_passphrase: "Test SDF Network ; September 2015"
   master_public_key: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
-  master_secret_key: "SDDBM2MKQSV2ZPEDKTSI3IWNEUSJU5DAWW5NSRWNKJ4FABXSYGYW72FO"
   usdc_issuer: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
   wallet_min_balance: 10.0
 
