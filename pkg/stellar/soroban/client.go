@@ -61,30 +61,38 @@ func (c *Client) SendTransaction(ctx context.Context, signedTxEnvelope string) (
 }
 
 func (c *Client) rpcCall(ctx context.Context, body string) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.rpcURL, bytes.NewBufferString(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("rpc request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading rpc response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, stellar.ClassifyError(resp.StatusCode, respBody)
-	}
-
 	var result map[string]any
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("decoding rpc response: %w", err)
+	err := stellar.ExecuteWithBackoff(ctx, "soroban_rpcCall", func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, "POST", c.rpcURL, bytes.NewBufferString(body))
+		if err != nil {
+			return fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("rpc request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("reading rpc response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return stellar.ClassifyError(resp.StatusCode, respBody)
+		}
+
+		var res map[string]any
+		if err := json.Unmarshal(respBody, &res); err != nil {
+			return fmt.Errorf("decoding rpc response: %w", err)
+		}
+		result = res
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }
