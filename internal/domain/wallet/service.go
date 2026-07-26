@@ -481,7 +481,17 @@ func (s *service) GetWallets(ctx context.Context, userID string) ([]Wallet, erro
 }
 
 func (s *service) DeleteWallet(ctx context.Context, userID, walletID string) error {
-	return s.repo.Delete(ctx, walletID)
+	// Verify ownership before deletion to prevent IDOR attacks.
+	// A wallet must belong to the requesting user before it can be removed.
+	wallet, err := s.repo.FindByID(ctx, walletID)
+	if err != nil {
+		return fmt.Errorf("wallet not found: %w", err)
+	}
+	if wallet.UserID != userID {
+		return fmt.Errorf("unauthorized: wallet does not belong to user")
+	}
+
+	return s.repo.DeleteByOwner(ctx, walletID, userID)
 }
 
 // encryptSecret encrypts the Stellar secret key using AES-256-GCM

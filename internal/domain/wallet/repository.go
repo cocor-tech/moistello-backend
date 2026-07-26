@@ -30,7 +30,10 @@ type Repository interface {
 	FindByUserID(ctx context.Context, userID string) ([]Wallet, error)
 	FindByPublicKey(ctx context.Context, publicKey string) (*Wallet, error)
 	Delete(ctx context.Context, id string) error
-	
+	// DeleteByOwner deletes a wallet only when both walletID and userID match,
+	// preventing IDOR by enforcing ownership at the SQL level.
+	DeleteByOwner(ctx context.Context, walletID, userID string) error
+
 	// Security methods
 	CheckRateLimit(ctx context.Context, userID uuid.UUID) (bool, error)
 	IncrementRateLimit(ctx context.Context, userID uuid.UUID) error
@@ -93,6 +96,24 @@ func (r *pgRepo) FindByPublicKey(ctx context.Context, publicKey string) (*Wallet
 func (r *pgRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM wallets WHERE id = $1`, id)
 	return err
+}
+
+// DeleteByOwner deletes a wallet only when both walletID and userID match,
+// scoping the DELETE to enforce ownership at the database level.
+func (r *pgRepo) DeleteByOwner(ctx context.Context, walletID, userID string) error {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM wallets WHERE id = $1 AND user_id = $2`, walletID, userID)
+	if err != nil {
+		return fmt.Errorf("deleting wallet: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking delete result: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("wallet not found or does not belong to user")
+	}
+	return nil
 }
 
 func (r *pgRepo) CheckRateLimit(ctx context.Context, userID uuid.UUID) (bool, error) {
