@@ -27,14 +27,17 @@ rabbitmq:
     webhooks: "moistello.webhooks"
 
 stellar:
-  # For mainnet, set env vars:
-  #   MOISTELLO_STELLAR_MASTER_SECRET_KEY
-  #   MOISTELLO_STELLAR_MASTER_PUBLIC_KEY
+  # Master key credentials MUST be provided via environment variables at runtime.
+  # Set the following before starting the server:
+  #   MOISTELLO_STELLAR_MASTER_SECRET_KEY=<your-secret-key>
+  #   MOISTELLO_STELLAR_MASTER_PUBLIC_KEY=<your-public-key>
+  # Never commit actual key values to source control.
   network: "testnet"
   horizon_url: "https://horizon-testnet.stellar.org"
   soroban_rpc_url: "https://soroban-testnet.stellar.org"
   network_passphrase: "Test SDF Network ; September 2015"
-  master_public_key: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
+  master_public_key: ""
+  master_secret_key: ""
   usdc_issuer: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
   wallet_min_balance: 10.0
 

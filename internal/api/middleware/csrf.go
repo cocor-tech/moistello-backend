@@ -8,9 +8,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// CSRFTokenValidator middleware checks that state-changing requests include a
-// valid X-CSRF-Token header. The token is the last 32 characters of the user's
-// Bearer token, which the frontend derives easily.
+// CSRFTokenValidator middleware checks that state-changing requests and
+// WebSocket upgrades include a valid X-CSRF-Token header. The token is the last
+// 32 characters of the user's Bearer token, which the frontend derives easily.
 //
 // This provides CSRF protection because:
 //   - The auth token is stored in a SameSite=Lax cookie
@@ -19,12 +19,8 @@ import (
 func CSRFTokenValidator() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method
-		if method == "GET" || method == "HEAD" || method == "OPTIONS" {
-			c.Next()
-			return
-		}
-
-		if strings.EqualFold(c.GetHeader("Upgrade"), "websocket") {
+		isWebSocketUpgrade := strings.EqualFold(c.GetHeader("Upgrade"), "websocket")
+		if (method == "GET" || method == "HEAD" || method == "OPTIONS") && !isWebSocketUpgrade {
 			c.Next()
 			return
 		}

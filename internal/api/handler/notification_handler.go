@@ -4,16 +4,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/notification"
+	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
 )
 
 type NotificationHandler struct {
 	notificationService notification.Service
+	userService         user.Service
 }
 
-func NewNotificationHandler(svc notification.Service) *NotificationHandler {
-	return &NotificationHandler{notificationService: svc}
+func NewNotificationHandler(svc notification.Service, userSvc user.Service) *NotificationHandler {
+	return &NotificationHandler{notificationService: svc, userService: userSvc}
 }
 
 // @Summary List notifications
@@ -76,23 +78,35 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 }
 
 // @Summary Update notification preferences
-// @Description Updates the authenticated user's notification channel preferences and mute status.
+// @Description Persists the authenticated user's notification channel preferences and mute status.
 // @Tags Notifications
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param body body object{channels=array,muted=bool} true "Preferences"
+// @Param body body user.NotificationPrefsInput true "Preferences (channels: [\"inapp\",\"email\",\"sms\",\"push\"], muted: bool)"
 // @Success 200 {object} response.Envelope{data=object{preferences=object}}
 // @Failure 400 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
 // @Router /notifications/preferences [put]
 func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
-	var req struct {
-		Channels []string `json:"channels"`
-		Muted    bool     `json:"muted"`
-	}
+	userID := middleware.GetUserID(c)
+
+	var req user.NotificationPrefsInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"preferences": gin.H{"channels": req.Channels, "muted": req.Muted}})
+
+	u, err := h.userService.UpdateNotificationPreferences(c.Request.Context(), userID, req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{
+		"preferences": gin.H{
+			"channels": u.NotificationChannels,
+			"muted":    u.NotificationsMuted,
+		},
+	})
 }

@@ -74,7 +74,9 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		return nil, fmt.Errorf("encrypting secret key: %w", err)
 	}
 
-	// 3. Store in database FIRST (before slow Horizon ops) — use background context to avoid HTTP timeout
+	// 3. Store in database FIRST (before slow Horizon ops).
+	// Use the request context so the DB write is cancelled if the caller disconnects,
+	// preventing orphaned operations under high load (#51).
 	w := &Wallet{
 		UserID:             userID,
 		PublicKey:          kp.Address(),
@@ -83,7 +85,7 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		WalletType:         WalletTypeAuto,
 		IsPrimary:          true,
 	}
-	if err := s.repo.Create(context.Background(), w); err != nil {
+	if err := s.repo.Create(ctx, w); err != nil {
 		log.Printf("[wallet] ERROR storing wallet record for %s: %v", userID, err)
 		return nil, fmt.Errorf("creating wallet record: %w", err)
 	}
@@ -386,7 +388,7 @@ func (s *service) SendPayment(ctx context.Context, userID string, passkeySeed []
 			Status: "blocked_daily_limit", IPAddress: ipAddress, UserAgent: userAgent, CreatedAt: time.Now().UTC(),
 		})
 		if auditErr != nil { _ = auditErr }
-		return "", fmt.Errorf("daily spending limit of $%.2f exceeded", dailyLimit)
+		return "", fmt.Errorf("daily spending limit exceeded")
 	}
 
 	// ── Security Check 4: Stellar address validation ──
@@ -481,7 +483,17 @@ func (s *service) GetWallets(ctx context.Context, userID string) ([]Wallet, erro
 }
 
 func (s *service) DeleteWallet(ctx context.Context, userID, walletID string) error {
-	return s.repo.Delete(ctx, walletID)
+	// Verify ownership before deletion to prevent IDOR attacks.
+	// A wallet must belong to the requesting user before it can be removed.
+	wallet, err := s.repo.FindByID(ctx, walletID)
+	if err != nil {
+		return fmt.Errorf("wallet not found: %w", err)
+	}
+	if wallet.UserID != userID {
+		return fmt.Errorf("unauthorized: wallet does not belong to user")
+	}
+
+	return s.repo.DeleteByOwner(ctx, walletID, userID)
 }
 
 // encryptSecret encrypts the Stellar secret key using AES-256-GCM

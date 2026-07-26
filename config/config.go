@@ -146,7 +146,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.read_timeout", "10s")
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.max_header_bytes", 1048576)
-	v.SetDefault("database.url", "postgres://moistello:moistello_dev@localhost:9811/moistello?sslmode=disable")
+	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
+	// must be set explicitly. An empty URL will cause a clear startup failure rather than
+	// silently connecting with plaintext credentials and SSL disabled.
 	v.SetDefault("database.max_open_conns", 50)
 	v.SetDefault("database.max_idle_conns", 10)
 	v.SetDefault("database.conn_max_lifetime", "30m")
@@ -195,5 +197,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("stellar master secret key must be set via MOISTELLO_STELLAR_MASTER_SECRET_KEY env var")
 	}
 	cfg.Environment = v.GetString("environment")
+
+	// #42: Require DATABASE_URL and enforce SSL in non-development environments.
+	if cfg.Database.URL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required: set the MOISTELLO_DATABASE_URL environment variable")
+	}
+	if cfg.Environment != "development" && strings.Contains(cfg.Database.URL, "sslmode=disable") {
+		return nil, fmt.Errorf("DATABASE_URL must not use sslmode=disable outside development; use sslmode=require or stronger")
+	}
+
 	return &cfg, nil
 }

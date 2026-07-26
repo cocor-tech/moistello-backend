@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/moistello/backend/internal/domain/audit"
 	"github.com/moistello/backend/internal/domain/circle"
@@ -84,14 +86,26 @@ func (h *AdminHandler) ListCircles(c *gin.Context) {
 }
 
 // @Summary [Admin] Get audit log
-// @Description Returns the system audit log. Admin only.
+// @Description Returns a paginated system audit log. Admin only.
 // @Tags Admin
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} response.Envelope{data=object{entries=array}}
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(20)
+// @Success 200 {object} response.Envelope{data=object{entries=array},meta=response.PaginationMeta}
+// @Failure 500 {object} response.Envelope
 // @Router /admin/audit-log [get]
 func (h *AdminHandler) GetAuditLog(c *gin.Context) {
-	response.OK(c, gin.H{"entries": []any{}, "message": "audit log not yet implemented"})
+	page, limit, _ := pagination.Parse(c)
+	entries, total, err := h.auditRepo.List(c.Request.Context(), page, limit)
+	if err != nil {
+		response.InternalError(c, "failed to fetch audit log")
+		return
+	}
+	if entries == nil {
+		entries = []audit.AuditEntry{}
+	}
+	response.OKWithMeta(c, gin.H{"entries": entries}, response.NewPaginationMeta(page, limit, total))
 }
 
 // @Summary [Admin] Get system metrics
@@ -100,14 +114,34 @@ func (h *AdminHandler) GetAuditLog(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} response.Envelope{data=object{totalUsers=number,totalCircles=number,activeCircles=number,totalVolumeUSD=number}}
+// @Failure 500 {object} response.Envelope
 // @Router /admin/metrics [get]
 func (h *AdminHandler) GetMetrics(c *gin.Context) {
+	totalUsers, err := h.userRepo.Count(c.Request.Context(), user.UserFilter{})
+	if err != nil {
+		response.InternalError(c, "failed to fetch user count")
+		return
+	}
+
+	allFilter := circle.CircleFilter{Page: 1, Limit: 1}
+	_, totalCircles, err := h.circleService.List(c.Request.Context(), allFilter)
+	if err != nil {
+		response.InternalError(c, "failed to fetch circle count")
+		return
+	}
+
+	activeFilter := circle.CircleFilter{Status: circle.CircleStatusActive, Page: 1, Limit: 1}
+	_, activeCircles, err := h.circleService.List(c.Request.Context(), activeFilter)
+	if err != nil {
+		response.InternalError(c, "failed to fetch active circle count")
+		return
+	}
+
 	response.OK(c, gin.H{
-		"totalUsers":  0,
-		"totalCircles": 0,
-		"activeCircles": 0,
-		"totalVolumeUSD": 0,
-		"message": "metrics endpoint placeholder",
+		"totalUsers":     totalUsers,
+		"totalCircles":   totalCircles,
+		"activeCircles":  activeCircles,
+		"totalVolumeUSD": 0, // On-chain volume is tracked by the indexer; expose via dedicated endpoint when ready.
 	})
 }
 
@@ -130,5 +164,10 @@ func (h *AdminHandler) UpdateFeatureFlag(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"flag": req.Flag, "value": req.Value, "message": "feature flag updated"})
+	// Feature-flag persistence (e.g. DB or Redis) is not yet implemented.
+	// Return 501 so callers know the operation was not performed.
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"success": false,
+		"error":   "feature flag persistence not yet implemented",
+	})
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -246,6 +247,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	if h.emailSvc != nil {
 		h.emailSvc.SendOTP(req.Email, code)
+	} else {
+		log.Printf("[auth] verification code for %s: %s", req.Email, code)
 	}
 
 	response.Created(c, gin.H{
@@ -363,6 +366,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 		if h.emailSvc != nil {
 			h.emailSvc.SendOTP(req.Email, code)
+		} else {
+			log.Printf("[auth] verification code for %s: %s", req.Email, code)
 		}
 		response.OK(c, gin.H{"needsVerification": true, "message": "email not verified. code sent."})
 		return

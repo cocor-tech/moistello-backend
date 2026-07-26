@@ -33,18 +33,21 @@ func NewWebSocketHandler(hub *ws.Hub) *WebSocketHandler {
 	}
 }
 
-// HandleWebSocket upgrades the HTTP connection to a WebSocket and registers
-// the new client with the Hub. The userID is extracted from the Gin context
-// (set by the auth middleware) or defaults to "anonymous".
+// HandleWebSocket upgrades an authenticated HTTP connection to a WebSocket and
+// registers the new client with the Hub.
 func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
+	userID := c.GetString("userID")
+	if userID == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "authentication required",
+		})
 		return
 	}
 
-	userID := c.GetString("userID")
-	if userID == "" {
-		userID = "anonymous"
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
 	}
 
 	client := ws.NewClient(h.hub, conn, userID)

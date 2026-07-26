@@ -39,7 +39,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client bound to the given Hub and WebSocket
-// connection. The userID identifies the authenticated user (or "anonymous").
+// connection. The userID identifies the authenticated user.
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 	return &Client{
 		ID:     uuid.New().String(),

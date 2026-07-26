@@ -40,7 +40,13 @@ func NewRouter(
 	r.GET("/health/ready", healthHandler.Ready)
 
 	// WebSocket — real-time events
-	r.GET("/ws", wsHandler.HandleWebSocket)
+	wsRoute := r.Group("")
+	wsRoute.Use(middleware.AuthMiddleware(jwtPublicKey))
+	wsRoute.Use(middleware.TokenBlocklistMiddleware(redisClient))
+	wsRoute.Use(middleware.CSRFTokenValidator())
+	{
+		wsRoute.GET("/ws", wsHandler.HandleWebSocket)
+	}
 
 	api := r.Group("/v1")
 	{

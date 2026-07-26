@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/moistello/backend/internal/api/middleware"
@@ -326,7 +328,7 @@ func (h *CircleHandler) Dispute(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)
 	var req struct {
-		Reason string `json:"reason" binding:"required"`
+		Reason  string `json:"reason" binding:"required"`
 		Details string `json:"details"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -335,8 +337,13 @@ func (h *CircleHandler) Dispute(c *gin.Context) {
 	}
 	_ = circleID
 	_ = userID
-	_ = req
-	response.OK(c, gin.H{"success": true, "message": "dispute submitted"})
+	// TODO: persist dispute to a disputes table, notify organizer, and trigger
+	// an audit log entry.  Return 501 until the dispute domain is implemented
+	// so callers are not misled into thinking the dispute was recorded.
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"success": false,
+		"error":   "dispute submission is not yet implemented",
+	})
 }
 
 func (h *CircleHandler) Vote(c *gin.Context) {
@@ -351,8 +358,13 @@ func (h *CircleHandler) Vote(c *gin.Context) {
 	}
 	_ = circleID
 	_ = userID
-	_ = req
-	response.OK(c, gin.H{"success": true, "message": "vote recorded"})
+	// TODO: record vote in a circle_votes table and determine winner when all
+	// eligible members have voted.  Return 501 until the vote domain is
+	// implemented.
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"success": false,
+		"error":   "circle voting is not yet implemented",
+	})
 }
 
 func (h *CircleHandler) AuctionBid(c *gin.Context) {
@@ -367,6 +379,11 @@ func (h *CircleHandler) AuctionBid(c *gin.Context) {
 	}
 	_ = circleID
 	_ = userID
-	_ = req
-	response.OK(c, gin.H{"success": true, "message": "bid placed"})
+	// TODO: record bid in a circle_auction_bids table and resolve when the
+	// auction window closes.  Return 501 until the auction domain is
+	// implemented.
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"success": false,
+		"error":   "auction bidding is not yet implemented",
+	})
 }

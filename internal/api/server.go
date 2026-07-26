@@ -13,10 +13,20 @@ import (
 	"github.com/moistello/backend/config"
 )
 
+// maxBodyBytes is the hard limit on request body size (4 MB).
+// This prevents memory exhaustion from oversized request bodies (#49).
+const maxBodyBytes = 4 * 1024 * 1024 // 4 MB
+
 func RunServer(router http.Handler, cfg config.ServerConfig) error {
+	// Wrap the router so every request body is capped at maxBodyBytes.
+	limitedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		router.ServeHTTP(w, r)
+	})
+
 	srv := &http.Server{
 		Addr:           fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler:        router,
+		Handler:        limitedHandler,
 		ReadTimeout:    cfg.ReadTimeout,
 		WriteTimeout:   cfg.WriteTimeout,
 		MaxHeaderBytes: cfg.MaxHeaderBytes,

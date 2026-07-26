@@ -11,6 +11,12 @@ type UserHandler struct {
 	userService user.Service
 }
 
+type publicUserProfile struct {
+	PublicKey   string  `json:"publicKey"`
+	DisplayName *string `json:"displayName,omitempty"`
+	MoiScore    int     `json:"moiScore"`
+}
+
 func NewUserHandler(svc user.Service) *UserHandler {
 	return &UserHandler{userService: svc}
 }
@@ -91,7 +97,11 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 		response.NotFound(c, "user not found")
 		return
 	}
-	response.OK(c, gin.H{"user": u})
+	response.OK(c, gin.H{"user": publicUserProfile{
+		PublicKey:   u.WalletAddress,
+		DisplayName: u.DisplayName,
+		MoiScore:    u.MoiScore,
+	}})
 }
 
 // @Summary Get my reputation score

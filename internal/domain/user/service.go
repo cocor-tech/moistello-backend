@@ -20,6 +20,7 @@ type Service interface {
 	Create(ctx context.Context, wallet string) (*User, error)
 	Delete(ctx context.Context, id string) error
 	UpdateProfile(ctx context.Context, id string, updates UpdateProfileInput) (*User, error)
+	UpdateNotificationPreferences(ctx context.Context, id string, prefs NotificationPrefsInput) (*User, error)
 	IsEmailTaken(ctx context.Context, email string) (bool, error)
 	GetMoiScore(ctx context.Context, id string) (*MoiScoreResponse, error)
 	GetCircles(ctx context.Context, id string) ([]any, error)
@@ -33,6 +34,17 @@ type UpdateProfileInput struct {
 	CountryCode       *string `json:"countryCode"`
 	PreferredLanguage *string `json:"preferredLanguage"`
 	SessionTTL        *int    `json:"sessionTtlMinutes"`
+}
+
+// NotificationPrefsInput carries the user's desired notification channel
+// preferences and mute flag for the UpdateNotificationPreferences endpoint.
+type NotificationPrefsInput struct {
+	// Channels is the ordered list of channels the user wants to receive
+	// notifications on (e.g. ["inapp", "email"]).  At least one channel must
+	// be provided.
+	Channels []string `json:"channels" binding:"required,min=1"`
+	// Muted, when true, suppresses all notifications for this user.
+	Muted bool `json:"muted"`
 }
 
 type MoiScoreResponse struct {
@@ -199,6 +211,42 @@ func (s *userService) UpdateProfile(ctx context.Context, id string, updates Upda
 
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("updating profile: %w", err)
+	}
+	return u, nil
+}
+
+// UpdateNotificationPreferences persists the user's notification channel list
+// and mute flag. It validates that every channel name is one of the known
+// values before saving.
+func (s *userService) UpdateNotificationPreferences(ctx context.Context, id string, prefs NotificationPrefsInput) (*User, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	validChannels := map[string]struct{}{
+		"inapp": {}, "email": {}, "sms": {}, "push": {},
+	}
+	for _, ch := range prefs.Channels {
+		if _, ok := validChannels[ch]; !ok {
+			return nil, fmt.Errorf("invalid notification channel %q: must be one of inapp, email, sms, push", ch)
+		}
+	}
+
+	u, err := s.repo.FindByID(ctx, uid)
+	if err != nil {
+		if err == apperrors.ErrNotFound {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("finding user for notification prefs update: %w", err)
+	}
+
+	u.NotificationChannels = prefs.Channels
+	u.NotificationsMuted = prefs.Muted
+	u.UpdatedAt = time.Now().UTC()
+
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("saving notification preferences: %w", err)
 	}
 	return u, nil
 }

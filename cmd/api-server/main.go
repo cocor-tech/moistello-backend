@@ -151,7 +151,7 @@ func main() {
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)
 	payoutH := handler.NewPayoutHandler(payoutSvc, payoutRepo)
 	inviteH := handler.NewInviteHandler(inviteSvc)
-	notifH := handler.NewNotificationHandler(notificationSvc)
+	notifH := handler.NewNotificationHandler(notificationSvc, userSvc)
 	adminH := handler.NewAdminHandler(userSvc, userRepo, circleSvc, auditRepo)
 	webhookH := handler.NewWebhookHandler()
 	healthH := handler.NewHealthHandler(db.DB, redisClient)
