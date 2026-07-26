@@ -74,7 +74,9 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		return nil, fmt.Errorf("encrypting secret key: %w", err)
 	}
 
-	// 3. Store in database FIRST (before slow Horizon ops) — use background context to avoid HTTP timeout
+	// 3. Store in database FIRST (before slow Horizon ops).
+	// Use the request context so the DB write is cancelled if the caller disconnects,
+	// preventing orphaned operations under high load (#51).
 	w := &Wallet{
 		UserID:             userID,
 		PublicKey:          kp.Address(),
@@ -83,7 +85,7 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		WalletType:         WalletTypeAuto,
 		IsPrimary:          true,
 	}
-	if err := s.repo.Create(context.Background(), w); err != nil {
+	if err := s.repo.Create(ctx, w); err != nil {
 		log.Printf("[wallet] ERROR storing wallet record for %s: %v", userID, err)
 		return nil, fmt.Errorf("creating wallet record: %w", err)
 	}
