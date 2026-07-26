@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/moistello/backend/config"
+	"github.com/rs/zerolog/log"
 )
 
 // maxBodyBytes is the hard limit on request body size (4 MB).
@@ -52,19 +52,20 @@ func RunServer(router http.Handler, cfg config.ServerConfig) error {
 		}
 	}()
 
+	var redirectSrv *http.Server
 	if cfg.TLSEnabled && cfg.HTTPRedirectPort > 0 {
+		redirectAddr := fmt.Sprintf("%s:%d", cfg.Host, cfg.HTTPRedirectPort)
+		redirectSrv = &http.Server{
+			Addr:         redirectAddr,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 5 * time.Second,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				target := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			}),
+		}
 		go func() {
-			redirectAddr := fmt.Sprintf("%s:%d", cfg.Host, cfg.HTTPRedirectPort)
 			log.Info().Str("addr", redirectAddr).Msg("starting HTTP-to-HTTPS redirect server")
-			redirectSrv := &http.Server{
-				Addr:         redirectAddr,
-				ReadTimeout:  5 * time.Second,
-				WriteTimeout: 5 * time.Second,
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					target := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
-					http.Redirect(w, r, target, http.StatusMovedPermanently)
-				}),
-			}
 			if err := redirectSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Error().Err(err).Msg("HTTP redirect server failed")
 			}
@@ -73,20 +74,25 @@ func RunServer(router http.Handler, cfg config.ServerConfig) error {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	sig := <-quit
 
-	log.Info().Msg("shutting down server...")
+	log.Info().Str("signal", sig.String()).Msg("received shutdown signal, stopping new connections and draining in-flight requests...")
 
-	// context.Background() is correct here: this is a top-level lifecycle context
-	// for graceful server shutdown, not tied to any request.
+	// Stop accepting new keep-alive connections
+	srv.SetKeepAlivesEnabled(false)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if redirectSrv != nil {
+		_ = redirectSrv.Shutdown(ctx)
+	}
+
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Error().Err(err).Msg("server forced to shutdown")
+		log.Error().Err(err).Msg("server forced to shutdown due to timeout or error")
 		return err
 	}
 
-	log.Info().Msg("server exited")
+	log.Info().Msg("server gracefully shut down with all in-flight requests drained")
 	return nil
 }

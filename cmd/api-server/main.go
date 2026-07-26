@@ -154,7 +154,7 @@ func main() {
 	notifH := handler.NewNotificationHandler(notificationSvc, userSvc)
 	adminH := handler.NewAdminHandler(userSvc, userRepo, circleSvc, auditRepo)
 	webhookH := handler.NewWebhookHandler()
-	healthH := handler.NewHealthHandler(db.DB, redisClient)
+	healthH := handler.NewHealthHandler(db.DB, redisClient, cfg.Stellar.SorobanRPCURL, cfg.Stellar.HorizonURL)
 	passkeyCredH := handler.NewPasskeyCredentialHandler(db)
 	walletH := handler.NewWalletHandler(walletSvc)
 

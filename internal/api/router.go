@@ -39,6 +39,10 @@ func NewRouter(
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Ready)
 
+	swaggerH := handler.NewSwaggerHandler()
+	r.GET("/api-docs", swaggerH.ServeUI)
+	r.GET("/api-docs/openapi.json", swaggerH.ServeJSON)
+
 	// WebSocket — real-time events
 	wsRoute := r.Group("")
 	wsRoute.Use(middleware.AuthMiddleware(jwtPublicKey))

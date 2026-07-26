@@ -186,9 +186,9 @@ func (r *pgRepo) List(ctx context.Context, filter UserFilter) ([]User, error) {
 
 	var args []interface{}
 	if filter.Search != "" {
-		query += ` WHERE (display_name ILIKE $1 OR wallet_address ILIKE $1 OR email ILIKE $1)`
+		query += ` WHERE (display_name ILIKE $1 OR wallet_address ILIKE $2 OR email ILIKE $3)`
 		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern)
+		args = append(args, searchPattern, searchPattern, searchPattern)
 	}
 
 	query += ` ORDER BY created_at DESC LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)

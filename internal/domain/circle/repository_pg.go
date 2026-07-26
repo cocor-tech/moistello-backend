@@ -135,9 +135,9 @@ func (r *pgRepo) List(ctx context.Context, filter CircleFilter) ([]Circle, error
 	var whereClauses []string
 
 	if filter.Search != "" {
-		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+1)+")")
+		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+2)+")")
 		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern)
+		args = append(args, searchPattern, searchPattern)
 	}
 	if filter.Status != "" {
 		whereClauses = append(whereClauses, "status = $"+fmt.Sprint(len(args)+1))
@@ -197,9 +197,9 @@ func (r *pgRepo) Count(ctx context.Context, filter CircleFilter) (int, error) {
 	var whereClauses []string
 
 	if filter.Search != "" {
-		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+1)+")")
+		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+2)+")")
 		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern)
+		args = append(args, searchPattern, searchPattern)
 	}
 	if filter.Status != "" {
 		whereClauses = append(whereClauses, "status = $"+fmt.Sprint(len(args)+1))

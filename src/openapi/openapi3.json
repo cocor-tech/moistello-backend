@@ -1,0 +1,280 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Moistello Backend API",
+    "description": "Decentralized savings circles on Stellar. REST API for circles, contributions, payouts, reputation, and governance generated from Zod schemas.",
+    "version": "1.0.0",
+    "termsOfService": "https://moistello.com/terms",
+    "contact": {
+      "name": "Moistello Support",
+      "email": "support@moistello.com",
+      "url": "https://moistello.com/support"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://moistello.com/v1",
+      "description": "Production Server"
+    },
+    {
+      "url": "http://localhost:8080/v1",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check with Dependency Status",
+        "description": "Reports operational status and latency for PostgreSQL, Redis, Stellar RPC, and Horizon dependencies.",
+        "tags": ["Health"],
+        "parameters": [
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout duration per check (e.g., 5s)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "5s"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Health status response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Readiness Check",
+        "description": "Readiness probe — checks database and Redis connectivity.",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "Service is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ready" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready"
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "User Registration",
+        "description": "Register a new user account with email and password.",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully"
+          },
+          "400": {
+            "description": "Validation Error"
+          }
+        }
+      }
+    },
+    "/auth/verify": {
+      "post": {
+        "summary": "Verify Wallet Signature / Login",
+        "description": "Authenticate user via signed challenge or email/password credentials.",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyAuthPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful, returns JWT access token"
+          }
+        }
+      }
+    },
+    "/circles": {
+      "get": {
+        "summary": "List Circles",
+        "description": "Get paginated list of savings circles with optional filters.",
+        "tags": ["Circles"],
+        "responses": {
+          "200": {
+            "description": "List of savings circles"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Circle",
+        "description": "Create a new savings circle on Stellar. Validates input via Zod schema.",
+        "tags": ["Circles"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCirclePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Circle created successfully"
+          }
+        }
+      }
+    },
+    "/circles/{id}": {
+      "get": {
+        "summary": "Get Circle Details",
+        "tags": ["Circles"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Circle object" },
+          "404": { "description": "Circle not found" }
+        }
+      }
+    },
+    "/contributions": {
+      "post": {
+        "summary": "Submit Contribution",
+        "tags": ["Contributions"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Contribution recorded" }
+        }
+      }
+    },
+    "/payouts": {
+      "get": {
+        "summary": "List Payouts",
+        "tags": ["Payouts"],
+        "responses": {
+          "200": { "description": "List of payouts" }
+        }
+      }
+    },
+    "/communities": {
+      "get": {
+        "summary": "List Communities",
+        "tags": ["Communities"],
+        "responses": {
+          "200": { "description": "List of savings communities" }
+        }
+      }
+    },
+    "/savings/goals": {
+      "get": {
+        "summary": "List Savings Goals",
+        "tags": ["Savings Goals"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Savings goals" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "ok" },
+          "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DependencyStatus"
+            }
+          }
+        }
+      },
+      "DependencyStatus": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "healthy" },
+          "latency": { "type": "string", "example": "1.2ms" },
+          "message": { "type": "string", "example": "connected" }
+        }
+      },
+      "RegisterPayload": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 8 }
+        }
+      },
+      "VerifyAuthPayload": {
+        "type": "object",
+        "properties": {
+          "wallet_address": { "type": "string" },
+          "signature": { "type": "string" }
+        }
+      },
+      "CreateCirclePayload": {
+        "type": "object",
+        "required": ["name", "contribution_amount", "currency", "frequency"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "contribution_amount": { "type": "number" },
+          "currency": { "type": "string", "example": "USDC" },
+          "frequency": { "type": "string", "example": "monthly" },
+          "max_members": { "type": "integer", "default": 10 }
+        }
+      }
+    }
+  }
+}
