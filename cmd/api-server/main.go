@@ -143,7 +143,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to load JWT public key")
 	}
 
-	wsH := handler.NewWebSocketHandler(wsHub)
+	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo)
 	userH := handler.NewUserHandler(userSvc)

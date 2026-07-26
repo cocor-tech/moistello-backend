@@ -17,17 +17,24 @@ type WebSocketHandler struct {
 }
 
 // NewWebSocketHandler creates a new WebSocketHandler backed by the given Hub.
-// The upgrader is configured with generous buffer sizes and a permissive
-// origin check for development; restrict CheckOrigin in production.
-func NewWebSocketHandler(hub *ws.Hub) *WebSocketHandler {
+// The upgrader is configured with generous buffer sizes and strict origin checking.
+func NewWebSocketHandler(hub *ws.Hub, allowedOrigins []string) *WebSocketHandler {
 	return &WebSocketHandler{
 		hub: hub,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// Allow all origins in development; restrict in production
-				return true
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true
+				}
+				for _, allowed := range allowedOrigins {
+					if origin == allowed {
+						return true
+					}
+				}
+				return false
 			},
 		},
 	}

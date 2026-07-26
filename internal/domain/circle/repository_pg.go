@@ -123,59 +123,52 @@ func (r *pgRepo) List(ctx context.Context, filter CircleFilter) ([]Circle, error
 	}
 	offset := (page - 1) * limit
 
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx+1))
-		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern, searchPattern)
-		argIdx += 2
-	}
-	if filter.Status != "" {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
-		args = append(args, filter.Status)
-		argIdx++
-	}
-	if filter.Type != "" {
-		conditions = append(conditions, fmt.Sprintf("circle_type = $%d", argIdx))
-		args = append(args, filter.Type)
-		argIdx++
-	}
-	if filter.CommunityID != nil {
-		conditions = append(conditions, fmt.Sprintf("community_id = $%d", argIdx))
-		args = append(args, *filter.CommunityID)
-		argIdx++
-	}
-	if filter.OrganizerID != nil {
-		conditions = append(conditions, fmt.Sprintf("organizer_id = $%d", argIdx))
-		args = append(args, *filter.OrganizerID)
-		argIdx++
-	}
-	if len(filter.ExcludeIDs) > 0 {
-		placeholders := make([]string, len(filter.ExcludeIDs))
-		for i, id := range filter.ExcludeIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, id)
-			argIdx++
-		}
-		conditions = append(conditions, fmt.Sprintf("id NOT IN (%s)", strings.Join(placeholders, ",")))
-	}
-
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = "WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	query := fmt.Sprintf(`SELECT id, contract_id, community_id, name, description, circle_type, payout_type,
+	query := `SELECT id, contract_id, community_id, name, description, circle_type, payout_type,
 		contribution_amount, currency, frequency, max_members, min_moi_score,
 		collateral_percent, late_fee_percent, grace_period_hours, max_strikes,
 		(SELECT COUNT(*) FROM circle_members WHERE circle_id = circles.id AND status = 'active') as member_count,
 		requires_invite,
 		start_date, end_date, status, current_round, total_contributions,
-		organizer_id, created_at, updated_at FROM circles %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		whereClause, argIdx, argIdx+1)
+		organizer_id, created_at, updated_at FROM circles`
+
+	var args []interface{}
+	var whereClauses []string
+
+	if filter.Search != "" {
+		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+1)+")")
+		searchPattern := "%" + filter.Search + "%"
+		args = append(args, searchPattern)
+	}
+	if filter.Status != "" {
+		whereClauses = append(whereClauses, "status = $"+fmt.Sprint(len(args)+1))
+		args = append(args, filter.Status)
+	}
+	if filter.Type != "" {
+		whereClauses = append(whereClauses, "circle_type = $"+fmt.Sprint(len(args)+1))
+		args = append(args, filter.Type)
+	}
+	if filter.CommunityID != nil {
+		whereClauses = append(whereClauses, "community_id = $"+fmt.Sprint(len(args)+1))
+		args = append(args, *filter.CommunityID)
+	}
+	if filter.OrganizerID != nil {
+		whereClauses = append(whereClauses, "organizer_id = $"+fmt.Sprint(len(args)+1))
+		args = append(args, *filter.OrganizerID)
+	}
+	if len(filter.ExcludeIDs) > 0 {
+		placeholders := make([]string, len(filter.ExcludeIDs))
+		for i, id := range filter.ExcludeIDs {
+			placeholders[i] = "$" + fmt.Sprint(len(args)+1+i)
+			args = append(args, id)
+		}
+		whereClauses = append(whereClauses, "id NOT IN ("+strings.Join(placeholders, ",")+")")
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	query += " ORDER BY created_at DESC LIMIT $" + fmt.Sprint(len(args)+1) + " OFFSET $" + fmt.Sprint(len(args)+2)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryxContext(ctx, query, args...)
@@ -199,43 +192,36 @@ func (r *pgRepo) List(ctx context.Context, filter CircleFilter) ([]Circle, error
 }
 
 func (r *pgRepo) Count(ctx context.Context, filter CircleFilter) (int, error) {
-	var conditions []string
+	query := "SELECT COUNT(*) FROM circles"
 	var args []interface{}
-	argIdx := 1
+	var whereClauses []string
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx+1))
+		whereClauses = append(whereClauses, "(name ILIKE $"+fmt.Sprint(len(args)+1)+" OR description ILIKE $"+fmt.Sprint(len(args)+1)+")")
 		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern, searchPattern)
-		argIdx += 2
+		args = append(args, searchPattern)
 	}
 	if filter.Status != "" {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
+		whereClauses = append(whereClauses, "status = $"+fmt.Sprint(len(args)+1))
 		args = append(args, filter.Status)
-		argIdx++
 	}
 	if filter.Type != "" {
-		conditions = append(conditions, fmt.Sprintf("circle_type = $%d", argIdx))
+		whereClauses = append(whereClauses, "circle_type = $"+fmt.Sprint(len(args)+1))
 		args = append(args, filter.Type)
-		argIdx++
 	}
 	if filter.CommunityID != nil {
-		conditions = append(conditions, fmt.Sprintf("community_id = $%d", argIdx))
+		whereClauses = append(whereClauses, "community_id = $"+fmt.Sprint(len(args)+1))
 		args = append(args, *filter.CommunityID)
-		argIdx++
 	}
 	if filter.OrganizerID != nil {
-		conditions = append(conditions, fmt.Sprintf("organizer_id = $%d", argIdx))
+		whereClauses = append(whereClauses, "organizer_id = $"+fmt.Sprint(len(args)+1))
 		args = append(args, *filter.OrganizerID)
-		argIdx++
 	}
 
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
-	query := fmt.Sprintf("SELECT COUNT(*) FROM circles %s", whereClause)
 	var count int
 	err := r.db.QueryRowxContext(ctx, query, args...).Scan(&count)
 	if err != nil {
@@ -339,7 +325,7 @@ func (r *pgRepo) GetMembers(ctx context.Context, circleID uuid.UUID) ([]CircleMe
 }
 
 func (r *pgRepo) GetMemberCount(ctx context.Context, circleID uuid.UUID) (int, error) {
-	query := `SELECT COUNT(*) FROM circle_members WHERE circle_id = $1 AND status = $2`
+	query := `SELECT COUNT(*) FROM circle_members WHERE circle_id = $1 AND status = $2 FOR UPDATE`
 	var count int
 	err := r.db.QueryRowxContext(ctx, query, circleID, MemberStatusActive).Scan(&count)
 	if err != nil {

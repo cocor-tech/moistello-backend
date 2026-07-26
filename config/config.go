@@ -26,11 +26,15 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port           int           `mapstructure:"port"`
-	Host           string        `mapstructure:"host"`
-	ReadTimeout    time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout   time.Duration `mapstructure:"write_timeout"`
-	MaxHeaderBytes int           `mapstructure:"max_header_bytes"`
+	Port              int           `mapstructure:"port"`
+	Host              string        `mapstructure:"host"`
+	ReadTimeout       time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout      time.Duration `mapstructure:"write_timeout"`
+	MaxHeaderBytes    int           `mapstructure:"max_header_bytes"`
+	TLSEnabled        bool          `mapstructure:"tls_enabled"`
+	TLSCertPath       string        `mapstructure:"tls_cert_path"`
+	TLSKeyPath        string        `mapstructure:"tls_key_path"`
+	HTTPRedirectPort  int           `mapstructure:"http_redirect_port"`
 }
 
 type DatabaseConfig struct {
@@ -146,6 +150,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.read_timeout", "10s")
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.max_header_bytes", 1048576)
+	v.SetDefault("server.tls_enabled", false)
+	v.SetDefault("server.http_redirect_port", 80)
 	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
 	// must be set explicitly. An empty URL will cause a clear startup failure rather than
 	// silently connecting with plaintext credentials and SSL disabled.

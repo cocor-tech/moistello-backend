@@ -290,60 +290,32 @@ func (s *circleService) Create(ctx context.Context, organizerID string, input Cr
 		return c
 	}
 
-	if s.tx != nil {
-		var circle *Circle
-		err := s.tx.WithTransaction(ctx, func(repo Repository) error {
-			c := buildCircle()
-			if err := repo.Create(ctx, c); err != nil {
-				if err == apperrors.ErrConflict {
-					return fmt.Errorf("circle name conflict: %w", err)
-				}
-				return fmt.Errorf("creating circle: %w", err)
+	var circle *Circle
+	err = s.tx.WithTransaction(ctx, func(repo Repository) error {
+		c := buildCircle()
+		if err := repo.Create(ctx, c); err != nil {
+			if err == apperrors.ErrConflict {
+				return fmt.Errorf("circle name conflict: %w", err)
 			}
-			member := &CircleMember{
-				CircleID: c.ID,
-				UserID:   orgID,
-				Position: 1,
-				Status:   MemberStatusActive,
-				JoinedAt: now,
-			}
-			if err := repo.CreateMember(ctx, member); err != nil {
-				return fmt.Errorf("adding organizer as member: %w", err)
-			}
-			circle = c
-			return nil
-		})
-		if err == nil && s.broadcaster != nil && circle != nil {
-			s.broadcaster.CircleCreated(ctx, circle.ID.String(), organizerID)
+			return fmt.Errorf("creating circle: %w", err)
 		}
-		return circle, err
-	}
-
-	c := buildCircle()
-	if err := s.repo.Create(ctx, c); err != nil {
-		if err == apperrors.ErrConflict {
-			return nil, fmt.Errorf("circle name conflict: %w", err)
+		member := &CircleMember{
+			CircleID: c.ID,
+			UserID:   orgID,
+			Position: 1,
+			Status:   MemberStatusActive,
+			JoinedAt: now,
 		}
-		return nil, fmt.Errorf("creating circle: %w", err)
+		if err := repo.CreateMember(ctx, member); err != nil {
+			return fmt.Errorf("adding organizer as member: %w", err)
+		}
+		circle = c
+		return nil
+	})
+	if err == nil && s.broadcaster != nil && circle != nil {
+		s.broadcaster.CircleCreated(ctx, circle.ID.String(), organizerID)
 	}
-
-	member := &CircleMember{
-		CircleID: c.ID,
-		UserID:   orgID,
-		Position: 1,
-		Status:   MemberStatusActive,
-		JoinedAt: now,
-	}
-	if err := s.repo.CreateMember(ctx, member); err != nil {
-		_ = s.repo.Delete(ctx, c.ID)
-		return nil, fmt.Errorf("adding organizer as member: %w", err)
-	}
-
-	if s.broadcaster != nil {
-		s.broadcaster.CircleCreated(ctx, c.ID.String(), organizerID)
-	}
-
-	return c, nil
+	return circle, err
 }
 
 func (s *circleService) Start(ctx context.Context, id, userID string) error {
@@ -399,49 +371,28 @@ func (s *circleService) Cancel(ctx context.Context, id, userID string) error {
 		return err
 	}
 
-	if s.tx != nil {
-		return s.tx.WithTransaction(ctx, func(repo Repository) error {
-			c, err := repo.FindByID(ctx, uid)
-			if err != nil {
-				return fmt.Errorf("finding circle for cancel: %w", err)
-			}
-			if c.OrganizerID != usrID {
-				return ErrNotOrganizer
-			}
-			if c.Status != CircleStatusPending {
-				return ErrCircleNotActive
-			}
-			c.Status = CircleStatusCancelled
-			c.UpdatedAt = time.Now().UTC()
-			if err := repo.Update(ctx, c); err != nil {
-				return fmt.Errorf("cancelling circle: %w", err)
-			}
-			return nil
-		})
-	}
-
-	c, err := s.repo.FindByID(ctx, uid)
-	if err != nil {
-		return fmt.Errorf("finding circle for cancel: %w", err)
-	}
-
-	if c.OrganizerID != usrID {
-		return ErrNotOrganizer
-	}
-	if c.Status != CircleStatusPending {
-		return ErrCircleNotActive
-	}
-
-	c.Status = CircleStatusCancelled
-	c.UpdatedAt = time.Now().UTC()
-
-	if err := s.repo.Update(ctx, c); err != nil {
-		return fmt.Errorf("cancelling circle: %w", err)
-	}
-	if s.broadcaster != nil {
+	err = s.tx.WithTransaction(ctx, func(repo Repository) error {
+		c, err := repo.FindByID(ctx, uid)
+		if err != nil {
+			return fmt.Errorf("finding circle for cancel: %w", err)
+		}
+		if c.OrganizerID != usrID {
+			return ErrNotOrganizer
+		}
+		if c.Status != CircleStatusPending {
+			return ErrCircleNotActive
+		}
+		c.Status = CircleStatusCancelled
+		c.UpdatedAt = time.Now().UTC()
+		if err := repo.Update(ctx, c); err != nil {
+			return fmt.Errorf("cancelling circle: %w", err)
+		}
+		return nil
+	})
+	if err == nil && s.broadcaster != nil {
 		s.broadcaster.CircleStatusChanged(ctx, id, "cancelled")
 	}
-	return nil
+	return err
 }
 
 func (s *circleService) Join(ctx context.Context, circleID, userID string, inviteCode string) error {
@@ -487,64 +438,33 @@ func (s *circleService) Join(ctx context.Context, circleID, userID string, invit
 		return ErrInvalidInvite
 	}
 
-	if s.tx != nil {
-		return s.tx.WithTransaction(ctx, func(repo Repository) error {
-			count, err := repo.GetMemberCount(ctx, cid)
-			if err != nil {
-				return fmt.Errorf("checking member count: %w", err)
-			}
-			if count >= c.MaxMembers {
-				return ErrCircleFull
-			}
-			existing, err := repo.FindMemberByCircleAndUser(ctx, cid, uid)
-			if err == nil && existing != nil {
-				return ErrAlreadyMember
-			}
-			if err := repo.CreateMember(ctx, &CircleMember{
-				CircleID: cid,
-				UserID:   uid,
-				Position: count + 1,
-				Status:   MemberStatusActive,
-				JoinedAt: time.Now().UTC(),
-			}); err != nil {
-				return fmt.Errorf("joining circle: %w", err)
-			}
-			return nil
-		})
-		if err == nil && s.broadcaster != nil {
-			s.broadcaster.MemberJoined(ctx, circleID, userID)
+	err = s.tx.WithTransaction(ctx, func(repo Repository) error {
+		count, err := repo.GetMemberCount(ctx, cid)
+		if err != nil {
+			return fmt.Errorf("checking member count: %w", err)
+		}
+		if count >= c.MaxMembers {
+			return ErrCircleFull
+		}
+		existing, err := repo.FindMemberByCircleAndUser(ctx, cid, uid)
+		if err == nil && existing != nil {
+			return ErrAlreadyMember
+		}
+		if err := repo.CreateMember(ctx, &CircleMember{
+			CircleID: cid,
+			UserID:   uid,
+			Position: count + 1,
+			Status:   MemberStatusActive,
+			JoinedAt: time.Now().UTC(),
+		}); err != nil {
+			return fmt.Errorf("joining circle: %w", err)
 		}
 		return nil
-	}
-
-	count, err := s.repo.GetMemberCount(ctx, cid)
-	if err != nil {
-		return fmt.Errorf("checking member count: %w", err)
-	}
-	if count >= c.MaxMembers {
-		return ErrCircleFull
-	}
-
-	existing, err := s.repo.FindMemberByCircleAndUser(ctx, cid, uid)
-	if err == nil && existing != nil {
-		return ErrAlreadyMember
-	}
-
-	if err := s.repo.CreateMember(ctx, &CircleMember{
-		CircleID: cid,
-		UserID:   uid,
-		Position: count + 1,
-		Status:   MemberStatusActive,
-		JoinedAt: time.Now().UTC(),
-	}); err != nil {
-		return fmt.Errorf("joining circle: %w", err)
-	}
-
-	if s.broadcaster != nil {
+	})
+	if err == nil && s.broadcaster != nil {
 		s.broadcaster.MemberJoined(ctx, circleID, userID)
 	}
-
-	return nil
+	return err
 }
 
 func (s *circleService) Exit(ctx context.Context, circleID, userID string) error {

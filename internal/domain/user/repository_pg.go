@@ -179,27 +179,19 @@ func (r *pgRepo) List(ctx context.Context, filter UserFilter) ([]User, error) {
 	}
 	offset := (page - 1) * limit
 
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(display_name ILIKE $%d OR wallet_address ILIKE $%d OR email ILIKE $%d)", argIdx, argIdx+1, argIdx+2))
-		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern, searchPattern, searchPattern)
-		argIdx += 3
-	}
-
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = "WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	query := fmt.Sprintf(`SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
+	query := `SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
-		created_at, updated_at FROM users %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		whereClause, argIdx, argIdx+1)
+		created_at, updated_at FROM users`
+
+	var args []interface{}
+	if filter.Search != "" {
+		query += ` WHERE (display_name ILIKE $1 OR wallet_address ILIKE $1 OR email ILIKE $1)`
+		searchPattern := "%" + filter.Search + "%"
+		args = append(args, searchPattern)
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT $` + fmt.Sprint(len(args)+1) + ` OFFSET $` + fmt.Sprint(len(args)+2)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryxContext(ctx, query, args...)
@@ -223,23 +215,15 @@ func (r *pgRepo) List(ctx context.Context, filter UserFilter) ([]User, error) {
 }
 
 func (r *pgRepo) Count(ctx context.Context, filter UserFilter) (int, error) {
-	var conditions []string
+	query := "SELECT COUNT(*) FROM users"
 	var args []interface{}
-	argIdx := 1
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(display_name ILIKE $%d OR wallet_address ILIKE $%d OR email ILIKE $%d)", argIdx, argIdx+1, argIdx+2))
+		query += " WHERE (display_name ILIKE $1 OR wallet_address ILIKE $1 OR email ILIKE $1)"
 		searchPattern := "%" + filter.Search + "%"
-		args = append(args, searchPattern, searchPattern, searchPattern)
-		argIdx += 3
+		args = append(args, searchPattern)
 	}
 
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = "WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	query := fmt.Sprintf("SELECT COUNT(*) FROM users %s", whereClause)
 	var count int
 	err := r.db.QueryRowxContext(ctx, query, args...).Scan(&count)
 	if err != nil {

@@ -34,10 +34,38 @@ func RunServer(router http.Handler, cfg config.ServerConfig) error {
 
 	go func() {
 		log.Info().Str("addr", srv.Addr).Msg("starting API server")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if cfg.TLSEnabled {
+			if cfg.TLSCertPath == "" || cfg.TLSKeyPath == "" {
+				log.Fatal().Msg("TLS enabled but TLS certificate or key path not provided")
+			}
+			err = srv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("server failed")
 		}
 	}()
+
+	if cfg.TLSEnabled && cfg.HTTPRedirectPort > 0 {
+		go func() {
+			redirectAddr := fmt.Sprintf("%s:%d", cfg.Host, cfg.HTTPRedirectPort)
+			log.Info().Str("addr", redirectAddr).Msg("starting HTTP-to-HTTPS redirect server")
+			redirectSrv := &http.Server{
+				Addr:         redirectAddr,
+				ReadTimeout:  5 * time.Second,
+				WriteTimeout: 5 * time.Second,
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					target := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
+					http.Redirect(w, r, target, http.StatusMovedPermanently)
+				}),
+			}
+			if err := redirectSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Error().Err(err).Msg("HTTP redirect server failed")
+			}
+		}()
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
