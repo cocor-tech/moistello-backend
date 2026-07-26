@@ -104,7 +104,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		response.Unauthorized(c, "invalid refresh token")
 		return
 	}
-	response.OK(c, gin.H{"token": tokenPair.AccessToken, "refreshToken": tokenPair.RefreshToken})
+	response.OK(c, gin.H{"token": tokenPair.AccessToken, "refreshToken": tokenPair.RefreshToken, "csrfToken": tokenPair.CSRFToken})
 }
 
 // @Summary Get current user
@@ -325,7 +325,7 @@ func (h *AuthHandler) RegisterVerify(c *gin.Context) {
 	}
 
 	response.Created(c, gin.H{
-		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "user": u,
+		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "csrfToken": pair.CSRFToken, "user": u,
 	})
 }
 
@@ -380,7 +380,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "user": u,
+		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "csrfToken": pair.CSRFToken, "user": u,
 	})
 }
 
@@ -445,7 +445,7 @@ func (h *AuthHandler) PasskeyVerify(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "user": u,
+		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "csrfToken": pair.CSRFToken, "user": u,
 	})
 }
 
@@ -561,7 +561,7 @@ func (h *AuthHandler) Recovery(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "user": u,
+		"token": pair.AccessToken, "refreshToken": pair.RefreshToken, "csrfToken": pair.CSRFToken, "user": u,
 	})
 }
 

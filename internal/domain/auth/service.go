@@ -49,14 +49,31 @@ type authService struct {
 }
 
 func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, jwtPrivateKeyPath, jwtPublicKeyPath string) (Service, error) {
-	privateKeyPEM, err := os.ReadFile(jwtPrivateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading JWT private key: %w", err)
+	var privateKeyPEM, publicKeyPEM []byte
+	var err error
+
+	if privateKey := os.Getenv("JWT_PRIVATE_KEY"); privateKey != "" {
+		privateKeyPEM = []byte(privateKey)
+	} else {
+		privateKeyPEM, err = os.ReadFile(jwtPrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading JWT private key: %w", err)
+		}
 	}
-	publicKeyPEM, err := os.ReadFile(jwtPublicKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading JWT public key: %w", err)
+
+	if publicKey := os.Getenv("JWT_PUBLIC_KEY"); publicKey != "" {
+		publicKeyPEM = []byte(publicKey)
+	} else {
+		publicKeyPEM, err = os.ReadFile(jwtPublicKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading JWT public key: %w", err)
+		}
 	}
+
+	if privateKeyPEM == nil || publicKeyPEM == nil {
+		return nil, fmt.Errorf("[SECURITY CRITICAL] JWT keys must be provided via JWT_PRIVATE_KEY and JWT_PUBLIC_KEY environment variables or secure file paths")
+	}
+
 	return &authService{
 		redis:         redisClient,
 		nonceTTL:      nonceTTL,
@@ -155,25 +172,36 @@ func (s *authService) CreateSession(ctx context.Context, userID uuid.UUID, sessi
 	refreshToken := hex.EncodeToString(refreshBytes)
 	tokenHash := sha256Hash(refreshToken)
 
+	csrfBytes := make([]byte, 32)
+	if _, err := rand.Read(csrfBytes); err != nil {
+		return nil, fmt.Errorf("generating CSRF token: %w", err)
+	}
+	csrfToken := hex.EncodeToString(csrfBytes)
+
 	userIDStr := userID.String()
 
-	// Store session with device metadata
 	sessionData := fmt.Sprintf("%s|%s|%d", userIDStr, deviceInfo, time.Now().Unix())
 	sessionKey := fmt.Sprintf("session:%s", tokenHash)
 	if err := s.redis.Set(ctx, sessionKey, sessionData, s.refreshTTL).Err(); err != nil {
 		return nil, fmt.Errorf("storing session in redis: %w", err)
 	}
 
+	csrfKey := fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(accessToken)))
+	if err := s.redis.Set(ctx, csrfKey, csrfToken, sessionTTL).Err(); nil != err {
+		return nil, fmt.Errorf("storing CSRF token in redis: %w", err)
+	}
+
 	// Index session by user for bulk operations (logout, force-invalidate)
 	userSessionsKey := fmt.Sprintf("user:sessions:%s", userIDStr)
-	if err := s.redis.SAdd(ctx, userSessionsKey, tokenHash).Err(); err != nil {
+	if err := s.redis.SAdd(ctx, userSessionsKey, tokenHash).Err(); nil != err {
 		log.Warn().Err(err).Msg("failed to index user session — non-fatal")
 	}
-	s.redis.Expire(ctx, userSessionsKey, s.refreshTTL)
+	s.redis.Expire(ctx, userSessionsKey, sessionTTL)
 
 	return &TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		CSRFToken:    csrfToken,
 	}, nil
 }
 

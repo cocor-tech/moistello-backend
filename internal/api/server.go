@@ -24,6 +24,10 @@ func RunServer(router http.Handler, cfg config.ServerConfig) error {
 		router.ServeHTTP(w, r)
 	})
 
+	if !cfg.TLSEnabled {
+		log.Warn().Str("addr", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)).Msg("TLS is not enabled — all traffic including authentication tokens is transmitted in plaintext")
+	}
+
 	srv := &http.Server{
 		Addr:           fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler:        limitedHandler,

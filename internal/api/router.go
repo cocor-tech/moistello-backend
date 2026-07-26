@@ -43,7 +43,7 @@ func NewRouter(
 	wsRoute := r.Group("")
 	wsRoute.Use(middleware.AuthMiddleware(jwtPublicKey))
 	wsRoute.Use(middleware.TokenBlocklistMiddleware(redisClient))
-	wsRoute.Use(middleware.CSRFTokenValidator())
+	wsRoute.Use(middleware.CSRFTokenValidator(redisClient))
 	{
 		wsRoute.GET("/ws", wsHandler.HandleWebSocket)
 	}
@@ -65,7 +65,7 @@ func NewRouter(
 		authenticated := api.Group("")
 		authenticated.Use(middleware.AuthMiddleware(jwtPublicKey))
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
-		authenticated.Use(middleware.CSRFTokenValidator())
+		authenticated.Use(middleware.CSRFTokenValidator(redisClient))
 		{
 			authenticated.POST("/auth/me", authHandler.Me)
 			authenticated.POST("/auth/logout", authHandler.Logout)

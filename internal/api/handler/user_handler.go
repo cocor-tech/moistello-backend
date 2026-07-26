@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/user"
@@ -9,6 +12,7 @@ import (
 
 type UserHandler struct {
 	userService user.Service
+	redisClient interface{}
 }
 
 type publicUserProfile struct {
@@ -17,12 +21,12 @@ type publicUserProfile struct {
 	MoiScore    int     `json:"moiScore"`
 }
 
-func NewUserHandler(svc user.Service) *UserHandler {
-	return &UserHandler{userService: svc}
+func NewUserHandler(svc user.Service, redisClient interface{}) *UserHandler {
+	return &UserHandler{userService: svc, redisClient: redisClient}
 }
 
 // @Summary Get my profile
-// @Description Returns the authenticated user's profile.
+// @Description Returns the authenticated user's public profile.
 // @Tags Users
 // @Produce json
 // @Security BearerAuth
@@ -36,7 +40,11 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 		response.NotFound(c, "user not found")
 		return
 	}
-	response.OK(c, gin.H{"user": u})
+	response.OK(c, gin.H{"user": publicUserProfile{
+		PublicKey:   u.WalletAddress,
+		DisplayName: u.DisplayName,
+		MoiScore:    u.MoiScore,
+	}})
 }
 
 // @Summary Update my profile
@@ -61,10 +69,14 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"user": u})
+	response.OK(c, gin.H{"user": publicUserProfile{
+		PublicKey:   u.WalletAddress,
+		DisplayName: u.DisplayName,
+		MoiScore:    u.MoiScore,
+	}})
 }
 
-// DeleteUser permanently deletes the authenticated user's account.
+// DeleteUser permanently deletes the authenticated user's account and blocklists all active tokens.
 // DELETE /users/me
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userID := middleware.GetUserID(c)
@@ -73,12 +85,23 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		response.Unauthorized(c, "missing or invalid token")
+		return
+	}
+	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+	if expiry, err := middleware.ExtractTokenExpiry(tokenStr); err == nil {
+		middleware.BlocklistToken(c.Request.Context(), h.redisClient, tokenStr, expiry)
+	}
+
+	middleware.BlocklistUserRefreshTokens(c.Request.Context(), h.redisClient, userID)
+
 	if err := h.userService.Delete(c.Request.Context(), userID); err != nil {
 		response.InternalError(c, "failed to delete account: "+err.Error())
 		return
 	}
 
-	// Also blocklist all tokens
 	response.OK(c, gin.H{"success": true})
 }
 

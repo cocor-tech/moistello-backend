@@ -29,4 +29,5 @@ type JWTCustomClaims struct {
 type TokenPair struct {
 	AccessToken  string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
+	CSRFToken    string `json:"csrfToken,omitempty"`
 }

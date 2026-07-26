@@ -35,7 +35,7 @@ func TestUserHandler_GetByID_ReturnsSanitizedPublicProfile(t *testing.T) {
 			SessionTTLMinutes: 1440,
 			EmailVerified:     true,
 		},
-	})
+	}, nil)
 
 	r := gin.New()
 	r.GET("/v1/users/:id", h.GetByID)
