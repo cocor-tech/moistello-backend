@@ -1,0 +1,3 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS notification_channels TEXT[]    NOT NULL DEFAULT ARRAY['inapp'],
+    ADD COLUMN IF NOT EXISTS notifications_muted   BOOLEAN   NOT NULL DEFAULT FALSE;

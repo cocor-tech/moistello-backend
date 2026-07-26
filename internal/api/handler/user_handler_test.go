@@ -105,3 +105,7 @@ func (s *fakeUserService) GetCircles(context.Context, string) ([]any, error) {
 func (s *fakeUserService) ClaimName(context.Context) (string, error) {
 	return "", nil
 }
+
+func (s *fakeUserService) UpdateNotificationPreferences(_ context.Context, _ string, _ user.NotificationPrefsInput) (*user.User, error) {
+	return nil, nil
+}

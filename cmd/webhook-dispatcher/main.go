@@ -11,7 +11,12 @@ import (
 )
 
 func main() {
-	cfg, _ := config.Load(".")
+	cfg, err := config.Load(".")
+	if err != nil {
+		// log.Fatal calls os.Exit(1) internally; zerolog writes to stderr by
+		// default before Init() is called, so this is safe even before Init().
+		log.Fatal().Err(err).Msg("failed to load configuration — webhook dispatcher cannot start")
+	}
 	logger.Init(cfg.Logging.Level, cfg.Logging.Format)
 	log.Info().Msg("webhook dispatcher starting...")
 

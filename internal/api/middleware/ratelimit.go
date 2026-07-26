@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,6 +14,11 @@ import (
 	"github.com/moistello/backend/config"
 )
 
+// errRedisUnavailable is returned when Redis cannot be reached during a rate
+// limit check. The middleware translates this into a 503 Service Unavailable
+// (fail-closed) rather than allowing the request through.
+var errRedisUnavailable = errors.New("rate limiter: Redis unavailable")
+
 func RateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := "ratelimit:g:" + c.ClientIP()
@@ -22,7 +28,16 @@ func RateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConfig) 
 			limit = cfg.Authenticated
 		}
 
-		allowed, remaining, ttl := checkLimit(c, redisClient, key, limit)
+		allowed, remaining, ttl, err := checkLimit(c, redisClient, key, limit)
+		if err != nil {
+			// Redis is down — fail closed with 503.
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"error":   "rate limiter unavailable, try again later",
+			})
+			return
+		}
+
 		setRateLimitHeaders(c, limit, remaining, ttl)
 
 		if !allowed {
@@ -42,7 +57,16 @@ func AuthRateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConf
 		key := "ratelimit:a:" + c.ClientIP()
 		limit := cfg.Auth
 
-		allowed, remaining, ttl := checkLimit(c, redisClient, key, limit)
+		allowed, remaining, ttl, err := checkLimit(c, redisClient, key, limit)
+		if err != nil {
+			// Redis is down — fail closed with 503.
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"error":   "rate limiter unavailable, try again later",
+			})
+			return
+		}
+
 		setRateLimitHeaders(c, limit, remaining, ttl)
 
 		if !allowed {
@@ -60,7 +84,15 @@ func AuthRateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConf
 func PerResourceRateLimitMiddleware(redisClient *redis.Client, resource string, limit int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := fmt.Sprintf("ratelimit:r:%s:%s", resource, c.ClientIP())
-		allowed, remaining, ttl := checkLimitWithWindow(c, redisClient, key, limit, window)
+		allowed, remaining, ttl, err := checkLimitWithWindow(c, redisClient, key, limit, window)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"error":   "rate limiter unavailable, try again later",
+			})
+			return
+		}
+
 		setRateLimitHeaders(c, limit, remaining, ttl)
 
 		if !allowed {
@@ -75,17 +107,21 @@ func PerResourceRateLimitMiddleware(redisClient *redis.Client, resource string, 
 	}
 }
 
-func checkLimit(c *gin.Context, redisClient *redis.Client, key string, limit int) (bool, int, time.Duration) {
+func checkLimit(c *gin.Context, redisClient *redis.Client, key string, limit int) (bool, int, time.Duration, error) {
 	return checkLimitWithWindow(c, redisClient, key, limit, 1*time.Minute)
 }
 
-func checkLimitWithWindow(c *gin.Context, redisClient *redis.Client, key string, limit int, window time.Duration) (bool, int, time.Duration) {
+// checkLimitWithWindow implements a simple counter-based rate limiter.
+// It returns (allowed, remaining, ttl, err).
+// err is non-nil only when Redis is unreachable — callers must treat this as a
+// hard failure (fail-closed) and return 503 to the client.
+func checkLimitWithWindow(c *gin.Context, redisClient *redis.Client, key string, limit int, window time.Duration) (bool, int, time.Duration, error) {
 	reqCtx := c.Request.Context()
 
 	current, err := redisClient.Get(reqCtx, key).Int()
 	if err != nil && err != redis.Nil {
-		log.Warn().Err(err).Str("key", key).Msg("rate limit check failed, allowing")
-		return true, limit, 0
+		log.Error().Err(err).Str("key", key).Msg("rate limit check failed: Redis unreachable, failing closed")
+		return false, 0, 0, errRedisUnavailable
 	}
 
 	remaining := limit - current - 1
@@ -98,18 +134,18 @@ func checkLimitWithWindow(c *gin.Context, redisClient *redis.Client, key string,
 		if err != nil || ttl < 0 {
 			ttl = window
 		}
-		return false, 0, ttl
+		return false, 0, ttl, nil
 	}
 
 	pipe := redisClient.Pipeline()
 	pipe.Incr(reqCtx, key)
 	pipe.Expire(reqCtx, key, window)
 	if _, err := pipe.Exec(reqCtx); err != nil {
-		log.Warn().Err(err).Str("key", key).Msg("rate limit pipeline failed, allowing")
-		return true, limit, 0
+		log.Error().Err(err).Str("key", key).Msg("rate limit pipeline failed: Redis unreachable, failing closed")
+		return false, 0, 0, errRedisUnavailable
 	}
 
-	return true, remaining, window
+	return true, remaining, window, nil
 }
 
 func setRateLimitHeaders(c *gin.Context, limit, remaining int, ttl time.Duration) {
