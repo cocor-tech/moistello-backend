@@ -143,10 +143,44 @@ Redis token bucket with sliding window, preventing API abuse.
 | Command | Purpose |
 |---------|---------|
 | `docker-up` | Start PostgreSQL, Redis, RabbitMQ |
-| `migrate-up` | Apply schema migrations |
+| `migrate-up` | Apply pending schema migrations |
+| `migrate-down` | Roll back the last migration (`STEPS=n` for more) |
+| `migrate-status` | List applied and pending migrations |
 | `run` | Start API server |
 | `lint` | Run golangci-lint |
 | `test` | Run test suite |
+
+### Database Migrations
+
+Migrations live in `internal/database/migrations` and are compiled into the
+binary, so no SQL files need to be shipped alongside a deploy. Each one is a pair
+of files named `<version>_<name>.up.sql` and `<version>_<name>.down.sql`; the
+version is a zero-padded number that must be unique and is applied in ascending
+order. A migration and its `schema_migrations` bookkeeping row share a
+transaction, and the runner holds a Postgres advisory lock so concurrent
+replicas cannot apply the same migration twice.
+
+The API server applies pending migrations at startup by default. Set
+`database.auto_migrate: false` (or `MOISTELLO_DATABASE_AUTO_MIGRATE=false`) to
+run them as a separate deploy step instead — the server then logs a warning
+listing the migrations the database is missing and starts normally.
+
+To add a migration, create the next version pair and verify it:
+
+```bash
+make migrate-status   # find the current highest version
+make migrate-up
+make migrate-down     # confirm the down file reverses cleanly
+```
+
+### Request Logging
+
+Every request produces one structured JSON log line with `request_id`, `method`,
+`path`, `route`, `status`, `latency_ms`, `ip` and — for authenticated requests —
+`user_id`. Lines are emitted at error level for 5xx responses, warn for 4xx and
+info otherwise. An upstream `X-Request-ID` header is reused as the correlation ID
+when present and echoed on the response, so a trace can be followed across
+services.
 
 ### Testing
 ```bash
