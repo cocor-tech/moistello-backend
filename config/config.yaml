@@ -12,6 +12,7 @@ database:
   max_idle_conns: 10
   conn_max_lifetime: "30m"
   migration_path: ""
+  auto_migrate: true
 
 redis:
   url: "redis://localhost:6379"

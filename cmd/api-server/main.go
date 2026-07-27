@@ -18,12 +18,15 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api"
 	"github.com/moistello/backend/internal/api/handler"
+	"github.com/moistello/backend/internal/database"
 	"github.com/moistello/backend/internal/domain/audit"
 	"github.com/moistello/backend/internal/domain/auth"
 	"github.com/moistello/backend/internal/domain/circle"
@@ -68,6 +71,40 @@ func (a *communityAdapter) IsMember(ctx context.Context, communityID, userID uui
 	return a.repo.IsMember(ctx, communityID, userID)
 }
 
+// startupMigrationTimeout bounds schema work at boot so a migration that blocks
+// on a lock cannot hang the server indefinitely.
+const startupMigrationTimeout = 5 * time.Minute
+
+// applyMigrations brings the schema up to date before the server starts serving.
+// With autoMigrate disabled it only reports migrations the database is missing,
+// leaving the schema untouched for a separate deploy step to apply.
+func applyMigrations(db *sql.DB, autoMigrate bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), startupMigrationTimeout)
+	defer cancel()
+
+	if !autoMigrate {
+		pending, err := database.PendingVersions(ctx, db)
+		if err != nil {
+			return err
+		}
+		if len(pending) > 0 {
+			log.Warn().Strs("pending", pending).Msg("automatic migrations are disabled and the database schema is behind the code")
+		}
+		return nil
+	}
+
+	applied, err := database.Up(ctx, db)
+	if err != nil {
+		return err
+	}
+	if applied > 0 {
+		log.Info().Int("count", applied).Msg("applied pending database migrations")
+	} else {
+		log.Info().Msg("database schema is up to date")
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.Load(".")
 	if err != nil {
@@ -83,6 +120,10 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer db.Close()
+
+	if err := applyMigrations(db.DB, cfg.Database.AutoMigrate); err != nil {
+		log.Fatal().Err(err).Msg("database migrations failed")
+	}
 
 	redisClient, err := redis.New(cfg.Redis)
 	if err != nil {

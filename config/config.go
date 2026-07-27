@@ -44,6 +44,10 @@ type DatabaseConfig struct {
 	MaxIdleConns   int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 	MigrationPath  string        `mapstructure:"migration_path"`
+	// AutoMigrate applies pending migrations during API server startup. Disable
+	// it where migrations are run as a separate deploy step; the server then
+	// only warns when the schema is behind the code.
+	AutoMigrate bool `mapstructure:"auto_migrate"`
 }
 
 type RedisConfig struct {
@@ -159,6 +163,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("database.max_open_conns", 50)
 	v.SetDefault("database.max_idle_conns", 10)
 	v.SetDefault("database.conn_max_lifetime", "30m")
+	v.SetDefault("database.auto_migrate", true)
 	v.SetDefault("redis.url", "redis://localhost:6379")
 	v.SetDefault("redis.pool_size", 20)
 	v.SetDefault("rabbitmq.url", "amqp://guest:guest@localhost:5672/")
