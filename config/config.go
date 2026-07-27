@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -200,11 +201,32 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
 	if cfg.Stellar.MasterSecretKey == "" {
+		if envKey := os.Getenv("MOISTELLO_STELLAR_MASTER_SECRET_KEY"); envKey != "" {
+			cfg.Stellar.MasterSecretKey = envKey
+		} else if envKey := os.Getenv("STELLAR_MASTER_SECRET_KEY"); envKey != "" {
+			cfg.Stellar.MasterSecretKey = envKey
+		}
+	}
+	if cfg.Stellar.MasterPublicKey == "" {
+		if envKey := os.Getenv("MOISTELLO_STELLAR_MASTER_PUBLIC_KEY"); envKey != "" {
+			cfg.Stellar.MasterPublicKey = envKey
+		} else if envKey := os.Getenv("STELLAR_MASTER_PUBLIC_KEY"); envKey != "" {
+			cfg.Stellar.MasterPublicKey = envKey
+		}
+	}
+	if cfg.Stellar.MasterSecretKey == "" {
 		return nil, fmt.Errorf("stellar master secret key must be set via MOISTELLO_STELLAR_MASTER_SECRET_KEY env var")
 	}
 	cfg.Environment = v.GetString("environment")
 
 	// #42: Require DATABASE_URL and enforce SSL in non-development environments.
+	if cfg.Database.URL == "" {
+		if dbURL := os.Getenv("MOISTELLO_DATABASE_URL"); dbURL != "" {
+			cfg.Database.URL = dbURL
+		} else if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+			cfg.Database.URL = dbURL
+		}
+	}
 	if cfg.Database.URL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required: set the MOISTELLO_DATABASE_URL environment variable")
 	}

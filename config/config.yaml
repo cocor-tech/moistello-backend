@@ -36,8 +36,6 @@ stellar:
   horizon_url: "https://horizon-testnet.stellar.org"
   soroban_rpc_url: "https://soroban-testnet.stellar.org"
   network_passphrase: "Test SDF Network ; September 2015"
-  master_public_key: ""
-  master_secret_key: ""
   usdc_issuer: "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
   wallet_min_balance: 10.0
 
