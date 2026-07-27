@@ -1,4 +1,4 @@
-.PHONY: help build run test lint migrate-up migrate-down docker-build docker-up docker-down
+.PHONY: help build run test lint migrate-up migrate-down migrate-status docker-build docker-up docker-down
 
 help:
 	@echo "Moistello Backend - Available Commands:"
@@ -6,8 +6,9 @@ help:
 	@echo "  make run          - Run API server"
 	@echo "  make test         - Run all tests"
 	@echo "  make lint         - Run linter"
-	@echo "  make migrate-up   - Apply all migrations"
-	@echo "  make migrate-down - Rollback last migration"
+	@echo "  make migrate-up     - Apply all pending migrations"
+	@echo "  make migrate-down   - Rollback the last migration (STEPS=n for more)"
+	@echo "  make migrate-status - Show applied and pending migrations"
 	@echo "  make docker-up    - Start Docker Compose services"
 	@echo "  make docker-down  - Stop Docker Compose services"
 	@echo "  make docker-build - Build Docker images"
@@ -35,7 +36,10 @@ migrate-up:
 	go run ./cmd/migrate --direction up
 
 migrate-down:
-	go run ./cmd/migrate --direction down
+	go run ./cmd/migrate --direction down --steps $(or $(STEPS),1)
+
+migrate-status:
+	go run ./cmd/migrate --direction status
 
 seed:
 	go run ./scripts/seed.go
