@@ -716,7 +716,7 @@ func emailToWalletAddr(email string) string {
 func deriveWalletSeed(email string) string {
 	pepper := os.Getenv("MOISTELLO_WALLET_PEPPER")
 	if pepper == "" {
-		pepper = "moistello-local-dev"
+		log.Fatal("MOISTELLO_WALLET_PEPPER environment variable is not set")
 	}
 	seed := sha256.Sum256([]byte(email + ":" + pepper))
 	return hex.EncodeToString(seed[:])
@@ -725,10 +725,10 @@ func deriveWalletSeed(email string) string {
 // getPasskeyPepper returns the passkey pepper for wallet seed derivation.
 func getPasskeyPepper() string {
 	p := os.Getenv("MOISTELLO_PASSKEY_PEPPER")
-	if p != "" {
-		return p
+	if p == "" {
+		log.Fatal("MOISTELLO_PASSKEY_PEPPER environment variable is not set")
 	}
-	return "moistello-local-dev"
+	return p
 }
 
 // sha256HashForLogout computes SHA-256 for refresh token session lookup.

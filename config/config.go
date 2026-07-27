@@ -234,5 +234,12 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("DATABASE_URL must not use sslmode=disable outside development; use sslmode=require or stronger")
 	}
 
+	if os.Getenv("MOISTELLO_WALLET_PEPPER") == "" {
+		return nil, fmt.Errorf("MOISTELLO_WALLET_PEPPER environment variable is required")
+	}
+	if os.Getenv("MOISTELLO_PASSKEY_PEPPER") == "" {
+		return nil, fmt.Errorf("MOISTELLO_PASSKEY_PEPPER environment variable is required")
+	}
+
 	return &cfg, nil
 }

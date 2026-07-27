@@ -28,8 +28,30 @@ type APIResponse struct {
 	Success    bool            `json:"success"`
 	Data       any             `json:"data,omitempty"`
 	Error      string          `json:"error,omitempty"`
+	Code       string          `json:"code,omitempty"`
+	StatusCode int             `json:"statusCode,omitempty"`
+	RequestID  string          `json:"requestId,omitempty"`
 	Meta       *PaginationMeta `json:"meta,omitempty"`
 	Pagination *Pagination     `json:"pagination,omitempty"`
+}
+
+func getReqID(c *gin.Context) string {
+	if reqID, exists := c.Get("requestID"); exists {
+		if s, ok := reqID.(string); ok {
+			return s
+		}
+	}
+	return c.GetHeader("X-Request-ID")
+}
+
+func ErrorWithCode(c *gin.Context, statusCode int, code, msg string) {
+	c.JSON(statusCode, APIResponse{
+		Success:    false,
+		Error:      msg,
+		Code:       code,
+		StatusCode: statusCode,
+		RequestID:  getReqID(c),
+	})
 }
 
 func OK(c *gin.Context, data any) {
@@ -53,31 +75,31 @@ func Created(c *gin.Context, data any) {
 }
 
 func BadRequest(c *gin.Context, msg string) {
-	c.JSON(http.StatusBadRequest, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusBadRequest, "BAD_REQUEST", msg)
 }
 
 func Unauthorized(c *gin.Context, msg string) {
-	c.JSON(http.StatusUnauthorized, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusUnauthorized, "UNAUTHORIZED", msg)
 }
 
 func Forbidden(c *gin.Context, msg string) {
-	c.JSON(http.StatusForbidden, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusForbidden, "FORBIDDEN", msg)
 }
 
 func NotFound(c *gin.Context, msg string) {
-	c.JSON(http.StatusNotFound, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusNotFound, "NOT_FOUND", msg)
 }
 
 func Conflict(c *gin.Context, msg string) {
-	c.JSON(http.StatusConflict, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusConflict, "CONFLICT", msg)
 }
 
 func InternalError(c *gin.Context, msg string) {
-	c.JSON(http.StatusInternalServerError, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusInternalServerError, "INTERNAL_ERROR", msg)
 }
 
 func ValidationErrors(c *gin.Context, msg string) {
-	c.JSON(http.StatusUnprocessableEntity, APIResponse{Success: false, Error: msg})
+	ErrorWithCode(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", msg)
 }
 
 func NewPaginationMeta(page, limit, total int) *PaginationMeta {

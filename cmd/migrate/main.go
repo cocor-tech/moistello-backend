@@ -50,7 +50,7 @@ func main() {
 	}
 }
 
-// ensureMigrationsTable creates the schema_migrations tracking table if it does not exist.
+// ensureMigrationsTable creates the schema_migrations tracking table if it does not exist and acquires an advisory lock.
 func ensureMigrationsTable(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -58,6 +58,11 @@ func ensureMigrationsTable(db *sql.DB) error {
 			applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`)
+	if err != nil {
+		return err
+	}
+	// Acquire session-level advisory lock (arbitrary fixed key for migrations)
+	_, err = db.Exec("SELECT pg_advisory_lock(718239102)")
 	return err
 }
 
