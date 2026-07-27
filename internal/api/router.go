@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
@@ -34,7 +35,13 @@ func NewRouter(
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.LoggingMiddleware())
 	r.Use(middleware.CORSMiddleware(cfg.CORS))
+	r.Use(middleware.PrometheusMiddleware())
+
+	// Prometheus metrics endpoint — un-rate-limited
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
 	r.Use(middleware.RateLimitMiddleware(redisClient, cfg.RateLimit))
+	r.Use(middleware.IdempotencyMiddleware(redisClient))
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Ready)

@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+
+	"github.com/moistello/backend/pkg/metrics"
 )
 
 // Message is a structured WebSocket message sent to clients.
@@ -17,8 +19,8 @@ type Message struct {
 // rooms for targeted broadcasts.
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[string]*Client              // clientID -> Client
-	rooms   map[string]map[string]*Client   // circleID -> clientID -> Client
+	clients map[string]*Client            // clientID -> Client
+	rooms   map[string]map[string]*Client // circleID -> clientID -> Client
 }
 
 // NewHub creates a new Hub with empty client and room registries.
@@ -29,10 +31,13 @@ func NewHub() *Hub {
 	}
 }
 
-// Register adds a client to the hub so it can receive broadcasts.
+// Register adds a client to the hub so it can receive broadcasts and updates metrics.
 func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
-	h.clients[client.ID] = client
+	if _, ok := h.clients[client.ID]; !ok {
+		h.clients[client.ID] = client
+		metrics.WSActiveConnections.Inc()
+	}
 	h.mu.Unlock()
 	log.Debug().Str("clientID", client.ID).Msg("client registered")
 }
@@ -41,7 +46,10 @@ func (h *Hub) Register(client *Client) {
 // It is safe to call from any goroutine.
 func (h *Hub) Unregister(client *Client) {
 	h.mu.Lock()
-	delete(h.clients, client.ID)
+	if _, ok := h.clients[client.ID]; ok {
+		delete(h.clients, client.ID)
+		metrics.WSActiveConnections.Dec()
+	}
 	for _, room := range h.rooms {
 		delete(room, client.ID)
 	}

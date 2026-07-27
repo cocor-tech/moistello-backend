@@ -3,6 +3,7 @@ package websocket
 import (
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,17 +26,21 @@ const (
 
 	// Send channel buffer size.
 	sendBufferSize = 256
+
+	// Max missed pings before closing stale connection.
+	maxMissedPings = 3
 )
 
 // Client represents a single WebSocket connection. It is created when a
 // client connects and destroyed when the connection is closed.
 type Client struct {
-	ID     string
-	UserID string
-	Hub    *Hub
-	Conn   *websocket.Conn
-	Send   chan []byte
-	mu     sync.Mutex
+	ID          string
+	UserID      string
+	Hub         *Hub
+	Conn        *websocket.Conn
+	Send        chan []byte
+	missedPings atomic.Int32
+	mu          sync.Mutex
 }
 
 // NewClient creates a new Client bound to the given Hub and WebSocket
@@ -64,6 +69,7 @@ func (c *Client) ReadPump() {
 	c.Conn.SetReadLimit(maxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.Conn.SetPongHandler(func(string) error {
+		c.missedPings.Store(0)
 		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -80,6 +86,7 @@ func (c *Client) ReadPump() {
 			}
 			break
 		}
+		c.missedPings.Store(0)
 		c.handleMessage(msgBytes)
 	}
 }
@@ -89,6 +96,8 @@ func (c *Client) ReadPump() {
 // A goroutine running WritePump is started for each connection. It ensures
 // there is at most one writer by executing all writes from this goroutine.
 // Ping messages are sent periodically to keep the connection alive.
+// If 3 consecutive pings pass without a pong/heartbeat response, the connection
+// is closed to clean up stale connections.
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -110,12 +119,29 @@ func (c *Client) WritePump() {
 				return
 			}
 		case <-ticker.C:
+			if c.missedPings.Load() >= maxMissedPings {
+				log.Warn().Str("clientID", c.ID).Int32("missedPings", c.missedPings.Load()).
+					Msg("closing stale websocket connection due to missed pings")
+				return
+			}
+			c.missedPings.Add(1)
+
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
 	}
+}
+
+// MissedPings returns the current count of missed heartbeat pings.
+func (c *Client) MissedPings() int32 {
+	return c.missedPings.Load()
+}
+
+// ResetMissedPings resets the missed heartbeat ping count to 0.
+func (c *Client) ResetMissedPings() {
+	c.missedPings.Store(0)
 }
 
 // handleMessage processes a single incoming WebSocket message.

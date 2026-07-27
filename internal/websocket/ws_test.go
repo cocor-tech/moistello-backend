@@ -3,6 +3,7 @@ package websocket
 import (
 	"testing"
 	"time"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,8 +43,10 @@ func TestHub_Broadcast(t *testing.T) {
 	hub.JoinRoom("circle-1", "c1")
 	hub.Broadcast("circle-1", Message{Type: "test", Payload: "hello"})
 	select {
-	case msg := <-c1.Send: assert.Contains(t, string(msg), "test")
-	case <-time.After(200 * time.Millisecond): t.Fatal("timeout")
+	case msg := <-c1.Send:
+		assert.Contains(t, string(msg), "test")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout")
 	}
 }
 
@@ -53,8 +56,10 @@ func TestHub_BroadcastToUser(t *testing.T) {
 	hub.Register(c1)
 	hub.BroadcastToUser("u1", Message{Type: "private", Payload: "secret"})
 	select {
-	case msg := <-c1.Send: assert.Contains(t, string(msg), "private")
-	case <-time.After(200 * time.Millisecond): t.Fatal("timeout")
+	case msg := <-c1.Send:
+		assert.Contains(t, string(msg), "private")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout")
 	}
 }
 
@@ -65,7 +70,8 @@ func TestHub_Broadcast_DifferentRoom(t *testing.T) {
 	hub.JoinRoom("circle-a", "c1")
 	hub.Broadcast("circle-b", Message{Type: "test"})
 	select {
-	case <-c1.Send: t.Fatal("should not receive")
+	case <-c1.Send:
+		t.Fatal("should not receive")
 	case <-time.After(100 * time.Millisecond):
 	}
 }
@@ -97,9 +103,26 @@ func TestClient_HandlePing(t *testing.T) {
 	hub.Register(client)
 	client.handleMessage([]byte(`{"type":"ping"}`))
 	select {
-	case msg := <-client.Send: assert.Contains(t, string(msg), "pong")
-	case <-time.After(200 * time.Millisecond): t.Fatal("timeout")
+	case msg := <-client.Send:
+		assert.Contains(t, string(msg), "pong")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout")
 	}
+}
+
+func TestClient_MissedPings(t *testing.T) {
+	hub := NewHub()
+	client := &Client{ID: "c1", Send: make(chan []byte, 10), Hub: hub}
+	hub.Register(client)
+
+	assert.Equal(t, int32(0), client.MissedPings())
+	client.missedPings.Add(1)
+	assert.Equal(t, int32(1), client.MissedPings())
+	client.missedPings.Add(1)
+	assert.Equal(t, int32(2), client.MissedPings())
+
+	client.ResetMissedPings()
+	assert.Equal(t, int32(0), client.MissedPings())
 }
 
 func TestMessage_Serialization(t *testing.T) {
