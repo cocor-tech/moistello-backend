@@ -47,6 +47,7 @@ import (
 	ws "github.com/moistello/backend/internal/websocket"
 	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/postgres"
+	"github.com/moistello/backend/pkg/rabbitmq"
 	"github.com/moistello/backend/pkg/redis"
 	"github.com/moistello/backend/pkg/tracing"
 	"github.com/moistello/backend/pkg/validator"
@@ -199,7 +200,6 @@ func main() {
 	swapSvc := swap.NewService(swapRepo, circleSvc, userSvc, escrowSwapClient)
 	swapH := handler.NewSwapHandler(swapSvc)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, swapH, jwtPublicKey)
 	governanceSvc := governance.NewService()
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
 
@@ -208,7 +208,23 @@ func main() {
 	reputationH := handler.NewReputationHandler(reputationSvc)
 	referralH := handler.NewReferralHandler(incentivesSvc)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, governanceH, reputationH, referralH, jwtPublicKey)
+	// GDPR cookie consent handler
+	consentH := handler.NewConsentHandler(db.DB)
+
+	// RabbitMQ connection for health checks and event publishing
+	rmqClient, rmqErr := rabbitmq.New(cfg.RabbitMQ)
+	if rmqErr != nil {
+		log.Warn().Err(rmqErr).Msg("RabbitMQ unavailable — health checks will report degraded")
+	} else {
+		defer rmqClient.Close()
+	}
+
+	// Wire RabbitMQ into health handler for /health and /health/ready probes
+	if rmqClient != nil {
+		healthH.WithRabbitMQ(rmqClient)
+	}
+
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, swapH, governanceH, reputationH, referralH, consentH, jwtPublicKey)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")
