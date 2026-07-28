@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/txnbuild"
-	"github.com/stellar/go/clients/horizonclient"
 )
 
 type Service interface {
@@ -27,12 +27,12 @@ type Service interface {
 }
 
 type Config struct {
-	MasterSecretKey  string // master XLM pool secret key
-	MasterPublicKey  string
-	HorizonURL       string
-	USDCIssuer       string // Stellar USDC issuer (mainnet or testnet)
+	MasterSecretKey   string // master XLM pool secret key
+	MasterPublicKey   string
+	HorizonURL        string
+	USDCIssuer        string // Stellar USDC issuer (mainnet or testnet)
 	NetworkPassphrase string
-	MinBalanceXLM    float64 // XLM to fund per wallet (~2)
+	MinBalanceXLM     float64 // XLM to fund per wallet (~2)
 }
 
 type service struct {
@@ -138,7 +138,7 @@ func (s *service) fundAccount(destination string) error {
 				},
 				BaseFee: txnbuild.MinBaseFee,
 				Preconditions: txnbuild.Preconditions{
-					TimeBounds: txnbuild.NewInfiniteTimeout(),
+					TimeBounds: txnbuild.NewTimebounds(0, time.Now().Unix()+600),
 				},
 			},
 		)
@@ -197,7 +197,7 @@ func (s *service) setTrustline(kp *keypair.Full) error {
 			},
 			BaseFee: txnbuild.MinBaseFee,
 			Preconditions: txnbuild.Preconditions{
-				TimeBounds: txnbuild.NewInfiniteTimeout(),
+				TimeBounds: txnbuild.NewTimebounds(0, time.Now().Unix()+600),
 			},
 		},
 	)
@@ -247,7 +247,7 @@ func (s *service) sendTestUSDC(destination string) error {
 			},
 			BaseFee: txnbuild.MinBaseFee,
 			Preconditions: txnbuild.Preconditions{
-				TimeBounds: txnbuild.NewInfiniteTimeout(),
+				TimeBounds: txnbuild.NewTimebounds(0, time.Now().Unix()+600),
 			},
 		},
 	)
@@ -361,7 +361,9 @@ func (s *service) SendPayment(ctx context.Context, userID string, passkeySeed []
 			ID: uuid.New(), UserID: uid, Destination: destination, Asset: asset, Amount: amount,
 			Status: "blocked_self_send", IPAddress: ipAddress, UserAgent: userAgent, CreatedAt: time.Now().UTC(),
 		})
-		if auditErr != nil { _ = auditErr }
+		if auditErr != nil {
+			_ = auditErr
+		}
 		return "", fmt.Errorf("cannot send to your own wallet address")
 	}
 
@@ -372,7 +374,9 @@ func (s *service) SendPayment(ctx context.Context, userID string, passkeySeed []
 			ID: uuid.New(), UserID: uid, Destination: destination, Asset: asset, Amount: amount,
 			Status: "blocked_rate_limit", IPAddress: ipAddress, UserAgent: userAgent, CreatedAt: time.Now().UTC(),
 		})
-		if auditErr != nil { _ = auditErr }
+		if auditErr != nil {
+			_ = auditErr
+		}
 		return "", fmt.Errorf("rate limit exceeded: max 3 withdrawals per hour")
 	}
 
@@ -387,7 +391,9 @@ func (s *service) SendPayment(ctx context.Context, userID string, passkeySeed []
 			ID: uuid.New(), UserID: uid, Destination: destination, Asset: asset, Amount: amount,
 			Status: "blocked_daily_limit", IPAddress: ipAddress, UserAgent: userAgent, CreatedAt: time.Now().UTC(),
 		})
-		if auditErr != nil { _ = auditErr }
+		if auditErr != nil {
+			_ = auditErr
+		}
 		return "", fmt.Errorf("daily spending limit exceeded")
 	}
 
@@ -439,7 +445,7 @@ func (s *service) SendPayment(ctx context.Context, userID string, passkeySeed []
 		IncrementSequenceNum: true,
 		Operations:           []txnbuild.Operation{op},
 		BaseFee:              txnbuild.MinBaseFee,
-		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewInfiniteTimeout()},
+		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimebounds(0, time.Now().Unix()+600)},
 	}
 	if memo != "" {
 		params.Memo = txnbuild.MemoText(memo)
