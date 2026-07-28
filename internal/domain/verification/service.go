@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -28,38 +28,49 @@ type PendingRegistration struct {
 }
 
 const (
-	otpTTL       = 5 * time.Minute
-	resendTTL    = 60 * time.Second
-	maxAttempts  = 5
-	recoveryTTL  = 15 * time.Minute
+	otpTTL      = 5 * time.Minute
+	resendTTL   = 60 * time.Second
+	maxAttempts = 5
+	recoveryTTL = 15 * time.Minute
 )
 
 // Service handles email verification OTP codes stored in Redis.
 type Service struct {
-	rdb *redis.Client
+	rdb              *redis.Client
+	sendOTP          func(email, code string) error
+	sendRecoveryCode func(email, code string) error
 }
 
 func NewService(rdb *redis.Client) *Service {
 	return &Service{rdb: rdb}
 }
 
-// SendOTP generates a 6-digit code and stores it in Redis.
-// Returns the code on success (for logging/development; in production the code is emailed).
-func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
+// WithEmailSender attaches email delivery funcs so OTP/recovery codes are
+// delivered directly within the Service layer — plaintext codes never cross
+// the package boundary.
+func (s *Service) WithEmailSender(sendOTP, sendRecoveryCode func(email, code string) error) {
+	s.sendOTP = sendOTP
+	s.sendRecoveryCode = sendRecoveryCode
+}
+
+// SendOTP generates a 6-digit code, stores it (hashed) in Redis, and delivers
+// it directly via the injected email sender (if configured). On success the
+// plaintext code is never returned.
+func (s *Service) SendOTP(ctx context.Context, email string) error {
 	// Rate limit: check if a code was sent recently
 	resendKey := fmt.Sprintf("otp:resend:%s", email)
 	exists, err := s.rdb.Exists(ctx, resendKey).Result()
 	if err != nil {
-		return "", fmt.Errorf("checking resend rate limit: %w", err)
+		return fmt.Errorf("checking resend rate limit: %w", err)
 	}
 	if exists > 0 {
-		return "", fmt.Errorf("please wait before requesting another code")
+		return fmt.Errorf("please wait before requesting another code")
 	}
 
 	// Generate a 6-digit code
 	code, err := generateNumericCode(6)
 	if err != nil {
-		return "", fmt.Errorf("generating OTP code: %w", err)
+		return fmt.Errorf("generating OTP code: %w", err)
 	}
 
 	// Store hashed code in Redis
@@ -68,13 +79,18 @@ func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 	otpKey := fmt.Sprintf("otp:code:%s", email)
 	otpValue := fmt.Sprintf("%s:0", hashedCode) // hash:attempts
 	if err := s.rdb.Set(ctx, otpKey, otpValue, otpTTL).Err(); err != nil {
-		return "", fmt.Errorf("storing OTP: %w", err)
+		return fmt.Errorf("storing OTP: %w", err)
 	}
 
 	// Set resend rate limit
 	s.rdb.Set(ctx, resendKey, "1", resendTTL)
 
-	return code, nil
+	if s.sendOTP != nil {
+		if err := s.sendOTP(email, code); err != nil {
+			return fmt.Errorf("sending OTP email: %w", err)
+		}
+	}
+	return nil
 }
 
 // VerifyOTP checks a 6-digit code against the stored hash.
@@ -115,20 +131,27 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string) (bool, erro
 	return false, nil
 }
 
-// SendRecoveryCode generates a one-time recovery code for backup code flow.
-func (s *Service) SendRecoveryCode(ctx context.Context, email string) (string, error) {
+// SendRecoveryCode generates a one-time recovery code, stores it (hashed) in
+// Redis, and delivers it directly via the injected sender. The plaintext code
+// is never returned.
+func (s *Service) SendRecoveryCode(ctx context.Context, email string) error {
 	code, err := generateNumericCode(8)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	codeHash := sha256.Sum256([]byte(code))
 	recoveryKey := fmt.Sprintf("recovery:code:%s", email)
 	if err := s.rdb.Set(ctx, recoveryKey, hex.EncodeToString(codeHash[:]), recoveryTTL).Err(); err != nil {
-		return "", fmt.Errorf("storing recovery code: %w", err)
+		return fmt.Errorf("storing recovery code: %w", err)
 	}
 
-	return code, nil
+	if s.sendRecoveryCode != nil {
+		if err := s.sendRecoveryCode(email, code); err != nil {
+			return fmt.Errorf("sending recovery code email: %w", err)
+		}
+	}
+	return nil
 }
 
 // VerifyRecoveryCode checks an 8-digit recovery code.

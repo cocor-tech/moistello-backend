@@ -36,8 +36,8 @@ import (
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/savings"
 	"github.com/moistello/backend/internal/domain/totp"
-	"github.com/moistello/backend/internal/domain/verification"
 	"github.com/moistello/backend/internal/domain/user"
+	"github.com/moistello/backend/internal/domain/verification"
 	"github.com/moistello/backend/internal/domain/wallet"
 	"github.com/moistello/backend/internal/domain/yellowcard"
 	ws "github.com/moistello/backend/internal/websocket"
@@ -119,6 +119,7 @@ func main() {
 	totpSvc := totp.NewService()
 	verificationSvc := verification.NewService(redisClient)
 	emailSvc := email.NewService(email.ConfigFromEnv())
+	verificationSvc.WithEmailSender(emailSvc.SendOTP, emailSvc.SendRecoveryCode)
 
 	inviteSvc := invite.NewService(inviteRepo)
 	_ = reputationSvc
@@ -145,7 +146,7 @@ func main() {
 
 	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
 
-	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo)
+	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, redisClient, userRepo)
 	userH := handler.NewUserHandler(userSvc, redisClient)
 	circleH := handler.NewCircleHandler(circleSvc, inviteSvc, contribSvc, payoutSvc)
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)

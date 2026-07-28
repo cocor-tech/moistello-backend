@@ -15,8 +15,8 @@ import (
 
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/auth"
-	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
 	"github.com/moistello/backend/internal/domain/user"
+	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/validator"
 )
@@ -35,7 +35,7 @@ func newRegisterHandler(t *testing.T) (
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo, nil)
-	return mockAuthSvc, mockUserRepo, userSvc, handler.NewAuthHandler(mockAuthSvc, userSvc, nil)
+	return mockAuthSvc, mockUserRepo, userSvc, handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, nil)
 }
 
 func TestAuthHandler_Register_Success(t *testing.T) {
