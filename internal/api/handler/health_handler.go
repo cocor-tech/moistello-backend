@@ -13,9 +13,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// rabbitChecker is satisfied by *rabbitmq.Client.
+// Using an interface keeps the health handler free of an amqp091 import.
+type rabbitChecker interface {
+	IsAlive() bool
+}
+
 type HealthHandler struct {
 	db            *sql.DB
 	redis         *redis.Client
+	rabbit        rabbitChecker
 	sorobanRPCURL string
 	horizonURL    string
 	checkTimeout  time.Duration
@@ -42,6 +49,13 @@ func NewHealthHandler(db *sql.DB, rds *redis.Client, sorobanRPCURL, horizonURL s
 		checkTimeout:  5 * time.Second,
 		httpClient:    &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// WithRabbitMQ attaches a RabbitMQ liveness checker to the health handler.
+// Call this after NewHealthHandler when the RabbitMQ client is available.
+func (h *HealthHandler) WithRabbitMQ(r rabbitChecker) *HealthHandler {
+	h.rabbit = r
+	return h
 }
 
 func (h *HealthHandler) SetTimeout(d time.Duration) {
@@ -101,6 +115,14 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	deps["horizon"] = horizonStatus
 	if horizonStatus.Status != "healthy" {
 		allHealthy = false
+	}
+
+	// 5. RabbitMQ check
+	rabbitmqStatus := h.checkRabbitMQ()
+	deps["rabbitmq"] = rabbitmqStatus
+	if rabbitmqStatus.Status != "healthy" {
+		allHealthy = false
+		hasFailure = true
 	}
 
 	overallStatus := "ok"
@@ -164,6 +186,17 @@ func (h *HealthHandler) checkRedis(timeout time.Duration) DependencyStatus {
 		Latency: fmt.Sprintf("%v", time.Since(start).Round(time.Microsecond)),
 		Message: "connected",
 	}
+}
+
+
+func (h *HealthHandler) checkRabbitMQ() DependencyStatus {
+	if h.rabbit == nil {
+		return DependencyStatus{Status: "unhealthy", Message: "rabbitmq client not initialized"}
+	}
+	if !h.rabbit.IsAlive() {
+		return DependencyStatus{Status: "unhealthy", Message: "connection closed"}
+	}
+	return DependencyStatus{Status: "healthy", Message: "connected"}
 }
 
 func (h *HealthHandler) checkStellarRPC(timeout time.Duration) DependencyStatus {
@@ -259,7 +292,7 @@ func (h *HealthHandler) checkHorizon(timeout time.Duration) DependencyStatus {
 }
 
 // @Summary Readiness check
-// @Description Readiness probe — checks database and Redis connectivity.
+// @Description Readiness probe — checks database, Redis, RabbitMQ, and Stellar Horizon connectivity.
 // @Tags Health
 // @Produce json
 // @Success 200 {object} object{status=string}
@@ -276,6 +309,17 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 	if h.redis != nil {
 		if err := h.redis.Ping(ctx).Err(); err != nil {
 			c.JSON(503, gin.H{"status": "not ready", "error": "redis unreachable"})
+			return
+		}
+	}
+	if h.rabbit != nil && !h.rabbit.IsAlive() {
+		c.JSON(503, gin.H{"status": "not ready", "error": "rabbitmq unreachable"})
+		return
+	}
+	if h.horizonURL != "" {
+		horizonStatus := h.checkHorizon(h.checkTimeout)
+		if horizonStatus.Status != "healthy" {
+			c.JSON(503, gin.H{"status": "not ready", "error": "stellar horizon unreachable: " + horizonStatus.Message})
 			return
 		}
 	}

@@ -36,6 +36,12 @@ func New(cfg config.RabbitMQConfig) (*Client, error) {
 
 func (c *Client) Channel() *amqp091.Channel { return c.ch }
 
+// IsAlive reports whether the underlying AMQP connection is still open.
+// It is used by health-check probes without exposing the raw connection.
+func (c *Client) IsAlive() bool {
+	return c.conn != nil && !c.conn.IsClosed()
+}
+
 func (c *Client) Close() {
 	if c.ch != nil {
 		c.ch.Close()
