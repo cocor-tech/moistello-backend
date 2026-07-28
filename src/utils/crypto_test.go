@@ -10,12 +10,11 @@ import (
 func TestFieldEncryption(t *testing.T) {
 	// Setup 32-byte (256-bit) hex key for testing
 	testKey := hex.EncodeToString([]byte("12345678901234567890123456789012"))
-	t.Setenv("ENCRYPTION_KEY", testKey)
 
 	plainEmail := "user@example.com"
 
 	t.Run("encrypts and decrypts email cleanly", func(t *testing.T) {
-		cipherHex, err := utils.EncryptField(plainEmail)
+		cipherHex, err := utils.EncryptField(testKey, plainEmail)
 		if err != nil {
 			t.Fatalf("encryption failed: %v", err)
 		}
@@ -24,7 +23,7 @@ func TestFieldEncryption(t *testing.T) {
 			t.Fatal("expected ciphertext to differ from plaintext email")
 		}
 
-		decrypted, err := utils.DecryptField(cipherHex)
+		decrypted, err := utils.DecryptField(testKey, cipherHex)
 		if err != nil {
 			t.Fatalf("decryption failed: %v", err)
 		}
@@ -35,9 +34,7 @@ func TestFieldEncryption(t *testing.T) {
 	})
 
 	t.Run("fails when ENCRYPTION_KEY is unconfigured", func(t *testing.T) {
-		t.Setenv("ENCRYPTION_KEY", "")
-
-		_, err := utils.EncryptField(plainEmail)
+		_, err := utils.EncryptField("", plainEmail)
 		if err == nil {
 			t.Fatal("expected error when ENCRYPTION_KEY is missing, got nil")
 		}

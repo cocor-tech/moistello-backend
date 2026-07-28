@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/moistello/backend/config"
+	"github.com/moistello/backend/pkg/tracing"
 	"github.com/rs/zerolog/log"
 )
 
@@ -91,6 +92,12 @@ func RunServer(router http.Handler, cfg config.ServerConfig) error {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("server forced to shutdown due to timeout or error")
 		return err
+	}
+
+	// Shutdown OpenTelemetry tracer provider
+	log.Info().Msg("shutting down OpenTelemetry tracer provider...")
+	if err := tracing.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("failed to shutdown tracer provider")
 	}
 
 	log.Info().Msg("server gracefully shut down with all in-flight requests drained")

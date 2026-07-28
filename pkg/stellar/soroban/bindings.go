@@ -99,6 +99,45 @@ func (c *CircleClient) GetMember(ctx context.Context, member string) (string, er
 	return c.invoker.InvokeFunction(ctx, "get_member", member)
 }
 
+// ── Escrow Swap Bindings ──
+// P2P swap escrow contract for circle members.
+
+type EscrowSwapClient struct {
+	invoker *ContractInvoker
+}
+
+func NewEscrowSwapClient(invoker *ContractInvoker) *EscrowSwapClient {
+	return &EscrowSwapClient{invoker: invoker}
+}
+
+func (c *EscrowSwapClient) CreateSwap(ctx context.Context, circleID, offeror, offeree string, offerorAsset string, offerorAmount int64, requestedAsset string, requestedAmount int64, expiresAt uint64) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "create_swap", circleID, offeror, offeree, offerorAsset, offerorAmount, requestedAsset, requestedAmount, expiresAt)
+}
+
+func (c *EscrowSwapClient) AcceptSwap(ctx context.Context, swapID string, acceptor string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "accept_swap", swapID, acceptor)
+}
+
+func (c *EscrowSwapClient) CancelSwap(ctx context.Context, swapID string, canceller string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "cancel_swap", swapID, canceller)
+}
+
+func (c *EscrowSwapClient) ExecuteSwap(ctx context.Context, swapID string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "execute_swap", swapID)
+}
+
+func (c *EscrowSwapClient) GetSwap(ctx context.Context, swapID string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "get_swap", swapID)
+}
+
+func (c *EscrowSwapClient) GetCircleSwaps(ctx context.Context, circleID string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "get_circle_swaps", circleID)
+}
+
+func (c *EscrowSwapClient) GetUserSwaps(ctx context.Context, userID string) (string, error) {
+	return c.invoker.InvokeFunction(ctx, "get_user_swaps", userID)
+}
+
 func (c *CircleClient) GetRound(ctx context.Context, round uint32) (string, error) {
 	return c.invoker.InvokeFunction(ctx, "get_round", round)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/moistello/backend/internal/api/handler"
+	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/domain/auth"
 	"github.com/moistello/backend/internal/domain/user"
 	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
@@ -35,7 +36,14 @@ func newRegisterHandler(t *testing.T) (
 	mockAuthSvc := new(mockAuthService)
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo, nil)
-	return mockAuthSvc, mockUserRepo, userSvc, handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, nil)
+	security := config.SecurityConfig{
+		WalletPepper:  "test-wallet-pepper-only",
+		PasskeyPepper: "test-passkey-pepper-only",
+		Argon2Time:    1,
+		Argon2Memory:   64 * 1024,
+		Argon2Threads:  4,
+	}
+	return mockAuthSvc, mockUserRepo, userSvc, handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, nil, nil, security)
 }
 
 func TestAuthHandler_Register_Success(t *testing.T) {

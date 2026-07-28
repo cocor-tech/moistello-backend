@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -293,7 +292,7 @@ func (h *IncentivesHandler) ClaimIncentive(c *gin.Context) {
 func (h *IncentivesHandler) GetUserIncentives(c *gin.Context) {
 	userID := c.GetString("user_id")
 	
-	incentives, err := h.service.GetUserIncentives(c.Request.Context(), userID)
+	userIncentives, err := h.service.GetUserIncentives(c.Request.Context(), userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "Failed to get incentives", err)
 		return
@@ -303,15 +302,15 @@ func (h *IncentivesHandler) GetUserIncentives(c *gin.Context) {
 	statusFilter := c.Query("status")
 	if statusFilter != "" {
 		filtered := make([]incentives.Incentive, 0)
-		for _, inc := range incentives {
+		for _, inc := range userIncentives {
 			if string(inc.Status) == statusFilter {
 				filtered = append(filtered, inc)
 			}
 		}
-		incentives = filtered
+		userIncentives = filtered
 	}
 	
-	response.Success(c, incentives)
+	response.Success(c, userIncentives)
 }
 
 // GetPendingIncentives returns pending incentives for the user

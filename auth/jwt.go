@@ -11,7 +11,7 @@ import (
 )
 
 type JWTConfig struct {
-	PrivateKeyPEM string `mapstructure:"jwt_private_key" yaml:"jwt_private_key"`
+	PrivateKeyPEM string `mapstructure:"jwt_private_key_pem" yaml:"jwt_private_key_pem"`
 	PrivateKeyPath string `mapstructure:"jwt_private_key_path" yaml:"jwt_private_key_path"`
 }
 
@@ -19,25 +19,16 @@ type JWTKeyManager struct {
 	privateKey *rsa.PrivateKey
 }
 
-// NewJWTKeyManager loads and parses the RSA private key securely from environment variables
-// or, as a secondary fallback, from a secure file path.
+// NewJWTKeyManager loads and parses the RSA private key from configuration.
 func NewJWTKeyManager(cfg JWTConfig) (*JWTKeyManager, error) {
 	var keyBytes []byte
 
-	// 1. Prefer reading directly from raw PEM environment variable
-	if pemEnv := strings.TrimSpace(os.Getenv("JWT_PRIVATE_KEY")); pemEnv != "" {
-		keyBytes = []byte(pemEnv)
-	} else if strings.TrimSpace(cfg.PrivateKeyPEM) != "" {
+	if strings.TrimSpace(cfg.PrivateKeyPEM) != "" {
 		keyBytes = []byte(cfg.PrivateKeyPEM)
 	} else {
-		// 2. Fallback to file path configuration if explicitly specified
 		keyPath := cfg.PrivateKeyPath
 		if keyPath == "" {
-			keyPath = os.Getenv("JWT_PRIVATE_KEY_PATH")
-		}
-
-		if keyPath == "" {
-			return nil, errors.New("[SECURITY CRITICAL] No JWT private key provided. Set JWT_PRIVATE_KEY environment variable")
+			return nil, errors.New("[SECURITY CRITICAL] No JWT private key provided in config")
 		}
 
 		var err error

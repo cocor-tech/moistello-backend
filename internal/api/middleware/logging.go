@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextKey string
@@ -18,6 +19,14 @@ func GetRequestID(ctx context.Context) string {
 		return id
 	}
 	return "unknown"
+}
+
+func GetTraceID(ctx context.Context) string {
+	spanCtx := trace.SpanFromContext(ctx).SpanContext()
+	if spanCtx.HasTraceID() {
+		return spanCtx.TraceID().String()
+	}
+	return ""
 }
 
 func LoggingMiddleware() gin.HandlerFunc {
@@ -43,6 +52,8 @@ func LoggingMiddleware() gin.HandlerFunc {
 			Int("status", status).
 			Dur("duration", duration).
 			Str("ip", c.ClientIP()).
+			Str("userAgent", c.Request.UserAgent()).
+			Str("trace_id", GetTraceID(ctx)).
 			Msg("request completed")
 	}
 }

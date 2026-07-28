@@ -1,6 +1,9 @@
 package config
 
 import (
+	"bufio"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +19,7 @@ type Config struct {
 	RabbitMQ     RabbitMQConfig
 	Stellar      StellarConfig
 	Auth         AuthConfig
+	Security     SecurityConfig
 	Brevo        BrevoConfig
 	Indexer      IndexerConfig
 	Notification NotificationConfig
@@ -24,26 +28,27 @@ type Config struct {
 	Logging      LoggingConfig
 	Environment  string
 	YellowCard   YellowCardConfig `mapstructure:"yellow_card"`
+	Tracing      TracingConfig
 }
 
 type ServerConfig struct {
-	Port              int           `mapstructure:"port"`
-	Host              string        `mapstructure:"host"`
-	ReadTimeout       time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout      time.Duration `mapstructure:"write_timeout"`
-	MaxHeaderBytes    int           `mapstructure:"max_header_bytes"`
-	TLSEnabled        bool          `mapstructure:"tls_enabled"`
-	TLSCertPath       string        `mapstructure:"tls_cert_path"`
-	TLSKeyPath        string        `mapstructure:"tls_key_path"`
-	HTTPRedirectPort  int           `mapstructure:"http_redirect_port"`
+	Port             int           `mapstructure:"port"`
+	Host             string        `mapstructure:"host"`
+	ReadTimeout      time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout     time.Duration `mapstructure:"write_timeout"`
+	MaxHeaderBytes   int           `mapstructure:"max_header_bytes"`
+	TLSEnabled       bool          `mapstructure:"tls_enabled"`
+	TLSCertPath      string        `mapstructure:"tls_cert_path"`
+	TLSKeyPath       string        `mapstructure:"tls_key_path"`
+	HTTPRedirectPort int           `mapstructure:"http_redirect_port"`
 }
 
 type DatabaseConfig struct {
-	URL            string        `mapstructure:"url"`
-	MaxOpenConns   int           `mapstructure:"max_open_conns"`
-	MaxIdleConns   int           `mapstructure:"max_idle_conns"`
+	URL             string        `mapstructure:"url"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
-	MigrationPath  string        `mapstructure:"migration_path"`
+	MigrationPath   string        `mapstructure:"migration_path"`
 }
 
 type RedisConfig struct {
@@ -63,14 +68,36 @@ type RabbitMQConfig struct {
 }
 
 type StellarConfig struct {
-	Network           string `mapstructure:"network"`
-	HorizonURL        string `mapstructure:"horizon_url"`
-	SorobanRPCURL     string `mapstructure:"soroban_rpc_url"`
-	NetworkPassphrase string `mapstructure:"network_passphrase"`
-	MasterPublicKey   string `mapstructure:"master_public_key"`
-	MasterSecretKey   string `mapstructure:"master_secret_key"`
-	USDCIssuer        string `mapstructure:"usdc_issuer"`
-	WalletMinBalance  float64 `mapstructure:"wallet_min_balance"`
+	Network                 string  `mapstructure:"network"`
+	HorizonURL              string  `mapstructure:"horizon_url"`
+	SorobanRPCURL           string  `mapstructure:"soroban_rpc_url"`
+	NetworkPassphrase       string  `mapstructure:"network_passphrase"`
+	MasterPublicKey         string  `mapstructure:"master_public_key"`
+	MasterSecretKey         string  `mapstructure:"master_secret_key"`
+	USDCIssuer              string  `mapstructure:"usdc_issuer"`
+	WalletMinBalance        float64 `mapstructure:"wallet_min_balance"`
+	GovernanceTokenContractID string `mapstructure:"governance_token_contract_id"`
+}
+
+func (s StellarConfig) MarshalJSON() ([]byte, error) {
+	type alias StellarConfig
+	return json.Marshal(&struct{ alias }{alias: alias(s)})
+}
+
+func (s StellarConfig) String() string {
+	if s.MasterSecretKey != "" {
+		return "{... redacted ...}"
+	}
+	return "{...}"
+	Network              string `mapstructure:"network"`
+	HorizonURL           string `mapstructure:"horizon_url"`
+	SorobanRPCURL        string `mapstructure:"soroban_rpc_url"`
+	NetworkPassphrase    string `mapstructure:"network_passphrase"`
+	MasterPublicKey      string `mapstructure:"master_public_key"`
+	MasterSecretKey      string `mapstructure:"master_secret_key"`
+	USDCIssuer           string `mapstructure:"usdc_issuer"`
+	WalletMinBalance     float64 `mapstructure:"wallet_min_balance"`
+	EscrowSwapContractID string `mapstructure:"escrow_swap_contract_id"`
 }
 
 type YellowCardConfig struct {
@@ -81,16 +108,27 @@ type YellowCardConfig struct {
 type AuthConfig struct {
 	JWTPrivateKeyPath string        `mapstructure:"jwt_private_key_path"`
 	JWTPublicKeyPath  string        `mapstructure:"jwt_public_key_path"`
+	JWTPrivateKeyPEM  string        `mapstructure:"jwt_private_key_pem"`
+	JWTPublicKeyPEM   string        `mapstructure:"jwt_public_key_pem"`
 	AccessTokenTTL    time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
 	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
 	AdminAPIKey       string        `mapstructure:"admin_api_key"`
 }
 
+type SecurityConfig struct {
+	WalletPepper  string `mapstructure:"wallet_pepper"`
+	PasskeyPepper string `mapstructure:"passkey_pepper"`
+	EncryptionKey string `mapstructure:"encryption_key"`
+	Argon2Time    int    `mapstructure:"argon2_time"`
+	Argon2Memory  int    `mapstructure:"argon2_memory"`
+	Argon2Threads int    `mapstructure:"argon2_threads"`
+}
+
 type BrevoConfig struct {
-	APIKey      string `mapstructure:"api_key"`
-	FromEmail   string `mapstructure:"from_email"`
-	FromName    string `mapstructure:"from_name"`
+	APIKey    string `mapstructure:"api_key"`
+	FromEmail string `mapstructure:"from_email"`
+	FromName  string `mapstructure:"from_name"`
 }
 
 type IndexerConfig struct {
@@ -102,7 +140,7 @@ type IndexerConfig struct {
 type NotificationConfig struct {
 	Email struct {
 		Provider    string `mapstructure:"provider"`
-		APIKey      string `mapstructure:"apiKey"`
+		APIKey      string `mapstructure:"api_key"`
 		FromAddress string `mapstructure:"from_address"`
 	} `mapstructure:"email"`
 	SMS struct {
@@ -136,17 +174,102 @@ type LoggingConfig struct {
 	Output string `mapstructure:"output"`
 }
 
+func Load() *Config {
+	loadDotEnv()
+
+type TracingConfig struct {
+	Enabled          bool          `mapstructure:"enabled"`
+	CollectorEndpoint string       `mapstructure:"collector_endpoint"`
+	ServiceName      string       `mapstructure:"service_name"`
+	SampleRate       float64      `mapstructure:"sample_rate"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(path)
+	v.AddConfigPath("./config")
 	v.AddConfigPath(".")
 	v.AddConfigPath("/etc/moistello/")
 	v.SetEnvPrefix("MOISTELLO")
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
+	setDefault(v, "server.port", 1100)
+	setDefault(v, "server.host", "0.0.0.0")
+	setDefault(v, "server.read_timeout", "10s")
+	setDefault(v, "server.write_timeout", "30s")
+	setDefault(v, "server.max_header_bytes", 1048576)
+	setDefault(v, "server.tls_enabled", false)
+	setDefault(v, "server.http_redirect_port", 80)
+	setDefault(v, "database.max_open_conns", 50)
+	setDefault(v, "database.max_idle_conns", 10)
+	setDefault(v, "database.conn_max_lifetime", "30m")
+	setDefault(v, "redis.url", "redis://localhost:6379")
+	setDefault(v, "redis.pool_size", 20)
+	setDefault(v, "rabbitmq.url", "amqp://guest:guest@localhost:5672/")
+	setDefault(v, "rabbitmq.exchange", "moistello.events")
+	setDefault(v, "rabbitmq.queues.notifications", "moistello.notifications")
+	setDefault(v, "rabbitmq.queues.webhooks", "moistello.webhooks")
+	setDefault(v, "stellar.network", "testnet")
+	setDefault(v, "stellar.horizon_url", "https://horizon-testnet.stellar.org")
+	setDefault(v, "stellar.soroban_rpc_url", "https://soroban-testnet.stellar.org")
+	setDefault(v, "stellar.network_passphrase", "Test SDF Network ; September 2015")
+	setDefault(v, "stellar.usdc_issuer", "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC")
+	setDefault(v, "stellar.wallet_min_balance", 10.0)
+	setDefault(v, "auth.access_token_ttl", "15m")
+	setDefault(v, "auth.refresh_token_ttl", "168h")
+	setDefault(v, "auth.nonce_ttl", "5m")
+	setDefault(v, "auth.jwt_private_key_path", "./config/keys/jwt-private.pem")
+	setDefault(v, "auth.jwt_public_key_path", "./config/keys/jwt-public.pem")
+	setDefault(v, "security.argon2_time", 1)
+	setDefault(v, "security.argon2_memory", 64*1024)
+	setDefault(v, "security.argon2_threads", 4)
+	setDefault(v, "brevo.api_key", "")
+	setDefault(v, "brevo.from_email", "noreply@moistello.com")
+	setDefault(v, "brevo.from_name", "Moistello")
+	setDefault(v, "indexer.poll_interval", "3s")
+	setDefault(v, "indexer.batch_size", 50)
+	setDefault(v, "cors.allowed_origins", []string{"http://localhost:1110"})
+	setDefault(v, "cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
+	setDefault(v, "cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
+	setDefault(v, "cors.allow_credentials", true)
+	setDefault(v, "cors.max_age", "24h")
+	setDefault(v, "rate_limit.global", 100)
+	setDefault(v, "rate_limit.authenticated", 300)
+	setDefault(v, "rate_limit.auth", 10)
+	setDefault(v, "logging.level", "debug")
+	setDefault(v, "logging.format", "json")
+	setDefault(v, "logging.output", "stdout")
+	setDefault(v, "environment", "development")
+	setDefault(v, "notification.email.provider", "")
+	setDefault(v, "notification.email.api_key", "")
+	setDefault(v, "notification.email.from_address", "")
+	setDefault(v, "notification.sms.provider", "")
+	setDefault(v, "notification.sms.account_sid", "")
+	setDefault(v, "notification.sms.auth_token", "")
+	setDefault(v, "notification.sms.from_number", "")
+	setDefault(v, "notification.push.fcm_server_key", "")
+	setDefault(v, "yellow_card.api_key", "")
+	setDefault(v, "yellow_card.api_secret", "")
+	setDefault(v, "security.wallet_pepper", "")
+	setDefault(v, "security.passkey_pepper", "")
+	setDefault(v, "security.encryption_key", "")
+
+	mustBindEnv(v, "environment", "MOISTELLO_ENVIRONMENT", "NODE_ENV")
+	mustBindEnv(v, "database.url", "MOISTELLO_DATABASE_URL", "DATABASE_URL")
+	mustBindEnv(v, "stellar.master_secret_key", "MOISTELLO_STELLAR_MASTER_SECRET_KEY", "STELLAR_MASTER_SECRET_KEY")
+	mustBindEnv(v, "stellar.master_public_key", "MOISTELLO_STELLAR_MASTER_PUBLIC_KEY", "STELLAR_MASTER_PUBLIC_KEY")
+	mustBindEnv(v, "security.wallet_pepper", "MOISTELLO_WALLET_PEPPER")
+	mustBindEnv(v, "security.passkey_pepper", "MOISTELLO_PASSKEY_PEPPER")
+	mustBindEnv(v, "security.encryption_key", "ENCRYPTION_KEY")
+	mustBindEnv(v, "auth.jwt_private_key_pem", "JWT_PRIVATE_KEY")
+	mustBindEnv(v, "auth.jwt_public_key_pem", "JWT_PUBLIC_KEY")
+	mustBindEnv(v, "brevo.api_key", "MOISTELLO_BREVO_API_KEY", "MOISTELLO_NOTIFICATION_EMAIL_APIKEY", "MOISTELLO_EMAIL_API_KEY")
+	mustBindEnv(v, "brevo.from_email", "MOISTELLO_BREVO_FROM_EMAIL", "MOISTELLO_NOTIFICATION_EMAIL_FROM_ADDRESS")
+	mustBindEnv(v, "brevo.from_name", "MOISTELLO_BREVO_FROM_NAME", "MOISTELLO_NOTIFICATION_EMAIL_FROM_NAME")
+	mustBindEnv(v, "yellow_card.api_key", "YELLOW_CARD_API_KEY")
+	mustBindEnv(v, "yellow_card.api_secret", "YELLOW_CARD_API_SECRET")
 	v.SetDefault("server.port", 1100)
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.read_timeout", "10s")
@@ -170,6 +293,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("stellar.horizon_url", "https://horizon-testnet.stellar.org")
 	v.SetDefault("stellar.soroban_rpc_url", "https://soroban-testnet.stellar.org")
 	v.SetDefault("stellar.network_passphrase", "Test SDF Network ; September 2015")
+	v.SetDefault("stellar.governance_token_contract_id", "")
+	v.SetDefault("stellar.escrow_swap_contract_id", "")
 	v.SetDefault("auth.access_token_ttl", "15m")
 	v.SetDefault("auth.refresh_token_ttl", "168h")
 	v.SetDefault("auth.nonce_ttl", "5m")
@@ -189,52 +314,138 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("logging.level", "debug")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.output", "stdout")
+	v.SetDefault("tracing.enabled", false)
+	v.SetDefault("tracing.collector_endpoint", "localhost:4317")
+	v.SetDefault("tracing.service_name", "moistello-api")
+	v.SetDefault("tracing.sample_rate", 0.1)
 	v.SetDefault("environment", "development")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("reading config: %w", err)
+			panic(fmt.Errorf("config: reading config file: %w", err))
 		}
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("unmarshaling config: %w", err)
+		panic(fmt.Errorf("config: unmarshaling config: %w", err))
 	}
-	if cfg.Stellar.MasterSecretKey == "" {
-		if envKey := os.Getenv("MOISTELLO_STELLAR_MASTER_SECRET_KEY"); envKey != "" {
-			cfg.Stellar.MasterSecretKey = envKey
-		} else if envKey := os.Getenv("STELLAR_MASTER_SECRET_KEY"); envKey != "" {
-			cfg.Stellar.MasterSecretKey = envKey
-		}
-	}
-	if cfg.Stellar.MasterPublicKey == "" {
-		if envKey := os.Getenv("MOISTELLO_STELLAR_MASTER_PUBLIC_KEY"); envKey != "" {
-			cfg.Stellar.MasterPublicKey = envKey
-		} else if envKey := os.Getenv("STELLAR_MASTER_PUBLIC_KEY"); envKey != "" {
-			cfg.Stellar.MasterPublicKey = envKey
-		}
-	}
-	if cfg.Stellar.MasterSecretKey == "" {
-		return nil, fmt.Errorf("stellar master secret key must be set via MOISTELLO_STELLAR_MASTER_SECRET_KEY env var")
-	}
-	cfg.Environment = v.GetString("environment")
 
-	// #42: Require DATABASE_URL and enforce SSL in non-development environments.
-	if cfg.Database.URL == "" {
-		if dbURL := os.Getenv("MOISTELLO_DATABASE_URL"); dbURL != "" {
-			cfg.Database.URL = dbURL
-		} else if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-			cfg.Database.URL = dbURL
-		}
-	}
-	if cfg.Database.URL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required: set the MOISTELLO_DATABASE_URL environment variable")
-	}
+	cfg.Environment = strings.TrimSpace(v.GetString("environment"))
+	cfg.Database.URL = requireString("database.url", cfg.Database.URL, "set MOISTELLO_DATABASE_URL or DATABASE_URL")
+	cfg.Stellar.MasterSecretKey = requireString("stellar.master_secret_key", cfg.Stellar.MasterSecretKey, "set MOISTELLO_STELLAR_MASTER_SECRET_KEY or STELLAR_MASTER_SECRET_KEY")
+	cfg.Stellar.MasterPublicKey = requireString("stellar.master_public_key", cfg.Stellar.MasterPublicKey, "set MOISTELLO_STELLAR_MASTER_PUBLIC_KEY or STELLAR_MASTER_PUBLIC_KEY")
+	cfg.Security.WalletPepper = requireString("security.wallet_pepper", cfg.Security.WalletPepper, "set MOISTELLO_WALLET_PEPPER")
+	cfg.Security.PasskeyPepper = requireString("security.passkey_pepper", cfg.Security.PasskeyPepper, "set MOISTELLO_PASSKEY_PEPPER")
+	cfg.Security.EncryptionKey = requireString("security.encryption_key", cfg.Security.EncryptionKey, "set ENCRYPTION_KEY")
+
+	cfg.Auth.JWTPrivateKeyPEM = loadRequiredText(cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPrivateKeyPath, "auth.jwt_private_key_pem", "auth.jwt_private_key_path")
+	cfg.Auth.JWTPublicKeyPEM = loadRequiredText(cfg.Auth.JWTPublicKeyPEM, cfg.Auth.JWTPublicKeyPath, "auth.jwt_public_key_pem", "auth.jwt_public_key_path")
+
+	validateHexKey(cfg.Security.EncryptionKey)
+	validateDuration("security.argon2_time", cfg.Security.Argon2Time > 0)
+	validateDuration("security.argon2_memory", cfg.Security.Argon2Memory > 0)
+	validateDuration("security.argon2_threads", cfg.Security.Argon2Threads > 0)
+
 	if cfg.Environment != "development" && strings.Contains(cfg.Database.URL, "sslmode=disable") {
-		return nil, fmt.Errorf("DATABASE_URL must not use sslmode=disable outside development; use sslmode=require or stronger")
+		panic(fmt.Errorf("database.url must not use sslmode=disable outside development; use sslmode=require or stronger"))
 	}
 
+	return &cfg
+}
+
+func loadDotEnv() {
+	for _, candidate := range []string{".env", ".env.local", "config/.env"} {
+		if err := loadEnvFile(candidate); err != nil {
+			panic(fmt.Errorf("config: loading %s: %w", candidate, err))
+		}
+	}
+}
+
+func loadEnvFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" {
+			continue
+		}
+		if len(value) >= 2 {
+			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+				value = value[1 : len(value)-1]
+			}
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+func mustBindEnv(v *viper.Viper, key string, envNames ...string) {
+	if err := v.BindEnv(key, envNames...); err != nil {
+		panic(fmt.Errorf("config: binding env for %s: %w", key, err))
+	}
+}
+
+func setDefault(v *viper.Viper, key string, value any) {
+	v.SetDefault(key, value)
+}
+
+func requireString(field, value, hint string) string {
+	if strings.TrimSpace(value) == "" {
+		panic(fmt.Errorf("config: %s is required (%s)", field, hint))
+	}
+	return strings.TrimSpace(value)
+}
+
+func loadRequiredText(current, path, field, pathField string) string {
+	if strings.TrimSpace(current) != "" {
+		return current
+	}
+	if strings.TrimSpace(path) == "" {
+		panic(fmt.Errorf("config: %s is required (set it directly or configure %s)", field, pathField))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		panic(fmt.Errorf("config: reading %s from %q: %w", field, path, err))
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func validateHexKey(value string) {
+	raw, err := hex.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(raw) != 32 {
+		panic(fmt.Errorf("config: security.encryption_key must be a 32-byte hex string"))
+	}
+}
+
+func validateDuration(name string, ok bool) {
+	if !ok {
+		panic(fmt.Errorf("config: %s must be greater than zero", name))
+	}
+}
 	if os.Getenv("MOISTELLO_WALLET_PEPPER") == "" {
 		return nil, fmt.Errorf("MOISTELLO_WALLET_PEPPER environment variable is required")
 	}

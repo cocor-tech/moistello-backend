@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/moistello/backend/internal/api/middleware"
+	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/domain/auth"
 	"github.com/moistello/backend/internal/domain/totp"
 	"github.com/moistello/backend/internal/domain/user"
@@ -28,18 +29,24 @@ import (
 )
 
 type AuthHandler struct {
-	authService     auth.Service
-	userService     user.Service
-	walletSvc       wallet.Service
-	totpService     *totp.Service
-	verificationSvc *verification.Service
-	redisClient     *redis.Client
-	userRepo        user.Repository
+	authService      auth.Service
+	userService      user.Service
+	walletSvc        wallet.Service
+	totpService      *totp.Service
+	verificationSvc  *verification.Service
+	emailSvc         *email.Service
+	redisClient      *redis.Client
+	userRepo         user.Repository
+	security         config.SecurityConfig
 }
 
 func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet.Service,
-	totpSvc *totp.Service, verificationSvc *verification.Service,
-	redisClient *redis.Client, userRepo user.Repository) *AuthHandler {
+	totpSvc *totp.Service, verificationSvc *verification.Service, emailSvc *email.Service,
+	redisClient *redis.Client, userRepo user.Repository, security ...config.SecurityConfig) *AuthHandler {
+	securityCfg := config.SecurityConfig{}
+	if len(security) > 0 {
+		securityCfg = security[0]
+	}
 	return &AuthHandler{
 		authService:     authSvc,
 		userService:     userSvc,
@@ -48,6 +55,7 @@ func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet
 		verificationSvc: verificationSvc,
 		redisClient:     redisClient,
 		userRepo:        userRepo,
+		security:        securityCfg,
 	}
 }
 
@@ -227,7 +235,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	walletSeed, err := deriveWalletSeed(req.Email)
+	walletSeed, err := h.deriveWalletSeed(req.Email)
 	if err != nil {
 		response.InternalError(c, "wallet seed derivation failed: "+err.Error())
 		return
@@ -584,7 +592,7 @@ func (h *AuthHandler) InitWallet(c *gin.Context) {
 		return
 	}
 
-	walletSeed, err := deriveWalletSeed(email)
+	walletSeed, err := h.deriveWalletSeed(email)
 	if err != nil {
 		response.InternalError(c, "wallet seed derivation failed: "+err.Error())
 		return
@@ -714,25 +722,22 @@ func emailToWalletAddr(email string) string {
 // pepper is ever compromised, an attacker still cannot precompute seeds for
 // all users because the email acts as a per-user salt component.
 //
-// Cost parameters are configurable via env vars (MOISTELLO_ARGON2_TIME,
-// MOISTELLO_ARGON2_MEMORY, MOISTELLO_ARGON2_THREADS) with conservative
-// defaults (time=1, memory=64 MiB, threads=4). Tune for your deployment's
-// CPU/memory budget.
-func deriveWalletSeed(email string) (string, error) {
-	pepper := os.Getenv("MOISTELLO_WALLET_PEPPER")
+// Cost parameters are loaded from config with conservative defaults.
+func (h *AuthHandler) deriveWalletSeed(email string) (string, error) {
+	pepper := h.security.WalletPepper
 	if pepper == "" {
-		return "", errors.New("MOISTELLO_WALLET_PEPPER environment variable is not set")
+		return "", errors.New("wallet pepper is not configured")
 	}
 
-	argonTime, _ := strconv.Atoi(os.Getenv("MOISTELLO_ARGON2_TIME"))
+	argonTime := h.security.Argon2Time
 	if argonTime <= 0 {
 		argonTime = 1
 	}
-	argonMemory, _ := strconv.Atoi(os.Getenv("MOISTELLO_ARGON2_MEMORY"))
+	argonMemory := h.security.Argon2Memory
 	if argonMemory <= 0 {
 		argonMemory = 64 * 1024 // 64 MiB
 	}
-	argonThreads, _ := strconv.Atoi(os.Getenv("MOISTELLO_ARGON2_THREADS"))
+	argonThreads := h.security.Argon2Threads
 	if argonThreads <= 0 {
 		argonThreads = 4
 	}

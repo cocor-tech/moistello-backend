@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 )
 
 // HashEmail computes a deterministic SHA-256 hash for indexed database lookups.
@@ -18,15 +17,10 @@ func HashEmail(email string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// EncryptField encrypts plaintext string using AES-256-GCM and a secret key from environment.
-func EncryptField(plaintext string) (string, error) {
+// EncryptField encrypts plaintext string using AES-256-GCM and a config-provided secret key.
+func EncryptField(keyHex, plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
-	}
-
-	keyHex := os.Getenv("ENCRYPTION_KEY")
-	if len(keyHex) == 0 {
-		return "", errors.New("[SECURITY CRITICAL] ENCRYPTION_KEY environment variable is missing")
 	}
 
 	key, err := hex.DecodeString(keyHex)
@@ -54,14 +48,9 @@ func EncryptField(plaintext string) (string, error) {
 }
 
 // DecryptField decrypts an AES-256-GCM ciphertext hex string back to plaintext.
-func DecryptField(ciphertextHex string) (string, error) {
+func DecryptField(keyHex, ciphertextHex string) (string, error) {
 	if ciphertextHex == "" {
 		return "", nil
-	}
-
-	keyHex := os.Getenv("ENCRYPTION_KEY")
-	if len(keyHex) == 0 {
-		return "", errors.New("[SECURITY CRITICAL] ENCRYPTION_KEY environment variable is missing")
 	}
 
 	key, err := hex.DecodeString(keyHex)

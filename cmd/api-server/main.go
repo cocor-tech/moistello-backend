@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/moistello/backend/config"
@@ -30,20 +29,26 @@ import (
 	"github.com/moistello/backend/internal/domain/community"
 	"github.com/moistello/backend/internal/domain/contribution"
 	"github.com/moistello/backend/internal/domain/email"
+	"github.com/moistello/backend/internal/domain/governance"
+	"github.com/moistello/backend/internal/domain/incentives"
 	"github.com/moistello/backend/internal/domain/invite"
 	"github.com/moistello/backend/internal/domain/notification"
 	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/savings"
+	"github.com/moistello/backend/internal/domain/swap"
 	"github.com/moistello/backend/internal/domain/totp"
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/internal/domain/verification"
 	"github.com/moistello/backend/internal/domain/wallet"
 	"github.com/moistello/backend/internal/domain/yellowcard"
+	"github.com/moistello/backend/pkg/stellar"
+	"github.com/moistello/backend/pkg/stellar/soroban"
 	ws "github.com/moistello/backend/internal/websocket"
 	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/postgres"
 	"github.com/moistello/backend/pkg/redis"
+	"github.com/moistello/backend/pkg/tracing"
 	"github.com/moistello/backend/pkg/validator"
 	"github.com/rs/zerolog/log"
 )
@@ -69,13 +74,16 @@ func (a *communityAdapter) IsMember(ctx context.Context, communityID, userID uui
 }
 
 func main() {
-	cfg, err := config.Load(".")
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load config")
-	}
+	cfg := config.Load()
 
 	logger.Init(cfg.Logging.Level, cfg.Logging.Format)
 	validator.Init()
+
+	// Initialize OpenTelemetry tracing
+	if err := tracing.Init(cfg.Tracing); err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize tracing")
+	}
+
 	log.Info().Msg("starting Moistello API server")
 
 	db, err := postgres.New(cfg.Database)
@@ -111,18 +119,20 @@ func main() {
 	payoutSvc := payout.NewService(payoutRepo)
 	reputationSvc := reputation.NewService(reputationRepo)
 	notificationSvc := notification.NewService(notificationRepo, nil, wsBroadcaster)
-	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPath, cfg.Auth.JWTPublicKeyPath)
+	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPublicKeyPEM)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize auth service")
 	}
 
 	totpSvc := totp.NewService()
 	verificationSvc := verification.NewService(redisClient)
-	emailSvc := email.NewService(email.ConfigFromEnv())
-	verificationSvc.WithEmailSender(emailSvc.SendOTP, emailSvc.SendRecoveryCode)
+	emailSvc := email.NewService(email.Config{
+		APIKey:      cfg.Brevo.APIKey,
+		FromAddress: cfg.Brevo.FromEmail,
+		FromName:    cfg.Brevo.FromName,
+	})
 
 	inviteSvc := invite.NewService(inviteRepo)
-	_ = reputationSvc
 	_ = auditRepo
 
 	// Wallet service (needed before auth handler for wallet creation)
@@ -139,14 +149,11 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialize wallet service")
 	}
 
-	jwtPublicKey, err := os.ReadFile(cfg.Auth.JWTPublicKeyPath)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load JWT public key")
-	}
+	jwtPublicKey := []byte(cfg.Auth.JWTPublicKeyPEM)
 
 	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
 
-	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, redisClient, userRepo)
+	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo, cfg.Security)
 	userH := handler.NewUserHandler(userSvc, redisClient)
 	circleH := handler.NewCircleHandler(circleSvc, inviteSvc, contribSvc, payoutSvc)
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)
@@ -172,7 +179,36 @@ func main() {
 	savingsSvc := savings.NewService(savingsRepo)
 	savingsH := handler.NewSavingsGoalHandler(savingsSvc)
 
-	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, jwtPublicKey)
+	// Initialize Soroban client for escrow swap contract
+	sorobanClient := soroban.NewClient(cfg.Stellar.SorobanRPCURL)
+	signer, err := stellar.NewSigner(cfg.Stellar.MasterSecretKey)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create stellar signer")
+	}
+	accountMgr, err := stellar.NewAccountManager(cfg.Stellar.MasterPublicKey, cfg.Stellar.HorizonURL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create account manager")
+	}
+
+	// Create escrow swap contract invoker and client
+	escrowSwapInvoker := soroban.NewContractInvoker(sorobanClient, signer, accountMgr, cfg.Stellar.EscrowSwapContractID)
+	escrowSwapClient := soroban.NewEscrowSwapClient(escrowSwapInvoker)
+
+	// Swap service and handler
+	swapRepo := swap.NewPostgresRepository(db.DB)
+	swapSvc := swap.NewService(swapRepo, circleSvc, userSvc, escrowSwapClient)
+	swapH := handler.NewSwapHandler(swapSvc)
+
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, swapH, jwtPublicKey)
+	governanceSvc := governance.NewService()
+	governanceH := handler.NewGovernanceHandler(governanceSvc)
+
+	incentivesRepo := incentives.NewRepository(db)
+	incentivesSvc := incentives.NewService(incentivesRepo)
+	reputationH := handler.NewReputationHandler(reputationSvc)
+	referralH := handler.NewReferralHandler(incentivesSvc)
+
+	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, communityH, wsH, savingsH, governanceH, reputationH, referralH, jwtPublicKey)
 
 	if err := api.RunServer(router, cfg.Server); err != nil {
 		log.Fatal().Err(err).Msg("server error")

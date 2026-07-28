@@ -40,11 +40,22 @@ stellar:
   wallet_min_balance: 10.0
 
 auth:
+  # Provide JWT private/public keys either via the env vars JWT_PRIVATE_KEY /
+  # JWT_PUBLIC_KEY or by placing the PEM files at the configured paths below.
   jwt_private_key_path: "./config/keys/jwt-private.pem"
   jwt_public_key_path: "./config/keys/jwt-public.pem"
   access_token_ttl: "240m"
   refresh_token_ttl: "168h"
   nonce_ttl: "5m"
+
+security:
+  # Required secrets. Prefer loading them from .env during local development.
+  wallet_pepper: ""
+  passkey_pepper: ""
+  encryption_key: ""
+  argon2_time: 1
+  argon2_memory: 65536
+  argon2_threads: 4
 
 indexer:
   poll_interval: "3s"

@@ -7,10 +7,7 @@ import (
 )
 
 func TestYellowCardHMACSignature(t *testing.T) {
-	t.Setenv("YELLOW_CARD_API_KEY", "test_key_123")
-	t.Setenv("YELLOW_CARD_API_SECRET", "super_secret_key_456")
-
-	client, err := yellowcard.NewClient("https://api.yellowcard.io")
+	client, err := yellowcard.NewClient("https://api.yellowcard.io", "test_key_123", "super_secret_key_456")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

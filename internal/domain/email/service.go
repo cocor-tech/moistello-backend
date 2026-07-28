@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"strings"
 )
 
 // Config holds the Brevo email sending configuration.
@@ -27,9 +27,6 @@ func NewService(cfg Config) *Service {
 	}
 	if cfg.FromName == "" {
 		cfg.FromName = "Moistello"
-	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("MOISTELLO_BREVO_API_KEY")
 	}
 	return &Service{
 		config: cfg,
@@ -67,6 +64,10 @@ func (s *Service) SendRecoveryCode(email, code string) error {
 }
 
 func (s *Service) sendBrevo(to, subject, htmlBody string) error {
+	if strings.TrimSpace(s.config.APIKey) == "" {
+		return fmt.Errorf("brevo api key is not configured")
+	}
+
 	payload := map[string]any{
 		"sender": map[string]string{
 			"name":  s.config.FromName,
@@ -103,31 +104,4 @@ func (s *Service) sendBrevo(to, subject, htmlBody string) error {
 
 	fmt.Printf("[BREVO] Email sent to %s — subject: %s\n", to, subject)
 	return nil
-}
-
-// ConfigFromEnv loads Brevo config from environment variables.
-func ConfigFromEnv() Config {
-	apiKey := os.Getenv("MOISTELLO_BREVO_API_KEY")
-	if apiKey == "" {
-		apiKey = os.Getenv("MOISTELLO_NOTIFICATION_EMAIL_APIKEY")
-	}
-	if apiKey == "" {
-		apiKey = os.Getenv("MOISTELLO_EMAIL_API_KEY")
-	}
-
-	from := os.Getenv("MOISTELLO_BREVO_FROM_EMAIL")
-	if from == "" {
-		from = os.Getenv("MOISTELLO_NOTIFICATION_EMAIL_FROM_ADDRESS")
-	}
-
-	name := os.Getenv("MOISTELLO_BREVO_FROM_NAME")
-	if name == "" {
-		name = os.Getenv("MOISTELLO_NOTIFICATION_EMAIL_FROM_NAME")
-	}
-
-	return Config{
-		APIKey:      apiKey,
-		FromAddress: from,
-		FromName:    name,
-	}
 }

@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"os"
 	"testing"
 
 	"auth"
@@ -27,10 +26,8 @@ func generateTestPEM(t *testing.T) string {
 func TestJWTKeyManager_Loading(t *testing.T) {
 	testPEM := generateTestPEM(t)
 
-	t.Run("successfully loads key from environment variable", func(t *testing.T) {
-		t.Setenv("JWT_PRIVATE_KEY", testPEM)
-
-		km, err := auth.NewJWTKeyManager(auth.JWTConfig{})
+	t.Run("successfully loads key from config PEM", func(t *testing.T) {
+		km, err := auth.NewJWTKeyManager(auth.JWTConfig{PrivateKeyPEM: testPEM})
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -40,12 +37,9 @@ func TestJWTKeyManager_Loading(t *testing.T) {
 	})
 
 	t.Run("fails at startup when no private key configuration is present", func(t *testing.T) {
-		t.Setenv("JWT_PRIVATE_KEY", "")
-		t.Setenv("JWT_PRIVATE_KEY_PATH", "")
-
 		_, err := auth.NewJWTKeyManager(auth.JWTConfig{})
 		if err == nil {
 			t.Fatal("expected error when no JWT key source is provided, got nil")
 		}
 	})
-} 
+}

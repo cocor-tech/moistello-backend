@@ -20,6 +20,12 @@ require (
 	github.com/stellar/go v0.0.0-20251210100531-aab2ea4aca88
 	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/swag v1.8.12
+	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.54.0
+	go.opentelemetry.io/otel v1.31.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.31.0
+	go.opentelemetry.io/otel/sdk v1.31.0
+	go.opentelemetry.io/otel/sdk/trace v1.31.0
+	go.opentelemetry.io/otel/trace v1.31.0
 	golang.org/x/crypto v0.53.0
 )
 

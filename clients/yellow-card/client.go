@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -18,18 +17,15 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func NewClient(baseURL string) (*Client, error) {
-	key := os.Getenv("YELLOW_CARD_API_KEY")
-	secret := os.Getenv("YELLOW_CARD_API_SECRET")
-
-	if key == "" || secret == "" {
-		return nil, fmt.Errorf("[SECURITY CRITICAL] Missing Yellow Card API credentials in environment")
+func NewClient(baseURL, apiKey, apiSecret string) (*Client, error) {
+	if apiKey == "" || apiSecret == "" {
+		return nil, fmt.Errorf("[SECURITY CRITICAL] Missing Yellow Card API credentials in config")
 	}
 
 	return &Client{
 		baseURL:    baseURL,
-		apiKey:     key,
-		apiSecret:  secret,
+		apiKey:     apiKey,
+		apiSecret:  apiSecret,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}, nil
 }

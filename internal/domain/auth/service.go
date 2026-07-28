@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -12,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -49,30 +47,11 @@ type authService struct {
 	jwtPublicKey  []byte
 }
 
-func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, jwtPrivateKeyPath, jwtPublicKeyPath string) (Service, error) {
-	var privateKeyPEM, publicKeyPEM []byte
-	var err error
-
-	if privateKey := os.Getenv("JWT_PRIVATE_KEY"); privateKey != "" {
-		privateKeyPEM = []byte(privateKey)
-	} else {
-		privateKeyPEM, err = os.ReadFile(jwtPrivateKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading JWT private key: %w", err)
-		}
-	}
-
-	if publicKey := os.Getenv("JWT_PUBLIC_KEY"); publicKey != "" {
-		publicKeyPEM = []byte(publicKey)
-	} else {
-		publicKeyPEM, err = os.ReadFile(jwtPublicKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading JWT public key: %w", err)
-		}
-	}
-
-	if privateKeyPEM == nil || publicKeyPEM == nil {
-		return nil, fmt.Errorf("[SECURITY CRITICAL] JWT keys must be provided via JWT_PRIVATE_KEY and JWT_PUBLIC_KEY environment variables or secure file paths")
+func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, jwtPrivateKeyPEM, jwtPublicKeyPEM string) (Service, error) {
+	privateKeyPEM := []byte(strings.TrimSpace(jwtPrivateKeyPEM))
+	publicKeyPEM := []byte(strings.TrimSpace(jwtPublicKeyPEM))
+	if len(privateKeyPEM) == 0 || len(publicKeyPEM) == 0 {
+		return nil, fmt.Errorf("[SECURITY CRITICAL] JWT keys must be loaded into config before auth service startup")
 	}
 
 	return &authService{

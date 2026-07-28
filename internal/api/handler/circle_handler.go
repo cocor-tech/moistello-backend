@@ -421,6 +421,47 @@ func (h *CircleHandler) Vote(c *gin.Context) {
 	})
 }
 
+// RemoveMember allows the circle organizer to remove a member by their user ID (address).
+// The member's status is set to 'removed' and a MemberLeft event is broadcast.
+// @Summary Remove a member from a circle
+// @Description Organizer-only. Removes a member, broadcasts event for stake redistribution.
+// @Tags Circles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Param address path string true "Member user ID (address)"
+// @Param body body object{reason=string} false "Optional removal reason"
+// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Failure 400 {object} response.Envelope
+// @Failure 403 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /circles/{id}/members/{address}/remove [post]
+func (h *CircleHandler) RemoveMember(c *gin.Context) {
+	circleID := c.Param("id")
+	memberAddress := c.Param("address")
+	callerID := middleware.GetUserID(c)
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	// reason is optional; ignore bind errors
+	_ = c.ShouldBindJSON(&req)
+
+	if err := h.circleService.RemoveMember(c.Request.Context(), circleID, callerID, memberAddress, req.Reason); err != nil {
+		switch err {
+		case circle.ErrNotOrganizer:
+			response.Forbidden(c, "only the organizer can remove members")
+		case circle.ErrNotMember:
+			response.NotFound(c, "member not found or already inactive")
+		default:
+			response.BadRequest(c, err.Error())
+		}
+		return
+	}
+	response.OK(c, gin.H{"success": true})
+}
+
 func (h *CircleHandler) AuctionBid(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)

@@ -24,6 +24,7 @@ type Service interface {
 	Join(ctx context.Context, circleID, userID string, inviteCode string) error
 	Exit(ctx context.Context, circleID, userID string) error
 	GetMembers(ctx context.Context, circleID string) ([]CircleMember, error)
+	RemoveMember(ctx context.Context, circleID, callerID, memberAddress string, reason string) error
 }
 
 type UserMOIFetcher interface {
@@ -582,6 +583,57 @@ func (s *circleService) GetMembers(ctx context.Context, circleID string) ([]Circ
 		return nil, fmt.Errorf("getting members: %w", err)
 	}
 	return members, nil
+}
+
+// RemoveMember lets the circle organizer forcibly remove a member by their user ID.
+// The member's stake redistribution is noted in the audit trail; actual on-chain
+// redistribution is handled by the treasury contract and triggered via the emitted event.
+func (s *circleService) RemoveMember(ctx context.Context, circleID, callerID, memberAddress string, reason string) error {
+	cid, err := parseUUID(circleID)
+	if err != nil {
+		return err
+	}
+	callerUID, err := parseUUID(callerID)
+	if err != nil {
+		return err
+	}
+	memberUID, err := parseUUID(memberAddress)
+	if err != nil {
+		return err
+	}
+
+	c, err := s.repo.FindByID(ctx, cid)
+	if err != nil {
+		return fmt.Errorf("finding circle: %w", err)
+	}
+
+	if c.OrganizerID != callerUID {
+		return ErrNotOrganizer
+	}
+
+	if callerUID == memberUID {
+		return fmt.Errorf("organizer cannot remove themselves; use cancel or close")
+	}
+
+	member, err := s.repo.FindMemberByCircleAndUser(ctx, cid, memberUID)
+	if err != nil {
+		if err == apperrors.ErrNotFound {
+			return ErrNotMember
+		}
+		return fmt.Errorf("finding member: %w", err)
+	}
+	if member.Status != MemberStatusActive {
+		return ErrNotMember
+	}
+
+	if err := s.repo.UpdateMemberStatus(ctx, cid, memberUID, MemberStatusRemoved); err != nil {
+		return fmt.Errorf("removing member: %w", err)
+	}
+
+	if s.broadcaster != nil {
+		s.broadcaster.MemberLeft(ctx, circleID, memberAddress)
+	}
+	return nil
 }
 
 func ceilFloat(f float64) float64 {
