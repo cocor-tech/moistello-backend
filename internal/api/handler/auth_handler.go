@@ -116,14 +116,14 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	response.OK(c, gin.H{"token": tokenPair.AccessToken, "refreshToken": tokenPair.RefreshToken, "csrfToken": tokenPair.CSRFToken})
 }
 
-// @Summary Get current user
-// @Description Returns the authenticated user's profile. Requires Bearer token.
+// @Summary Get current user profile
+// @Description Returns the authenticated user's profile. Requires Bearer token. Replaces the old POST /auth/me endpoint.
 // @Tags Authentication
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} response.Envelope{data=object{user=object}}
 // @Failure 401 {object} response.Envelope
-// @Router /auth/me [post]
+// @Router /me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	u, err := h.userService.GetByID(c.Request.Context(), userID)
@@ -318,10 +318,18 @@ func (h *AuthHandler) RegisterVerify(c *gin.Context) {
 		return
 	}
 
-	// Wallet is NOT created here — it's triggered from the dashboard on first load.
-	// This keeps registration instant (<100ms).
-	// Wallet will be created deterministically from the email seed when
-	// POST /auth/wallet/init is called from the frontend.
+	// Auto-create Stellar wallet on registration (closes #115):
+	// Generate keypair, fund from master XLM pool, set USDC trustline,
+	// and store AES-256-GCM-encrypted secret key in the wallets table.
+	// Wallet creation is non-blocking — a failure is logged but does NOT
+	// abort registration. The user can retry via POST /auth/wallet/init.
+	walletSeed, seedErr := h.deriveWalletSeed(req.Email)
+	if seedErr == nil {
+		if _, wErr := h.walletSvc.CreateWallet(c.Request.Context(), u.ID.String(), []byte(walletSeed)); wErr != nil {
+			// Log but don't fail registration
+			_ = wErr // already logged inside CreateWallet
+		}
+	}
 
 	h.verificationSvc.DeletePendingRegistration(c.Request.Context(), req.Email)
 

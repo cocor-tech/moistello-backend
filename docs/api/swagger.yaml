@@ -384,9 +384,10 @@ paths:
       summary: Logout
       tags:
       - Authentication
-  /auth/me:
-    post:
+  /me:
+    get:
       description: Returns the authenticated user's profile. Requires Bearer token.
+        Replaces the old POST /auth/me endpoint.
       produces:
       - application/json
       responses:
@@ -408,7 +409,7 @@ paths:
             $ref: '#/definitions/response.Envelope'
       security:
       - BearerAuth: []
-      summary: Get current user
+      summary: Get current user profile
       tags:
       - Authentication
   /auth/nonce:

@@ -375,21 +375,21 @@
                 }
             }
         },
-        "/auth/me": {
-            "post": {
+        "/me": {
+            "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the authenticated user's profile. Requires Bearer token.",
+                "description": "Returns the authenticated user's profile. Requires Bearer token. Replaces the old POST /auth/me endpoint.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Get current user",
+                "summary": "Get current user profile",
                 "responses": {
                     "200": {
                         "description": "OK",

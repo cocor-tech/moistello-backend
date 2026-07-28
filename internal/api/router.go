@@ -33,6 +33,7 @@ func NewRouter(
 	governanceHandler *handler.GovernanceHandler,
 	reputationHandler *handler.ReputationHandler,
 	referralHandler *handler.ReferralHandler,
+	consentHandler *handler.ConsentHandler,
 	jwtPublicKey []byte,
 ) *gin.Engine {
 	r := gin.New()
@@ -85,7 +86,7 @@ func NewRouter(
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
 		authenticated.Use(middleware.CSRFTokenValidator(redisClient))
 		{
-			authenticated.POST("/auth/me", authHandler.Me)
+			authenticated.GET("/me", authHandler.Me)
 			authenticated.POST("/auth/logout", authHandler.Logout)
 			authenticated.POST("/auth/wallet/init", authHandler.InitWallet)
 			authenticated.POST("/auth/passkey/link", authHandler.PasskeyLink)
@@ -235,6 +236,10 @@ func NewRouter(
 		{
 			optional.GET("/circles", circleHandler.ListCircles)
 			optional.GET("/users/:id", userHandler.GetByID)
+
+			// GDPR cookie consent — works for both authenticated and anonymous users
+			optional.POST("/consent", consentHandler.SaveConsent)
+			optional.GET("/consent", consentHandler.GetConsent)
 		}
 	}
 
