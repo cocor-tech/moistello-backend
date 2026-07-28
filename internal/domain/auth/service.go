@@ -121,7 +121,12 @@ func (s *authService) VerifySignature(ctx context.Context, walletAddress, signat
 	}
 
 	// Delete nonce immediately to prevent any replay
-	s.redis.Del(ctx, key)
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		log.Error().Err(err).Str("wallet", walletAddress).Msg("failed to delete nonce from redis — attempting expiry fallback")
+		if expireErr := s.redis.Expire(ctx, key, 1*time.Second).Err(); expireErr != nil {
+			log.Error().Err(expireErr).Str("wallet", walletAddress).Msg("nonce expiry fallback also failed")
+		}
+	}
 
 	// Parse nonce value and creation timestamp
 	parts := strings.SplitN(stored, ":", 2)
