@@ -68,15 +68,16 @@ type RabbitMQConfig struct {
 }
 
 type StellarConfig struct {
-	Network                 string  `mapstructure:"network"`
-	HorizonURL              string  `mapstructure:"horizon_url"`
-	SorobanRPCURL           string  `mapstructure:"soroban_rpc_url"`
-	NetworkPassphrase       string  `mapstructure:"network_passphrase"`
-	MasterPublicKey         string  `mapstructure:"master_public_key"`
-	MasterSecretKey         string  `mapstructure:"master_secret_key"`
-	USDCIssuer              string  `mapstructure:"usdc_issuer"`
-	WalletMinBalance        float64 `mapstructure:"wallet_min_balance"`
-	GovernanceTokenContractID string `mapstructure:"governance_token_contract_id"`
+	Network                   string  `mapstructure:"network"`
+	HorizonURL                string  `mapstructure:"horizon_url"`
+	SorobanRPCURL             string  `mapstructure:"soroban_rpc_url"`
+	NetworkPassphrase         string  `mapstructure:"network_passphrase"`
+	MasterPublicKey           string  `mapstructure:"master_public_key"`
+	MasterSecretKey           string  `mapstructure:"master_secret_key"`
+	USDCIssuer                string  `mapstructure:"usdc_issuer"`
+	WalletMinBalance          float64 `mapstructure:"wallet_min_balance"`
+	GovernanceTokenContractID string  `mapstructure:"governance_token_contract_id"`
+	EscrowSwapContractID      string  `mapstructure:"escrow_swap_contract_id"`
 }
 
 func (s StellarConfig) MarshalJSON() ([]byte, error) {
@@ -89,15 +90,6 @@ func (s StellarConfig) String() string {
 		return "{... redacted ...}"
 	}
 	return "{...}"
-	Network              string `mapstructure:"network"`
-	HorizonURL           string `mapstructure:"horizon_url"`
-	SorobanRPCURL        string `mapstructure:"soroban_rpc_url"`
-	NetworkPassphrase    string `mapstructure:"network_passphrase"`
-	MasterPublicKey      string `mapstructure:"master_public_key"`
-	MasterSecretKey      string `mapstructure:"master_secret_key"`
-	USDCIssuer           string `mapstructure:"usdc_issuer"`
-	WalletMinBalance     float64 `mapstructure:"wallet_min_balance"`
-	EscrowSwapContractID string `mapstructure:"escrow_swap_contract_id"`
 }
 
 type YellowCardConfig struct {
