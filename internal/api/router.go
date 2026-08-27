@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
@@ -9,6 +11,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 )
+
+// perResource is a small helper so route registration below doesn't have to
+// repeat the redisClient/resource/limit/window/fail-closed boilerplate for
+// every sensitive route (#197 — PerResourceRateLimitMiddleware existed but
+// was never applied to any route).
+func perResource(redisClient *redis.Client, resource string, limit, windowSeconds int) gin.HandlerFunc {
+	return middleware.PerResourceRateLimitMiddleware(
+		redisClient,
+		resource,
+		limit,
+		time.Duration(windowSeconds)*time.Second,
+		middleware.WithFailClosed(),
+	)
+}
 
 func NewRouter(
 	cfg *config.Config,
@@ -75,8 +91,8 @@ func NewRouter(
 		auth := api.Group("/auth")
 		auth.Use(middleware.AuthRateLimitMiddleware(redisClient, cfg.RateLimit))
 		{
-			auth.POST("/register", authHandler.Register)
-			auth.POST("/register/verify", authHandler.RegisterVerify)
+			auth.POST("/register", perResource(redisClient, "otp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds), authHandler.Register)
+			auth.POST("/register/verify", perResource(redisClient, "otp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds), authHandler.RegisterVerify)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/refresh", middleware.RefreshTokenBlocklistMiddleware(redisClient), authHandler.Refresh)
 			auth.POST("/passkey/nonce", authHandler.PasskeyNonce)
@@ -112,13 +128,13 @@ func NewRouter(
 			authenticated.POST("/wallets", walletHandler.CreateWallet)
 			authenticated.GET("/wallets", walletHandler.ListWallets)
 			authenticated.GET("/wallets/balance", walletHandler.GetBalance)
-			authenticated.POST("/wallets/withdraw", walletHandler.Withdraw)
+			authenticated.POST("/wallets/withdraw", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), walletHandler.Withdraw)
 			authenticated.DELETE("/wallets/:id", walletHandler.DeleteWallet)
 
 			// Deposit / Withdraw routes
 			authenticated.GET("/wallet/deposit/quote", depositHandler.GetDepositQuote)
-			authenticated.POST("/wallet/deposit", depositHandler.InitiateDeposit)
-			authenticated.POST("/wallet/withdraw", depositHandler.InitiateWithdraw)
+			authenticated.POST("/wallet/deposit", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), depositHandler.InitiateDeposit)
+			authenticated.POST("/wallet/withdraw", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), depositHandler.InitiateWithdraw)
 			authenticated.GET("/wallet/transactions/:yellowCardId", depositHandler.GetTransactionStatus)
 
 			// Circles
@@ -130,7 +146,7 @@ func NewRouter(
 			authenticated.POST("/circles/:id/close", circleHandler.CloseCircle)
 			authenticated.DELETE("/circles/:id", circleHandler.CancelCircle)
 			authenticated.POST("/circles/:id/join", circleHandler.JoinCircle)
-			authenticated.POST("/circles/:id/contribute", circleHandler.Contribute)
+			authenticated.POST("/circles/:id/contribute", perResource(redisClient, "contribute", cfg.RateLimit.ContributeLimit, cfg.RateLimit.ContributeWindowSeconds), circleHandler.Contribute)
 			authenticated.POST("/circles/:id/exit", circleHandler.ExitCircle)
 			authenticated.GET("/circles/:id/members", circleHandler.GetMembers)
 			authenticated.GET("/circles/:id/rounds", circleHandler.GetRounds)
@@ -162,7 +178,7 @@ func NewRouter(
 			authenticated.GET("/reputation/tier/:address", reputationHandler.GetTierByAddress)
 
 			// Referral system
-			authenticated.POST("/referral/code", referralHandler.GenerateCode)
+			authenticated.POST("/referral/code", perResource(redisClient, "referral", cfg.RateLimit.ReferralLimit, cfg.RateLimit.ReferralWindowSeconds), referralHandler.GenerateCode)
 			authenticated.GET("/referral/stats", referralHandler.GetStats)
 			authenticated.GET("/referral/history", referralHandler.GetHistory)
 
@@ -208,9 +224,9 @@ func NewRouter(
 			authenticated.POST("/token/unstake", tokenHandler.Unstake)
 			authenticated.GET("/token/stakes/:address", tokenHandler.GetStakes)
 			// Swap endpoints
-			authenticated.POST("/swap/offer", swapHandler.CreateSwapOffer)
-			authenticated.POST("/swap/accept", swapHandler.AcceptSwapOffer)
-			authenticated.POST("/swap/cancel", swapHandler.CancelSwapOffer)
+			authenticated.POST("/swap/offer", perResource(redisClient, "swap", cfg.RateLimit.SwapLimit, cfg.RateLimit.SwapWindowSeconds), swapHandler.CreateSwapOffer)
+			authenticated.POST("/swap/accept", perResource(redisClient, "swap", cfg.RateLimit.SwapLimit, cfg.RateLimit.SwapWindowSeconds), swapHandler.AcceptSwapOffer)
+			authenticated.POST("/swap/cancel", perResource(redisClient, "swap", cfg.RateLimit.SwapLimit, cfg.RateLimit.SwapWindowSeconds), swapHandler.CancelSwapOffer)
 			authenticated.GET("/swap/history", swapHandler.GetSwapHistory)
 
 			authenticated.POST("/webhooks", webhookHandler.RegisterWebhook)

@@ -180,6 +180,21 @@ type RateLimitConfig struct {
 	// the in-memory limiter (fails open). Individual routes may override this
 	// per-route via middleware.RateLimitMiddleware options.
 	FailClosed bool `mapstructure:"fail_closed"`
+
+	// Per-resource limits (#197). middleware.PerResourceRateLimitMiddleware
+	// existed but was never applied to any route — these give the
+	// high-value/sensitive resources their own configurable, tighter buckets
+	// instead of sharing the coarse Global/Authenticated/Auth limits above.
+	OTPLimit                    int `mapstructure:"otp_limit"`
+	OTPWindowSeconds            int `mapstructure:"otp_window_seconds"`
+	SwapLimit                   int `mapstructure:"swap_limit"`
+	SwapWindowSeconds           int `mapstructure:"swap_window_seconds"`
+	ContributeLimit             int `mapstructure:"contribute_limit"`
+	ContributeWindowSeconds     int `mapstructure:"contribute_window_seconds"`
+	WalletTransferLimit         int `mapstructure:"wallet_transfer_limit"`
+	WalletTransferWindowSeconds int `mapstructure:"wallet_transfer_window_seconds"`
+	ReferralLimit               int `mapstructure:"referral_limit"`
+	ReferralWindowSeconds       int `mapstructure:"referral_window_seconds"`
 }
 
 type LoggingConfig struct {
@@ -250,6 +265,16 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "rate_limit.authenticated", 300)
 	setDefault(v, "rate_limit.auth", 10)
 	setDefault(v, "rate_limit.fail_closed", true)
+	setDefault(v, "rate_limit.otp_limit", 5)
+	setDefault(v, "rate_limit.otp_window_seconds", 900)
+	setDefault(v, "rate_limit.swap_limit", 10)
+	setDefault(v, "rate_limit.swap_window_seconds", 60)
+	setDefault(v, "rate_limit.contribute_limit", 10)
+	setDefault(v, "rate_limit.contribute_window_seconds", 60)
+	setDefault(v, "rate_limit.wallet_transfer_limit", 5)
+	setDefault(v, "rate_limit.wallet_transfer_window_seconds", 60)
+	setDefault(v, "rate_limit.referral_limit", 10)
+	setDefault(v, "rate_limit.referral_window_seconds", 3600)
 	setDefault(v, "logging.level", "debug")
 	setDefault(v, "logging.format", "json")
 	setDefault(v, "logging.output", "stdout")
@@ -324,6 +349,16 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("rate_limit.authenticated", 300)
 	v.SetDefault("rate_limit.auth", 10)
 	v.SetDefault("rate_limit.fail_closed", true)
+	v.SetDefault("rate_limit.otp_limit", 5)
+	v.SetDefault("rate_limit.otp_window_seconds", 900)
+	v.SetDefault("rate_limit.swap_limit", 10)
+	v.SetDefault("rate_limit.swap_window_seconds", 60)
+	v.SetDefault("rate_limit.contribute_limit", 10)
+	v.SetDefault("rate_limit.contribute_window_seconds", 60)
+	v.SetDefault("rate_limit.wallet_transfer_limit", 5)
+	v.SetDefault("rate_limit.wallet_transfer_window_seconds", 60)
+	v.SetDefault("rate_limit.referral_limit", 10)
+	v.SetDefault("rate_limit.referral_window_seconds", 3600)
 	v.SetDefault("logging.level", "debug")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.output", "stdout")

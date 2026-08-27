@@ -75,6 +75,14 @@ func (s *Service) SendBackupCodes(ctx context.Context, email string, codes []str
 	return s.sendBrevo(ctx, email, subject, body)
 }
 
+// SendNotification sends an arbitrary notification (issue #191's email
+// delivery channel) as a plain HTML email. Unlike SendOTP/SendBackupCodes/
+// SendRecoveryCode, subject and body are caller-supplied rather than
+// templated here, since notification content varies by NotificationType.
+func (s *Service) SendNotification(ctx context.Context, to, subject, body string) error {
+	return s.sendBrevo(ctx, to, subject, body)
+}
+
 // SendRecoveryCode sends a one-time recovery code.
 func (s *Service) SendRecoveryCode(ctx context.Context, email, code string) error {
 	subject := "Your Moistello account recovery code"

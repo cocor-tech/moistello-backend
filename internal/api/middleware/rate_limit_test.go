@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -273,4 +274,108 @@ func TestRateLimitMiddleware_MultipleMiddlewareChain(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// ── PerResourceRateLimitMiddleware (#197) ───────────────────────────────────
+//
+// The middleware existed but was never applied to a route; these tests cover
+// it directly, matching the coverage the group-level limiters above already
+// have (allow within limit, reject over limit, fail closed on a Redis
+// outage, and — the actual point of "per resource" — that two different
+// resources on the same client IP get independent budgets).
+
+func TestPerResourceRateLimitMiddleware_AllowedWithinLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rdb, cleanup := newMiniredis(t)
+	defer cleanup()
+
+	r := gin.New()
+	r.POST("/swap/offer", middleware.PerResourceRateLimitMiddleware(rdb, "swap", 2, time.Minute), func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/swap/offer", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "2", w.Header().Get("X-RateLimit-Limit"))
+}
+
+func TestPerResourceRateLimitMiddleware_ExceedsLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rdb, cleanup := newMiniredis(t)
+	defer cleanup()
+
+	r := gin.New()
+	r.POST("/swap/offer", middleware.PerResourceRateLimitMiddleware(rdb, "swap", 2, time.Minute), func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("POST", "/swap/offer", nil)
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code, "requests 1-2 should be allowed")
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/swap/offer", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Contains(t, w.Body.String(), "rate limit exceeded for swap")
+}
+
+func TestPerResourceRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rdb := newUnreachableRedis()
+	defer rdb.Close()
+
+	r := gin.New()
+	r.POST("/auth/register", middleware.PerResourceRateLimitMiddleware(rdb, "otp", 5, 15*time.Minute, middleware.WithFailClosed()), func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/register", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
+// TestPerResourceRateLimitMiddleware_IndependentBudgetsPerResource is the
+// core "per resource" guarantee: a client that has exhausted the "swap"
+// budget can still make a "contribute" call, because each resource key is
+// scoped by name (see the "ratelimit:r:<resource>:<ip>" key format in
+// PerResourceRateLimitMiddleware) — a single shared bucket would incorrectly
+// let one endpoint's traffic starve an unrelated one's budget.
+func TestPerResourceRateLimitMiddleware_IndependentBudgetsPerResource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rdb, cleanup := newMiniredis(t)
+	defer cleanup()
+
+	r := gin.New()
+	r.POST("/swap/offer", middleware.PerResourceRateLimitMiddleware(rdb, "swap", 1, time.Minute), func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+	r.POST("/circles/1/contribute", middleware.PerResourceRateLimitMiddleware(rdb, "contribute", 1, time.Minute), func(c *gin.Context) {
+		c.JSON(200, gin.H{"ok": true})
+	})
+
+	// Exhaust the "swap" budget.
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/swap/offer", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/swap/offer", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, "swap budget should now be exhausted")
+
+	// "contribute" from the same client IP is unaffected.
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/circles/1/contribute", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "contribute has its own independent budget")
 }

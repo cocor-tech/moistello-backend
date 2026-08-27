@@ -29,7 +29,7 @@ func NewRepository(db *sqlx.DB) Repository {
 
 func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 	var u User
-	var email, phone, displayName, avatarIpfsHash, countryCode, passkeyCredentialID, totpSecret, passwordHash sql.NullString
+	var email, phone, displayName, avatarIpfsHash, countryCode, passkeyCredentialID, totpSecret, passwordHash, pushToken sql.NullString
 	err := row.Scan(
 		&u.ID,
 		&u.WalletAddress,
@@ -48,6 +48,9 @@ func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 		&u.BackupCodes,
 		&u.EmailVerified,
 		&passkeyCredentialID,
+		&u.NotificationChannels,
+		&u.NotificationsMuted,
+		&pushToken,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	)
@@ -81,6 +84,9 @@ func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 	if passkeyCredentialID.Valid {
 		u.PasskeyCredentialID = &passkeyCredentialID.String
 	}
+	if pushToken.Valid {
+		u.PushToken = &pushToken.String
+	}
 	return &u, nil
 }
 
@@ -88,6 +94,7 @@ func (r *pgRepo) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	query := `SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
+		notification_channels, notifications_muted, push_token,
 		created_at, updated_at FROM users WHERE id = $1 AND deleted_at IS NULL`
 	return scanUser(r.db.QueryRowxContext(ctx, query, id))
 }
@@ -96,6 +103,7 @@ func (r *pgRepo) FindByWalletAddress(ctx context.Context, walletAddress string) 
 	query := `SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
+		notification_channels, notifications_muted, push_token,
 		created_at, updated_at FROM users WHERE wallet_address = $1 AND deleted_at IS NULL`
 	return scanUser(r.db.QueryRowxContext(ctx, query, walletAddress))
 }
@@ -105,6 +113,7 @@ func (r *pgRepo) FindByEmail(ctx context.Context, email string) (*User, error) {
 	query := `SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
+		notification_channels, notifications_muted, push_token,
 		created_at, updated_at FROM users WHERE email = $1 AND deleted_at IS NULL`
 	return scanUser(r.db.QueryRowxContext(ctx, query, hashedEmail))
 }
@@ -113,6 +122,7 @@ func (r *pgRepo) FindByPasskeyCredentialID(ctx context.Context, credentialID str
 	query := `SELECT id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
+		notification_channels, notifications_muted, push_token,
 		created_at, updated_at FROM users WHERE passkey_credential_id = $1 AND deleted_at IS NULL`
 	return scanUser(r.db.QueryRowxContext(ctx, query, credentialID))
 }

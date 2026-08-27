@@ -35,8 +35,10 @@ import (
 	"github.com/moistello/backend/internal/domain/invite"
 	"github.com/moistello/backend/internal/domain/notification"
 	"github.com/moistello/backend/internal/domain/payout"
+	"github.com/moistello/backend/internal/domain/push"
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/savings"
+	"github.com/moistello/backend/internal/domain/sms"
 	"github.com/moistello/backend/internal/domain/swap"
 	"github.com/moistello/backend/internal/domain/token"
 	"github.com/moistello/backend/internal/domain/totp"
@@ -78,6 +80,31 @@ func (a *communityAdapter) IsMember(ctx context.Context, communityID, userID uui
 	return a.repo.IsMember(ctx, communityID, userID)
 }
 
+// userLookupAdapter resolves a notification.Recipient from user.Repository —
+// #191's delivery channels need a user's contact details and preferences,
+// without the notification package importing the full user domain.
+type userLookupAdapter struct {
+	repo user.Repository
+}
+
+func (a *userLookupAdapter) FindRecipient(ctx context.Context, userID string) (notification.Recipient, error) {
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		return notification.Recipient{}, err
+	}
+	u, err := a.repo.FindByID(ctx, id)
+	if err != nil {
+		return notification.Recipient{}, err
+	}
+	return notification.Recipient{
+		Email:             u.Email,
+		Phone:             u.Phone,
+		PushToken:         u.PushToken,
+		PreferredChannels: []string(u.NotificationChannels),
+		Muted:             u.NotificationsMuted,
+	}, nil
+}
+
 func main() {
 	cfg, err := config.Load("")
 	if err != nil {
@@ -112,6 +139,7 @@ func main() {
 	payoutRepo := payout.NewRepository(db)
 	reputationRepo := reputation.NewRepository(db)
 	notificationRepo := notification.NewRepository(db)
+	notificationDeliveryRepo := notification.NewDeliveryAuditRepository(db)
 	inviteRepo := invite.NewRepository(db)
 	auditRepo := audit.NewRepository(db)
 
@@ -126,7 +154,6 @@ func main() {
 	contribSvc := contribution.NewService(contribRepo, wsBroadcaster, contribution.NewTransactor(db))
 	payoutSvc := payout.NewService(payoutRepo)
 	reputationSvc := reputation.NewService(reputationRepo)
-	notificationSvc := notification.NewService(notificationRepo, nil, wsBroadcaster)
 	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPublicKeyPEM)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize auth service")
@@ -139,6 +166,29 @@ func main() {
 		FromAddress: cfg.Brevo.FromEmail,
 		FromName:    cfg.Brevo.FromName,
 	})
+
+	// Notification delivery channels (#191): email reuses the same Brevo
+	// client already used for OTP/backup-code/recovery emails; SMS/push are
+	// new clients reading the notification.sms.*/notification.push.* config
+	// that already existed (see config.NotificationConfig) but had nothing
+	// wired to it.
+	smsSvc := sms.NewService(sms.Config{
+		AccountSID: cfg.Notification.SMS.AccountSID,
+		AuthToken:  cfg.Notification.SMS.AuthToken,
+		FromNumber: cfg.Notification.SMS.FromNumber,
+	})
+	pushSvc := push.NewService(push.Config{
+		ServerKey: cfg.Notification.Push.FCMServerKey,
+	})
+	notificationSvc := notification.NewService(notificationRepo, nil, wsBroadcaster,
+		notification.WithDeliveryChannels(
+			&userLookupAdapter{repo: userRepo},
+			notificationDeliveryRepo,
+			&notification.EmailChannel{Sender: emailSvc},
+			&notification.SMSChannel{Sender: smsSvc},
+			&notification.PushChannel{Sender: pushSvc},
+		),
+	)
 
 	inviteSvc := invite.NewService(inviteRepo)
 	_ = auditRepo
