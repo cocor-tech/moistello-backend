@@ -3,10 +3,12 @@ package incentives
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"github.com/moistello/backend/pkg/apperrors"
 )
@@ -15,6 +17,7 @@ var (
 	ErrIncentiveNotFound = fmt.Errorf("incentive not found")
 	ErrReferralNotFound  = fmt.Errorf("referral not found")
 	ErrInvalidReferral   = fmt.Errorf("invalid referral code")
+	ErrReferralCodeTaken = fmt.Errorf("referral code already exists")
 )
 
 type Repository interface {
@@ -149,9 +152,17 @@ func (r *repository) CreateReferral(ctx context.Context, referral *Referral) err
 		referral.CreatedAt, referral.UpdatedAt,
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrReferralCodeTaken
+		}
 		return fmt.Errorf("creating referral: %w", err)
 	}
 	return nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }
 
 func (r *repository) FindByReferralCode(ctx context.Context, code string) (*Referral, error) {

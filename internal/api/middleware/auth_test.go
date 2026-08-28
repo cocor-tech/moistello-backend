@@ -1,6 +1,8 @@
 package middleware_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -196,6 +198,44 @@ func TestAuthMiddleware_WrongAlgorithm(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, 401, w.Code)
+}
+
+func TestAuthMiddleware_ECDSATokenUsesES256(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+
+	claims := &middleware.Claims{
+		UserID: "user-ec",
+		Wallet: "GABC...",
+		Role:   "user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	tokenString, err := token.SignedString(priv)
+	require.NoError(t, err)
+	assert.Equal(t, "ES256", token.Header["alg"])
+
+	r := gin.New()
+	r.Use(middleware.AuthMiddleware(pubPEM))
+	r.GET("/test", func(c *gin.Context) {
+		c.JSON(200, gin.H{"userID": middleware.GetUserID(c)})
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenString)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "user-ec")
 }
 
 func TestAdminMiddleware_AdminUser(t *testing.T) {

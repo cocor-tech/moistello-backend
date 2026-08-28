@@ -4,13 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/pem"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,12 +38,14 @@ type Service interface {
 }
 
 type authService struct {
-	redis         *redis.Client
-	nonceTTL      time.Duration
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
-	jwtPrivateKey []byte
-	jwtPublicKey  []byte
+	redis           *redis.Client
+	nonceTTL        time.Duration
+	accessTTL       time.Duration
+	refreshTTL      time.Duration
+	signingKey      any
+	signingMethod   jwt.SigningMethod
+	verifyingKey    any
+	verifyingMethod jwt.SigningMethod
 }
 
 func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, jwtPrivateKeyPEM, jwtPublicKeyPEM string) (Service, error) {
@@ -56,13 +55,27 @@ func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.
 		return nil, fmt.Errorf("[SECURITY CRITICAL] JWT keys must be loaded into config before auth service startup")
 	}
 
+	signingKey, signingMethod, err := ParsePrivateSigningKey(privateKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parsing JWT private key: %w", err)
+	}
+	verifyingKey, verifyingMethod, err := ParsePublicVerifyingKey(publicKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parsing JWT public key: %w", err)
+	}
+	if signingMethod.Alg() != verifyingMethod.Alg() {
+		return nil, fmt.Errorf("JWT key pair algorithm mismatch: private=%s public=%s", signingMethod.Alg(), verifyingMethod.Alg())
+	}
+
 	return &authService{
-		redis:         redisClient,
-		nonceTTL:      nonceTTL,
-		accessTTL:     accessTTL,
-		refreshTTL:    refreshTTL,
-		jwtPrivateKey: privateKeyPEM,
-		jwtPublicKey:  publicKeyPEM,
+		redis:           redisClient,
+		nonceTTL:        nonceTTL,
+		accessTTL:       accessTTL,
+		refreshTTL:      refreshTTL,
+		signingKey:      signingKey,
+		signingMethod:   signingMethod,
+		verifyingKey:    verifyingKey,
+		verifyingMethod: verifyingMethod,
 	}, nil
 }
 
@@ -229,69 +242,15 @@ func (s *authService) ValidateSession(ctx context.Context, refreshToken string) 
 }
 
 func (s *authService) GenerateJWT(userID uuid.UUID, walletAddress, role string) (string, error) {
-	block, _ := pem.Decode(s.jwtPrivateKey)
-	if block == nil {
-		return "", fmt.Errorf("failed to decode PEM block for private key")
-	}
-
-	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		privateKey2, err2 := x509.ParseECPrivateKey(block.Bytes)
-		if err2 != nil {
-			rsaKey, err3 := x509.ParsePKCS1PrivateKey(block.Bytes)
-			if err3 != nil {
-				return "", fmt.Errorf("parsing private key: %w (also tried EC: %v, RSA: %v)", err, err2, err3)
-			}
-			privateKey = rsaKey
-		} else {
-			privateKey = privateKey2
-		}
-	}
-
-	now := time.Now().UTC()
-	claims := jwt.MapClaims{
-		"sub":    userID.String(),
-		"wallet": walletAddress,
-		"role":   role,
-		"iat":    now.Unix(),
-		"exp":    now.Add(s.accessTTL).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	signed, err := token.SignedString(privateKey)
-	if err != nil {
-		return "", fmt.Errorf("signing JWT: %w", err)
-	}
-	return signed, nil
+	return s.signJWT(userID, walletAddress, role, s.accessTTL)
 }
 
 // GenerateJWTWithTTL generates an access token with a custom TTL.
 func (s *authService) GenerateJWTWithTTL(userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error) {
-	block, _ := pem.Decode(s.jwtPrivateKey)
-	if block == nil {
-		return "", fmt.Errorf("failed to decode PEM block for private key")
-	}
+	return s.signJWT(userID, walletAddress, role, ttl)
+}
 
-	var privateKey *rsa.PrivateKey
-	parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err == nil {
-		var ok bool
-		privateKey, ok = parsedKey.(*rsa.PrivateKey)
-		if !ok {
-			return "", fmt.Errorf("PKCS8 key is not RSA")
-		}
-	} else {
-		_, err2 := x509.ParseECPrivateKey(block.Bytes)
-		if err2 == nil {
-			return "", fmt.Errorf("EC keys not supported for JWT signing")
-		}
-		rsaKey, err3 := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err3 != nil {
-			return "", fmt.Errorf("parsing private key: %w (also tried EC: %v, RSA: %v)", err, err2, err3)
-		}
-		privateKey = rsaKey
-	}
-
+func (s *authService) signJWT(userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error) {
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"sub":    userID.String(),
@@ -301,8 +260,8 @@ func (s *authService) GenerateJWTWithTTL(userID uuid.UUID, walletAddress, role s
 		"exp":    now.Add(ttl).Unix(),
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	signed, err := token.SignedString(privateKey)
+	token := jwt.NewWithClaims(s.signingMethod, claims)
+	signed, err := token.SignedString(s.signingKey)
 	if err != nil {
 		return "", fmt.Errorf("signing JWT: %w", err)
 	}
@@ -388,22 +347,12 @@ func (s *authService) RevokeAllSessions(ctx context.Context, userID, currentHash
 }
 
 func (s *authService) ValidateJWT(tokenString string) (*JWTCustomClaims, error) {
-	block, _ := pem.Decode(s.jwtPublicKey)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block for public key")
-	}
-
-	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("parsing public key: %w", err)
-	}
-
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		if token.Method.Alg() != s.verifyingMethod.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return publicKey, nil
-	})
+		return s.verifyingKey, nil
+	}, jwt.WithValidMethods([]string{s.verifyingMethod.Alg()}))
 	if err != nil {
 		return nil, fmt.Errorf("parsing JWT: %w", err)
 	}

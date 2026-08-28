@@ -2,6 +2,8 @@ package auth_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -112,6 +115,122 @@ func generateTestRSAKeys(t *testing.T) (string, string) {
 	})
 
 	return string(privPEM), string(pubPEM)
+}
+
+func generateTestECKeys(t *testing.T) (string, string) {
+	t.Helper()
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	privDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	require.NoError(t, err)
+	privPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privDER,
+	})
+
+	pubDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	require.NoError(t, err)
+	pubPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubDER,
+	})
+
+	return string(privPEM), string(pubPEM)
+}
+
+func jwtHeaderAlg(t *testing.T, tokenString string) string {
+	t.Helper()
+	parsed, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+	require.NoError(t, err)
+	alg, _ := parsed.Header["alg"].(string)
+	return alg
+}
+
+func TestGenerateJWT_RSAHeaderAlgMatchesKey(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	privPEM, pubPEM := generateTestRSAKeys(t)
+	svc, err := auth.NewService(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, privPEM, pubPEM)
+	require.NoError(t, err)
+
+	userID := uuid.New()
+	token, err := svc.GenerateJWT(userID, "GABC...", "user")
+	require.NoError(t, err)
+	assert.Equal(t, "RS256", jwtHeaderAlg(t, token))
+
+	claims, err := svc.ValidateJWT(token)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), claims.UserID)
+	assert.Equal(t, "GABC...", claims.Wallet)
+	assert.Equal(t, "user", claims.Role)
+}
+
+func TestGenerateJWT_ECDSAHeaderAlgMatchesKey(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	privPEM, pubPEM := generateTestECKeys(t)
+	svc, err := auth.NewService(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, privPEM, pubPEM)
+	require.NoError(t, err)
+
+	userID := uuid.New()
+	token, err := svc.GenerateJWT(userID, "GABC...", "admin")
+	require.NoError(t, err)
+	assert.Equal(t, "ES256", jwtHeaderAlg(t, token))
+
+	ttlToken, err := svc.GenerateJWTWithTTL(userID, "GABC...", "admin", time.Hour)
+	require.NoError(t, err)
+	assert.Equal(t, "ES256", jwtHeaderAlg(t, ttlToken))
+
+	claims, err := svc.ValidateJWT(token)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), claims.UserID)
+	assert.Equal(t, "admin", claims.Role)
+}
+
+func TestValidateJWT_RejectsAlgConfusion(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	privPEM, pubPEM := generateTestRSAKeys(t)
+	svc, err := auth.NewService(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, privPEM, pubPEM)
+	require.NoError(t, err)
+
+	hmacToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":    uuid.New().String(),
+		"wallet": "GABC...",
+		"role":   "admin",
+		"iat":    time.Now().Unix(),
+		"exp":    time.Now().Add(time.Hour).Unix(),
+	})
+	signed, err := hmacToken.SignedString([]byte(pubPEM))
+	require.NoError(t, err)
+
+	_, err = svc.ValidateJWT(signed)
+	assert.Error(t, err)
+}
+
+func TestParsePrivateSigningKey_RejectsUnsupportedType(t *testing.T) {
+	_, _, err := auth.ParsePrivateSigningKey([]byte("not-a-pem"))
+	assert.Error(t, err)
+}
+
+func TestNewService_RejectsKeyPairMismatch(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	rsaPriv, _ := generateTestRSAKeys(t)
+	_, ecPub := generateTestECKeys(t)
+
+	_, err := auth.NewService(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, rsaPriv, ecPub)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "algorithm mismatch")
 }
 
 func TestCreateSession_AtomicWrites(t *testing.T) {

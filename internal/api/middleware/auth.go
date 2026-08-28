@@ -2,15 +2,13 @@ package middleware
 
 import (
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/moistello/backend/internal/domain/auth"
 	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/response"
 	"github.com/rs/zerolog/log"
@@ -24,7 +22,7 @@ type Claims struct {
 }
 
 func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
-	publicKey, err := parseRSAPublicKey(publicKeyPEM)
+	publicKey, method, err := auth.ParsePublicVerifyingKey(publicKeyPEM)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to parse JWT public key")
 	}
@@ -43,11 +41,11 @@ func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 			return
 		}
 		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			if t.Method.Alg() != method.Alg() {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return publicKey, nil
-		})
+		}, jwt.WithValidMethods([]string{method.Alg()}))
 		if err != nil || !token.Valid {
 			c.Abort()
 			response.Unauthorized(c, "invalid or expired token")
@@ -69,7 +67,7 @@ func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 }
 
 func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
-	publicKey, err := parseRSAPublicKey(publicKeyPEM)
+	publicKey, method, err := auth.ParsePublicVerifyingKey(publicKeyPEM)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to parse JWT public key")
 	}
@@ -86,11 +84,11 @@ func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 			return
 		}
 		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			if t.Method.Alg() != method.Alg() {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return publicKey, nil
-		})
+		}, jwt.WithValidMethods([]string{method.Alg()}))
 		if err != nil || !token.Valid {
 			c.Next()
 			return
@@ -153,22 +151,6 @@ func GetRole(c *gin.Context) string {
 		return ""
 	}
 	return r
-}
-
-func parseRSAPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block for public key")
-	}
-	key, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("parsing public key: %w", err)
-	}
-	rsaKey, ok := key.(*rsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("key is not RSA public key")
-	}
-	return rsaKey, nil
 }
 
 // AdminAPIKeyMiddleware validates the X-Admin-API-Key header against the

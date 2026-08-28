@@ -19,8 +19,84 @@ func TestGenerateReferralCode(t *testing.T) {
 	code, err := service.GenerateReferralCode(context.Background(), userID)
 
 	assert.NoError(t, err)
-	assert.NotEmpty(t, code)
-	assert.Equal(t, userID[:8], code)
+	assert.Len(t, code, referralCodeEntropyBytes*2)
+	assert.Regexp(t, "^[0-9a-f]+$", code)
+	assert.NotEqual(t, userID[:8], code, "code must not be a UUID prefix")
+}
+
+func TestGenerateReferralCode_ReturnsExisting(t *testing.T) {
+	repo := newMockRepository()
+	service := NewService(repo)
+	userID := uuid.New()
+
+	first, err := service.GenerateReferralCode(context.Background(), userID.String())
+	assert.NoError(t, err)
+
+	second, err := service.GenerateReferralCode(context.Background(), userID.String())
+	assert.NoError(t, err)
+	assert.Equal(t, first, second)
+}
+
+func TestGenerateReferralCode_HighEntropy(t *testing.T) {
+	seen := make(map[string]struct{}, 256)
+	for i := 0; i < 256; i++ {
+		code, err := generateReferralCode()
+		assert.NoError(t, err)
+		assert.Len(t, code, referralCodeEntropyBytes*2)
+		assert.Regexp(t, "^[0-9a-f]+$", code)
+		_, dup := seen[code]
+		assert.False(t, dup, "collision among 256 independently generated codes")
+		seen[code] = struct{}{}
+	}
+}
+
+func TestGenerateReferralCode_RetriesOnCollision(t *testing.T) {
+	orig := newReferralCode
+	t.Cleanup(func() { newReferralCode = orig })
+
+	seq := []string{"aaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbb"}
+	i := 0
+	newReferralCode = func() (string, error) {
+		code := seq[i]
+		if i < len(seq)-1 {
+			i++
+		}
+		return code, nil
+	}
+
+	repo := newMockRepository()
+	repo.referralCodeMap["aaaaaaaaaaaaaaaaaaaa"] = &Referral{
+		ID:           uuid.New(),
+		ReferrerID:   uuid.New(),
+		ReferralCode: "aaaaaaaaaaaaaaaaaaaa",
+		Status:       "pending",
+	}
+
+	code, err := NewService(repo).GenerateReferralCode(context.Background(), uuid.New().String())
+	assert.NoError(t, err)
+	assert.Equal(t, "bbbbbbbbbbbbbbbbbbbb", code)
+}
+
+func TestGenerateReferralCode_CollisionRetryExhausted(t *testing.T) {
+	orig := newReferralCode
+	t.Cleanup(func() { newReferralCode = orig })
+
+	newReferralCode = func() (string, error) {
+		return "aaaaaaaaaaaaaaaaaaaa", nil
+	}
+
+	repo := newMockRepository()
+	repo.referralCodeMap["aaaaaaaaaaaaaaaaaaaa"] = &Referral{
+		ID:           uuid.New(),
+		ReferrerID:   uuid.New(),
+		ReferralCode: "aaaaaaaaaaaaaaaaaaaa",
+		Status:       "pending",
+	}
+
+	_, err := NewService(repo).GenerateReferralCode(context.Background(), uuid.New().String())
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrReferralCodeTaken)
+	assert.Contains(t, err.Error(), "after 8 attempts")
 }
 
 func TestApplyReferralCode(t *testing.T) {
@@ -513,6 +589,7 @@ func TestUpdateConfig(t *testing.T) {
 
 type mockRepository struct {
 	referralCodeMap        map[string]*Referral
+	referrals              []Referral
 	config                 *IncentiveConfig
 	streak                 *SavingsStreak
 	incentive              *Incentive
@@ -563,6 +640,12 @@ func (m *mockRepository) GetPendingIncentives(ctx context.Context, userID uuid.U
 }
 
 func (m *mockRepository) CreateReferral(ctx context.Context, referral *Referral) error {
+	if _, exists := m.referralCodeMap[referral.ReferralCode]; exists {
+		return ErrReferralCodeTaken
+	}
+	copied := *referral
+	m.referralCodeMap[referral.ReferralCode] = &copied
+	m.referrals = append(m.referrals, copied)
 	return nil
 }
 
@@ -574,7 +657,13 @@ func (m *mockRepository) FindByReferralCode(ctx context.Context, code string) (*
 }
 
 func (m *mockRepository) FindByReferrerID(ctx context.Context, referrerID uuid.UUID) ([]Referral, error) {
-	return nil, nil
+	var out []Referral
+	for _, ref := range m.referrals {
+		if ref.ReferrerID == referrerID {
+			out = append(out, ref)
+		}
+	}
+	return out, nil
 }
 
 func (m *mockRepository) FindByReferredID(ctx context.Context, referredID uuid.UUID) (*Referral, error) {

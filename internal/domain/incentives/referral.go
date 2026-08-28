@@ -2,11 +2,21 @@ package incentives
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	// 10 random bytes → 20 hex chars, filling referrals.referral_code VARCHAR(20)
+	// with 80 bits of entropy (vs the previous 32-bit UUID prefix).
+	referralCodeEntropyBytes = 10
+	maxReferralCodeAttempts  = 8
 )
 
 // Referral System
@@ -17,31 +27,41 @@ func (s *service) GenerateReferralCode(ctx context.Context, userID string) (stri
 		return "", err
 	}
 
-	// Generate a unique referral code
-	code := generateReferralCode(uid)
-
 	// Check if referral already exists for this user
 	existing, err := s.repo.FindByReferrerID(ctx, uid)
 	if err == nil && len(existing) > 0 {
 		return existing[0].ReferralCode, nil
 	}
 
-	// Create new referral record (pending until someone uses it)
-	referral := &Referral{
-		ID:           uuid.New(),
-		ReferrerID:   uid,
-		ReferredID:   uuid.Nil, // Will be set when someone uses the code
-		ReferralCode: code,
-		Status:       "pending",
-		CreatedAt:    time.Now().UTC(),
-		UpdatedAt:    time.Now().UTC(),
+	var lastErr error
+	for attempt := 0; attempt < maxReferralCodeAttempts; attempt++ {
+		code, err := newReferralCode()
+		if err != nil {
+			return "", err
+		}
+
+		referral := &Referral{
+			ID:           uuid.New(),
+			ReferrerID:   uid,
+			ReferredID:   uuid.Nil, // Will be set when someone uses the code
+			ReferralCode: code,
+			Status:       "pending",
+			CreatedAt:    time.Now().UTC(),
+			UpdatedAt:    time.Now().UTC(),
+		}
+
+		if err := s.repo.CreateReferral(ctx, referral); err != nil {
+			if errors.Is(err, ErrReferralCodeTaken) {
+				lastErr = err
+				continue
+			}
+			return "", err
+		}
+
+		return code, nil
 	}
 
-	if err := s.repo.CreateReferral(ctx, referral); err != nil {
-		return "", fmt.Errorf("creating referral: %w", err)
-	}
-
-	return code, nil
+	return "", fmt.Errorf("generating unique referral code after %d attempts: %w", maxReferralCodeAttempts, lastErr)
 }
 
 func (s *service) ApplyReferralCode(ctx context.Context, userID string, code string) error {
@@ -118,8 +138,16 @@ func (s *service) GetReferrals(ctx context.Context, userID string) ([]Referral, 
 	return s.repo.FindByReferrerID(ctx, uid)
 }
 
-// generateReferralCode derives a deterministic referral code from a user ID.
-func generateReferralCode(userID uuid.UUID) string {
-	// Simple implementation: use first 8 characters of userID
-	return userID.String()[:8]
+// generateReferralCode returns a cryptographically random hex code.
+// 10 bytes → 20 hex characters (80 bits), collision-safe for VARCHAR(20).
+func generateReferralCode() (string, error) {
+	b := make([]byte, referralCodeEntropyBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating referral code: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
+
+// newReferralCode is the code generator used by GenerateReferralCode.
+// Tests replace it to exercise collision retry without depending on rand.
+var newReferralCode = generateReferralCode
