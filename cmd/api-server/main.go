@@ -174,8 +174,8 @@ func main() {
 	// Stellar client used for on-chain verification
 	horizonClient := stellar.NewClient(cfg.Stellar.HorizonURL, cfg.Stellar.SorobanRPCURL, cfg.Stellar.NetworkPassphrase)
 
-	contribSvc := contribution.NewService(contribRepo, wsBroadcaster, contribution.NewTransactor(db), horizonClient, cfg.Stellar.MasterPublicKey)
-	payoutSvc := payout.NewService(payoutRepo, horizonClient, &payoutWalletAdapter{repo: userRepo})
+	contribSvc := contribution.NewService(contribRepo, wsBroadcaster, contribution.NewTransactor(db), horizonClient, cfg.Stellar.MasterPublicKey, circleSvc)
+	payoutSvc := payout.NewService(payoutRepo, horizonClient, &payoutWalletAdapter{repo: userRepo}, circleSvc)
 	reputationSvc := reputation.NewService(reputationRepo)
 	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPublicKeyPEM)
 	if err != nil {
