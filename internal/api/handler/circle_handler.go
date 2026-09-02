@@ -178,6 +178,10 @@ func (h *CircleHandler) TriggerPayout(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if err := validator.Validate.Struct(req); err != nil {
+		response.ValidationErrors(c, "validation failed: "+err.Error())
+		return
+	}
 	req.CircleID = circleID
 	record, err := h.payoutService.Record(c.Request.Context(), req)
 	if err != nil {
@@ -245,12 +249,16 @@ func (h *CircleHandler) Contribute(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)
 	var req struct {
-		Amount      float64 `json:"amount" binding:"required,gt=0"`
-		TxnHash     string  `json:"txnHash" binding:"required"`
-		RoundNumber int     `json:"roundNumber" binding:"required,gte=1"`
+		Amount      float64 `json:"amount" validate:"required,gt=0"`
+		TxnHash     string  `json:"txnHash" validate:"required"`
+		RoundNumber int     `json:"roundNumber" validate:"required,gte=1"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validator.Validate.Struct(req); err != nil {
+		response.ValidationErrors(c, "validation failed: "+err.Error())
 		return
 	}
 

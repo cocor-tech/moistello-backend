@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/metrics"
 	"github.com/rs/zerolog/log"
@@ -52,22 +54,30 @@ type Service interface {
 	UpdateVerification(ctx context.Context, id string, verifiedOnchain bool, status VerificationStatus) error
 }
 
+// ServiceWithCircle adds circle service for membership/round validation.
+type ServiceWithCircle interface {
+	Service
+	SetCircleService(circleService circle.Service)
+}
+
 type service struct {
 	repo         Repository
 	horizon      HorizonVerifier
 	walletLookup WalletLookup
+	circleService circle.Service
 }
 
 // NewService constructs the payout service.
 //
 //	horizon      – may be nil (on-chain verification skipped; useful in tests)
 //	walletLookup – may be nil (recipient wallet check skipped)
+//	circleSvc    – circle service for membership/round validity checks
 //
 // The third parameter is typed as interface{} so that callers can pass a
 // concrete *user.pgRepo (which satisfies WalletLookup when wrapped) or nil.
 // If it already satisfies WalletLookup it is used directly; otherwise it is
 // ignored.
-func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface{}) Service {
+func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface{}, circleSvc circle.Service) Service {
 	var wl WalletLookup
 	if walletLookup != nil {
 		if v, ok := walletLookup.(WalletLookup); ok {
@@ -80,6 +90,7 @@ func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface
 		repo:         repo,
 		horizon:      horizon,
 		walletLookup: wl,
+		circleService: circleSvc,
 	}
 }
 
@@ -102,6 +113,36 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 		if err == nil && existing != nil {
 			log.Info().Str("txn_hash", input.TxnHash).Msg("payout already recorded (idempotent replay)")
 			return existing, nil
+		}
+	}
+
+	// Validate membership and round validity
+	member, err := s.circleService.IsMember(ctx, input.CircleID, input.RecipientID)
+	if err != nil {
+		return nil, fmt.Errorf("checking membership: %w", err)
+	}
+	if !member {
+		return nil, fmt.Errorf("recipient is not a member of this circle")
+	}
+
+	cir, err := s.circleService.Get(ctx, input.CircleID)
+	if err != nil {
+		return nil, fmt.Errorf("getting circle: %w", err)
+	}
+
+	// Determine OnTime based on round validity against circle's current round
+	// OnTime is true only if the round number is valid (1 <= round <= current round)
+	isOnTime := input.RoundNumber >= 1 && input.RoundNumber <= cir.CurrentRound
+
+	// Guard against duplicate payouts in the same circle/round/recipient
+	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
+	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
+	for _, p := range existingPayouts {
+		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
+			log.Warn().Str("circle_id", input.CircleID).
+				Int("round", input.RoundNumber).
+				Msg("payout already exists for this circle/round/recipient")
+			return &p, nil
 		}
 	}
 
@@ -144,18 +185,6 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 		}
 	}
 
-	// Guard against duplicate payouts in the same circle/round/recipient
-	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
-	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
-	for _, p := range existingPayouts {
-		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
-			log.Warn().Str("circle_id", input.CircleID).
-				Int("round", input.RoundNumber).
-				Msg("payout already exists for this circle/round/recipient")
-			return &p, nil
-		}
-	}
-
 	p := &Payout{
 		ID:                 uuid.New(),
 		CircleID:           circleUID,
@@ -168,6 +197,8 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 		VerifiedOnchain:    verifiedOnchain,
 		VerificationStatus: verificationStatus,
 		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+		OnTime:             isOnTime,
 	}
 
 	if err := s.repo.Create(ctx, p); err != nil {
@@ -217,4 +248,9 @@ func (s *service) UpdateVerification(ctx context.Context, id string, verifiedOnc
 		return fmt.Errorf("invalid payout ID: %w", err)
 	}
 	return s.repo.UpdateVerificationStatus(ctx, uid, verifiedOnchain, status)
+}
+
+// SetCircleService sets the circle service for membership/round validity checks.
+func (s *service) SetCircleService(cs circle.Service) {
+	s.circleService = cs
 }

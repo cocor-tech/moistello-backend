@@ -7,6 +7,7 @@ import (
 	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
+	"github.com/moistello/backend/pkg/validator"
 )
 
 type PayoutHandler struct {
