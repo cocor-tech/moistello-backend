@@ -7,6 +7,15 @@ import (
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/api/middleware"
+	"github.com/redis/go-redis/v9"
+)
+
+func SetupRouter(
+	redisClient *redis.Client,
+	rateLimitCfg config.RateLimitConfig,
+	authHandler *handler.AuthHandler,
+	userHandler *handler.UserHandler,
+	pubKey []byte,
 	"github.com/moistello/backend/webhook"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -60,6 +69,14 @@ func NewRouter(
 ) *gin.Engine {
 	r := gin.New()
 
+	// Global rate limiter: fail-open for safe GET routes, fail-closed for others
+	// Individual routes can override with middleware.WithFailClosed() or WithFailOpen()
+	r.Use(middleware.RateLimitMiddleware(redisClient, rateLimitCfg))
+
+	v1 := r.Group("/v1")
+	{
+		// Auth routes - use AuthRateLimitMiddleware (always fail-closed for auth/OTP)
+		authGroup := v1.Group("/auth", middleware.AuthRateLimitMiddleware(redisClient, rateLimitCfg))
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.TracingMiddleware(cfg.Tracing.ServiceName))
 	r.Use(middleware.LoggingMiddleware())
@@ -105,6 +122,8 @@ func NewRouter(
 			auth.POST("/verify", authHandler.Verify)
 		}
 
+		// User & Profile routes (authenticated)
+		usersGroup := v1.Group("/users", middleware.AuthMiddleware(pubKey))
 		authenticated := api.Group("")
 		authenticated.Use(middleware.AuthMiddleware(jwtPublicKey))
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))

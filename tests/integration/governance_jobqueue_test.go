@@ -45,8 +45,9 @@ func TestGovernance_ProposalLifecycle_Persistence(t *testing.T) {
 	assert.Equal(t, governance.ProposalStatusPending, proposal.Status)
 
 	// List (verify it appears)
-	proposals, err := svc.ListProposals(ctx)
+	proposals, total, err := svc.ListProposals(ctx, 1, 10)
 	require.NoError(t, err)
+	assert.GreaterOrEqual(t, total, 1)
 	assert.GreaterOrEqual(t, len(proposals), 1)
 	found := false
 	for _, p := range proposals {

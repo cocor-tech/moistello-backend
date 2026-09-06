@@ -16,27 +16,52 @@ var (
 	ErrAlreadyVoted     = errors.New("user already voted on this proposal")
 )
 
+// ProposalExecutor handles execution of approved proposals (e.g., circle actions or parameter updates).
+type ProposalExecutor interface {
+	ExecuteProposalAction(ctx context.Context, p *Proposal) error
+}
+
 type Service interface {
 	CreateProposal(ctx context.Context, input CreateProposalInput) (*Proposal, error)
-	ListProposals(ctx context.Context) ([]Proposal, error)
+	ListProposals(ctx context.Context, page, limit int) ([]Proposal, int, error)
 	GetProposal(ctx context.Context, id string) (*Proposal, error)
 	VoteProposal(ctx context.Context, proposalID, userID string, vote bool) error
 	ExecuteProposal(ctx context.Context, id string) error
+	SetExecutor(executor ProposalExecutor)
 }
 
 type service struct {
 	repo      Repository
+	executor  ProposalExecutor
 	mu        sync.RWMutex
 	proposals map[uuid.UUID]*Proposal
 	votesByID map[uuid.UUID]map[uuid.UUID]bool
 }
 
-func NewService(repo Repository) Service {
-	return &service{
+type Option func(*service)
+
+func WithExecutor(executor ProposalExecutor) Option {
+	return func(s *service) {
+		s.executor = executor
+	}
+}
+
+func NewService(repo Repository, opts ...Option) Service {
+	s := &service{
 		repo:      repo,
 		proposals: make(map[uuid.UUID]*Proposal),
 		votesByID: make(map[uuid.UUID]map[uuid.UUID]bool),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func (s *service) SetExecutor(executor ProposalExecutor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.executor = executor
 }
 
 func parseUUID(id string) (uuid.UUID, error) {
@@ -82,9 +107,9 @@ func (s *service) CreateProposal(ctx context.Context, input CreateProposalInput)
 	return proposal, nil
 }
 
-func (s *service) ListProposals(ctx context.Context) ([]Proposal, error) {
+func (s *service) ListProposals(ctx context.Context, page, limit int) ([]Proposal, int, error) {
 	if s.repo != nil {
-		return s.repo.ListProposals(ctx)
+		return s.repo.ListProposals(ctx, page, limit)
 	}
 
 	s.mu.RLock()
@@ -97,7 +122,23 @@ func (s *service) ListProposals(ctx context.Context) ([]Proposal, error) {
 	sort.Slice(proposals, func(i, j int) bool {
 		return proposals[i].CreatedAt.After(proposals[j].CreatedAt)
 	})
-	return proposals, nil
+
+	total := len(proposals)
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	if offset >= total {
+		return []Proposal{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return proposals[offset:end], total, nil
 }
 
 func (s *service) GetProposal(ctx context.Context, id string) (*Proposal, error) {
@@ -132,6 +173,13 @@ func (s *service) VoteProposal(ctx context.Context, proposalID, userID string, v
 	}
 
 	if s.repo != nil {
+		p, err := s.repo.GetProposal(ctx, proposalUUID)
+		if err != nil {
+			return err
+		}
+		if p.Status != ProposalStatusPending {
+			return fmt.Errorf("proposal is no longer active")
+		}
 		return s.repo.RecordVote(ctx, proposalUUID, voterID, vote)
 	}
 
@@ -170,24 +218,60 @@ func (s *service) ExecuteProposal(ctx context.Context, id string) error {
 	}
 
 	if s.repo != nil {
-		now := time.Now().UTC()
-		nowStr := now.Format(time.RFC3339)
-		return s.repo.UpdateStatus(ctx, proposalID, ProposalStatusExecuted, &nowStr)
+		p, err := s.repo.GetProposal(ctx, proposalID)
+		if err != nil {
+			return err
+		}
+		if p.Status != ProposalStatusPending {
+			return fmt.Errorf("proposal has already been processed")
+		}
+
+		if p.ForVotes > p.AgainstVotes {
+			if s.executor != nil {
+				if err := s.executor.ExecuteProposalAction(ctx, p); err != nil {
+					return fmt.Errorf("executing proposal action: %w", err)
+				}
+			}
+			now := time.Now().UTC()
+			return s.repo.UpdateStatus(ctx, proposalID, ProposalStatusExecuted, &now)
+		}
+
+		return s.repo.UpdateStatus(ctx, proposalID, ProposalStatusRejected, nil)
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	proposal, ok := s.proposals[proposalID]
 	if !ok {
+		s.mu.Unlock()
 		return ErrProposalNotFound
 	}
 	if proposal.Status != ProposalStatusPending {
+		s.mu.Unlock()
 		return fmt.Errorf("proposal has already been processed")
 	}
-	proposal.Status = ProposalStatusExecuted
+
+	if proposal.ForVotes > proposal.AgainstVotes {
+		exec := s.executor
+		s.mu.Unlock()
+
+		if exec != nil {
+			if err := exec.ExecuteProposalAction(ctx, proposal); err != nil {
+				return fmt.Errorf("executing proposal action: %w", err)
+			}
+		}
+
+		s.mu.Lock()
+		now := time.Now().UTC()
+		proposal.Status = ProposalStatusExecuted
+		proposal.ExecutedAt = &now
+		proposal.UpdatedAt = now
+		s.mu.Unlock()
+		return nil
+	}
+
 	now := time.Now().UTC()
-	proposal.ExecutedAt = &now
+	proposal.Status = ProposalStatusRejected
 	proposal.UpdatedAt = now
+	s.mu.Unlock()
 	return nil
 }

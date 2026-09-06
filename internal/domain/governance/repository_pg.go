@@ -2,6 +2,8 @@ package governance
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,54 +43,99 @@ func (r *pgRepository) GetProposal(ctx context.Context, id uuid.UUID) (*Proposal
 	var p Proposal
 	err := r.db.GetContext(ctx, &p, query, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrProposalNotFound
+		}
 		return nil, fmt.Errorf("getting governance proposal: %w", err)
 	}
 	return &p, nil
 }
 
-func (r *pgRepository) ListProposals(ctx context.Context) ([]Proposal, error) {
+func (r *pgRepository) ListProposals(ctx context.Context, page, limit int) ([]Proposal, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+
+	var total int
+	err := r.db.GetContext(ctx, &total, `SELECT COUNT(*) FROM governance_proposals`)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting governance proposals: %w", err)
+	}
+
 	query := `
 		SELECT id, title, description, proposal_type, creator_id, status, for_votes, against_votes, executed_at, created_at, updated_at
 		FROM governance_proposals
 		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
 	`
 	var proposals []Proposal
-	err := r.db.SelectContext(ctx, &proposals, query)
+	err = r.db.SelectContext(ctx, &proposals, query, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("listing governance proposals: %w", err)
+		return nil, 0, fmt.Errorf("listing governance proposals: %w", err)
 	}
 	if proposals == nil {
 		proposals = []Proposal{}
 	}
-	return proposals, nil
+	return proposals, total, nil
+}
+
+func (r *pgRepository) HasVoted(ctx context.Context, proposalID, voterID uuid.UUID) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM governance_votes WHERE proposal_id = $1 AND voter_id = $2)`
+	err := r.db.GetContext(ctx, &exists, query, proposalID, voterID)
+	if err != nil {
+		return false, fmt.Errorf("checking governance vote existence: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *pgRepository) RecordVote(ctx context.Context, proposalID, voterID uuid.UUID, vote bool) error {
-	query := `
+	voted, err := r.HasVoted(ctx, proposalID, voterID)
+	if err != nil {
+		return err
+	}
+	if voted {
+		return ErrAlreadyVoted
+	}
+
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning vote transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	insertQuery := `
 		INSERT INTO governance_votes (proposal_id, voter_id, vote, created_at)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (proposal_id, voter_id) DO NOTHING
 	`
-	_, err := r.db.ExecContext(ctx, query, proposalID, voterID, vote, time.Now().UTC())
+	_, err = tx.ExecContext(ctx, insertQuery, proposalID, voterID, vote, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("recording governance vote: %w", err)
 	}
 
-	// Update the vote count on the proposal
+	now := time.Now().UTC()
 	if vote {
-		_, err = r.db.ExecContext(ctx, `UPDATE governance_proposals SET for_votes = for_votes + 1, updated_at = $1 WHERE id = $2`, time.Now().UTC(), proposalID)
+		_, err = tx.ExecContext(ctx, `UPDATE governance_proposals SET for_votes = for_votes + 1, updated_at = $1 WHERE id = $2`, now, proposalID)
 	} else {
-		_, err = r.db.ExecContext(ctx, `UPDATE governance_proposals SET against_votes = against_votes + 1, updated_at = $1 WHERE id = $2`, time.Now().UTC(), proposalID)
+		_, err = tx.ExecContext(ctx, `UPDATE governance_proposals SET against_votes = against_votes + 1, updated_at = $1 WHERE id = $2`, now, proposalID)
 	}
 	if err != nil {
 		return fmt.Errorf("updating proposal vote count: %w", err)
 	}
-	return nil
+
+	return tx.Commit()
 }
 
-func (r *pgRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status ProposalStatus, executedAt *string) error {
+func (r *pgRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status ProposalStatus, executedAt *time.Time) error {
 	now := time.Now().UTC()
-	if status == ProposalStatusExecuted && executedAt != nil {
+	if executedAt != nil {
 		_, err := r.db.ExecContext(ctx, `UPDATE governance_proposals SET status = $1, executed_at = $2, updated_at = $3 WHERE id = $4`,
 			string(status), *executedAt, now, id)
 		return err
