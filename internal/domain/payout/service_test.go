@@ -10,6 +10,7 @@ import (
 
 	"github.com/moistello/backend/internal/domain/payout"
 	payoutMocks "github.com/moistello/backend/internal/domain/payout/mocks"
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 func TestPayoutService_Record_Success(t *testing.T) {
@@ -27,6 +28,7 @@ func TestPayoutService_Record_Success(t *testing.T) {
 		PayoutType:  payout.PayoutTypeFixed,
 	}
 
+	repo.On("FindByTxnHash", ctx, "txn-payout-123").Return(nil, apperrors.ErrNotFound)
 	repo.On("ListByCircle", ctx, mock.AnythingOfType("uuid.UUID"), 1, 100).Return([]payout.Payout{}, 0, nil)
 
 	repo.On("Create", ctx, mock.MatchedBy(func(p *payout.Payout) bool {
@@ -66,6 +68,7 @@ func TestPayoutService_Record_VerifiedOnchain(t *testing.T) {
 		VerificationStatus: &customStatus,
 	}
 
+	repo.On("FindByTxnHash", ctx, "txn-payout-456").Return(nil, apperrors.ErrNotFound)
 	repo.On("ListByCircle", ctx, mock.AnythingOfType("uuid.UUID"), 1, 100).Return([]payout.Payout{}, 0, nil)
 
 	repo.On("Create", ctx, mock.MatchedBy(func(p *payout.Payout) bool {

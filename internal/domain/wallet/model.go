@@ -16,6 +16,12 @@ const (
 	WalletTypePasskey   WalletType = "passkey"
 )
 
+// Balance represents the available XLM and USDC balances for a wallet.
+type Balance struct {
+	XLM  float64 `json:"xlm"`
+	USDC float64 `json:"usdc"`
+}
+
 type Wallet struct {
 	ID                 string     `json:"id" db:"id"`
 	UserID             string     `json:"userId" db:"user_id"`

@@ -65,12 +65,20 @@ func (h *WebhookHandler) RegisterWebhook(c *gin.Context) {
 		Events:     req.Events,
 		IsActive:   true,
 	}
+	// The secret must never be persisted — clear it before handing the record
+	// to the repository so only secret_hash is stored.
+	record.Secret = ""
 	if err := h.repo.Register(c.Request.Context(), record); err != nil {
 		response.InternalError(c, "failed to register webhook")
 		return
 	}
-	// Return webhook record (Secret is omitted from JSON); client will receive the secret only once (previously)
-	response.Created(c, gin.H{"webhook": record})
+	// Return the plaintext secret to the client exactly once at registration.
+	// The secret is NOT persisted; only its SHA-256 hash (secret_hash) is stored.
+	// Clients must save the secret now — it cannot be retrieved later.
+	response.Created(c, gin.H{
+		"webhook": record,
+		"secret":  secret,
+	})
 }
 
 // @Summary List webhooks
@@ -203,11 +211,10 @@ func (h *IncomingWebhookHandler) ReceiveWebhook(c *gin.Context) {
 		return
 	}
 
-	key := wh.Secret
-	if key == "" {
-		key = wh.SecretHash
-	}
-	if !webhook.VerifyWebhookSignature(body, signature, key) {
+	// We only store the secret_hash; use it directly as the HMAC key.
+	// SignWebhookPayload detects a 64-char hex digest and decodes it to raw
+	// bytes before computing the HMAC, so verification is consistent.
+	if !webhook.VerifyWebhookSignature(body, signature, wh.SecretHash) {
 		response.Unauthorized(c, "invalid webhook signature")
 		return
 	}

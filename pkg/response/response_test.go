@@ -20,7 +20,6 @@ func TestResponse_EnvelopeContract(t *testing.T) {
 		response.OK(c, gin.H{"foo": "bar"})
 	})
 	r.GET("/test-err", func(c *gin.Context) {
-		c.Header("X-Request-Id", "req-123")
 		response.BadRequest(c, "invalid input")
 	})
 
@@ -40,6 +39,7 @@ func TestResponse_EnvelopeContract(t *testing.T) {
 	t.Run("Error response with requestId", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/test-err", nil)
+		req.Header.Add("X-Request-Id", "req-123")
 		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)

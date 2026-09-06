@@ -17,7 +17,7 @@ import (
 
 func TestCircleService_Create_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	orgID := uuid.New().String()
 
@@ -45,7 +45,7 @@ func TestCircleService_Create_Success(t *testing.T) {
 
 func TestCircleService_Create_WithDescription(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	orgID := uuid.New().String()
 
@@ -72,7 +72,7 @@ func TestCircleService_Create_WithDescription(t *testing.T) {
 
 func TestCircleService_Create_TooFewMembers(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	orgID := uuid.New().String()
 
@@ -94,7 +94,7 @@ func TestCircleService_Create_TooFewMembers(t *testing.T) {
 
 func TestCircleService_Create_MemberCreationFails(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	orgID := uuid.New().String()
 
@@ -119,7 +119,7 @@ func TestCircleService_Create_MemberCreationFails(t *testing.T) {
 
 func TestCircleService_Join_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New().String()
 	uid := uuid.New().String()
@@ -141,7 +141,7 @@ func TestCircleService_Join_Success(t *testing.T) {
 
 func TestCircleService_Join_Full(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New().String()
 	uid := uuid.New().String()
@@ -162,7 +162,7 @@ func TestCircleService_Join_Full(t *testing.T) {
 
 func TestCircleService_Join_AlreadyMember(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New().String()
 	uid := uuid.New().String()
@@ -188,7 +188,7 @@ func TestCircleService_Join_AlreadyMember(t *testing.T) {
 
 func TestCircleService_Join_PrivateWithoutInvite(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New().String()
 	uid := uuid.New().String()
@@ -208,7 +208,7 @@ func TestCircleService_Join_PrivateWithoutInvite(t *testing.T) {
 
 func TestCircleService_Cancel_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	orgID := cid
@@ -230,7 +230,7 @@ func TestCircleService_Cancel_Success(t *testing.T) {
 
 func TestCircleService_Cancel_NotOrganizer(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	orgID := uuid.New()
@@ -251,7 +251,7 @@ func TestCircleService_Cancel_NotOrganizer(t *testing.T) {
 
 func TestCircleService_Exit_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	uid := uuid.New()
@@ -277,7 +277,7 @@ func TestCircleService_Exit_Success(t *testing.T) {
 
 func TestCircleService_Exit_Organizer(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	orgID := cid
@@ -297,7 +297,7 @@ func TestCircleService_Exit_Organizer(t *testing.T) {
 
 func TestCircleService_GetMembers_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 
@@ -317,7 +317,7 @@ func TestCircleService_GetMembers_Success(t *testing.T) {
 
 func TestCircleService_List_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 
 	now := time.Now()
@@ -339,7 +339,7 @@ func TestCircleService_List_Success(t *testing.T) {
 
 func TestCircleService_Get_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 
@@ -358,7 +358,7 @@ func TestCircleService_Get_Success(t *testing.T) {
 
 func TestCircleService_Get_NotFound(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 
@@ -372,7 +372,7 @@ func TestCircleService_Get_NotFound(t *testing.T) {
 
 func TestCircleService_ProcessMissedContributions(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 
 	cid := uuid.New()
@@ -411,7 +411,7 @@ func TestCircleService_ProcessMissedContributions(t *testing.T) {
 
 func TestCircleService_RaiseDispute_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	uid := uuid.New()
@@ -438,7 +438,7 @@ func TestCircleService_RaiseDispute_Success(t *testing.T) {
 
 func TestCircleService_RaiseDispute_NotMember(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	uid := uuid.New()
@@ -458,7 +458,7 @@ func TestCircleService_RaiseDispute_NotMember(t *testing.T) {
 
 func TestCircleService_CastVote_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	voterID := uuid.New()
@@ -490,7 +490,7 @@ func TestCircleService_CastVote_Success(t *testing.T) {
 
 func TestCircleService_SubmitAuctionBid_Success(t *testing.T) {
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	ctx := context.Background()
 	cid := uuid.New()
 	bidderID := uuid.New()

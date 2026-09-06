@@ -47,11 +47,6 @@ var (
 		Help: "Total circles created",
 	})
 
-	ContributionsRecorded = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "moistello_contributions_total",
-		Help: "Total contributions recorded",
-	})
-
 	ActiveUsers = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "moistello_active_users",
 		Help: "Number of active users",

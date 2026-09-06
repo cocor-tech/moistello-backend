@@ -26,6 +26,7 @@ func TestContributionService_Record_Success(t *testing.T) {
 		TxnHash:     "txn-abc123",
 	}
 
+	repo.On("FindByTxnHash", ctx, "txn-abc123").Return(nil, apperrors.ErrNotFound)
 	repo.On("Create", ctx, mock.AnythingOfType("*contribution.Contribution")).Return(nil)
 
 	c, err := svc.Record(ctx, input)
@@ -51,7 +52,10 @@ func TestContributionService_Record_Conflict(t *testing.T) {
 		TxnHash:     "txn-abc123",
 	}
 
+	repo.On("FindByTxnHash", ctx, "txn-abc123").Return(nil, apperrors.ErrNotFound).Once()
 	repo.On("Create", ctx, mock.AnythingOfType("*contribution.Contribution")).Return(apperrors.ErrConflict)
+	// After conflict, second FindByTxnHash also returns not found (no recovery)
+	repo.On("FindByTxnHash", ctx, "txn-abc123").Return(nil, apperrors.ErrNotFound).Once()
 
 	c, err := svc.Record(ctx, input)
 
@@ -72,6 +76,9 @@ func TestContributionService_Record_InvalidUUID(t *testing.T) {
 		Amount:      100.0,
 		TxnHash:     "txn-abc123",
 	}
+
+	// FindByTxnHash is called before UUID parse for idempotency check.
+	repo.On("FindByTxnHash", ctx, "txn-abc123").Return(nil, apperrors.ErrNotFound)
 
 	c, err := svc.Record(ctx, input)
 
@@ -162,6 +169,7 @@ func TestContributionService_Record_VerificationStatus(t *testing.T) {
 		VerificationStatus: &customStatus,
 	}
 
+	repo.On("FindByTxnHash", ctx, "txn-verified-123").Return(nil, apperrors.ErrNotFound)
 	repo.On("Create", ctx, mock.MatchedBy(func(c *contribution.Contribution) bool {
 		return c.VerifiedOnchain == true && c.VerificationStatus == contribution.VerificationStatusVerified
 	})).Return(nil)

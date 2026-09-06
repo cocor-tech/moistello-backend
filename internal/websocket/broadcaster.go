@@ -101,6 +101,15 @@ func (b *Broadcaster) PayoutExecuted(ctx context.Context, circleID, recipientID 
 	}})
 }
 
+// MemberPenalized broadcasts a penalty imposed on a circle member for a missed
+// contribution. Satisfies circle.Broadcaster.
+func (b *Broadcaster) MemberPenalized(ctx context.Context, circleID, userID string, roundNumber int, penaltyAmount float64) {
+	b.publish(circleID, Message{Type: "member.penalized", Payload: map[string]any{
+		"circleId": circleID, "userId": userID, "roundNumber": roundNumber,
+		"penaltyAmount": penaltyAmount, "timestamp": time.Now().UTC(),
+	}})
+}
+
 // ── Community events ──
 
 func (b *Broadcaster) CommunityJoined(ctx context.Context, communityID, userID string) {

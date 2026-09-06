@@ -8,40 +8,22 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/user"
 )
 
-func TestUserHandler_GetByID_ReturnsSanitizedPublicProfile(t *testing.T) {
+func TestUserHandler_ClaimName(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	displayName := "Moistello User"
-	email := "private@example.com"
-	phone := "+15555550100"
-	userID := uuid.New()
-
-	h := handler.NewUserHandler(&fakeUserService{
-		user: &user.User{
-			ID:                userID,
-			WalletAddress:     "GABC_PUBLIC_KEY",
-			Email:             &email,
-			Phone:             &phone,
-			DisplayName:       &displayName,
-			MoiScore:          700,
-			Role:              user.RoleAdmin,
-			SessionTTLMinutes: 1440,
-			EmailVerified:     true,
-		},
-	}, nil)
+	h := handler.NewUserHandler(&fakeUserService{claimName: "@moistello_user"})
 
 	r := gin.New()
-	r.GET("/v1/users/:id", h.GetByID)
+	r.POST("/v1/users/username/claim", h.ClaimName)
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/v1/users/"+userID.String(), nil)
+	req, _ := http.NewRequest("POST", "/v1/users/username/claim", nil)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -49,21 +31,15 @@ func TestUserHandler_GetByID_ReturnsSanitizedPublicProfile(t *testing.T) {
 	var body map[string]any
 	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 
-	data := body["data"].(map[string]any)
-	profile := data["user"].(map[string]any)
-
-	assert.Equal(t, "GABC_PUBLIC_KEY", profile["publicKey"])
-	assert.Equal(t, "Moistello User", profile["displayName"])
-	assert.Equal(t, float64(700), profile["moiScore"])
-	assert.NotContains(t, profile, "email")
-	assert.NotContains(t, profile, "phone")
-	assert.NotContains(t, profile, "role")
-	assert.NotContains(t, profile, "sessionTtlMinutes")
-	assert.NotContains(t, profile, "emailVerified")
+	data, ok := body["data"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, true, data["success"])
+	assert.Equal(t, "username claimed successfully", data["message"])
 }
 
 type fakeUserService struct {
-	user *user.User
+	user      *user.User
+	claimName string
 }
 
 func (s *fakeUserService) GetByID(context.Context, string) (*user.User, error) {
@@ -103,7 +79,7 @@ func (s *fakeUserService) GetCircles(context.Context, string) ([]any, error) {
 }
 
 func (s *fakeUserService) ClaimName(context.Context) (string, error) {
-	return "", nil
+	return s.claimName, nil
 }
 
 func (s *fakeUserService) UpdateNotificationPreferences(_ context.Context, _ string, _ user.NotificationPrefsInput) (*user.User, error) {

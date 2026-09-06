@@ -21,6 +21,14 @@ func (m *Repository) FindByID(ctx context.Context, id uuid.UUID) (*payout.Payout
 	return args.Get(0).(*payout.Payout), args.Error(1)
 }
 
+func (m *Repository) FindByTxnHash(ctx context.Context, txnHash string) (*payout.Payout, error) {
+	args := m.Called(ctx, txnHash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*payout.Payout), args.Error(1)
+}
+
 func (m *Repository) Create(ctx context.Context, p *payout.Payout) error {
 	return m.Called(ctx, p).Error(0)
 }

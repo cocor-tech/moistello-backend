@@ -1,9 +1,10 @@
 package websocket_test
 
 import (
+	"context"
 	"encoding/json"
-	testing"
-	time"
+	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -24,7 +25,7 @@ func TestBridgeRateLimiter(t *testing.T) {
 	assert.True(t, rl.Allow("user-2"))
 }
 
-func TestRedisBridge_BackpressureAndRateLimiting(t *testing.T) {
+func TestRedisBridge_PublishesToHub(t *testing.T) {
 	s, err := miniredis.Run()
 	require.NoError(t, err)
 	defer s.Close()
@@ -33,13 +34,10 @@ func TestRedisBridge_BackpressureAndRateLimiting(t *testing.T) {
 	defer rdb.Close()
 
 	hub := websocket.NewHub()
-	go hub.Run()
 
-	bridge := websocket.NewNewRedisBridgeIfAvailable(hub, rdb)
-	// Alternatively use NewRedisBridge directly
-	_ = bridge
+	bridge := websocket.NewRedisBridge(hub, rdb)
+	defer bridge.Close()
 
-	// Test publishing payloads
 	payload, _ := json.Marshal(map[string]any{
 		"circleId": "circle-123",
 		"userId":   "user-abc",
@@ -50,12 +48,8 @@ func TestRedisBridge_BackpressureAndRateLimiting(t *testing.T) {
 		"payload": json.RawMessage(payload),
 	})
 
-	err = rdb.Publish(contextBackground(), "moistello_ws_events", env).Err()
+	err = rdb.Publish(context.Background(), "moistello_ws_events", env).Err()
 	require.NoError(t, err)
 
 	time.Sleep(50 * time.Millisecond)
-}
-
-func contextBackground() context.Context {
-	return context.Background()
 }

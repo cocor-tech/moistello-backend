@@ -35,7 +35,7 @@ func (h *IncentivesHandler) GenerateReferralCode(c *gin.Context) {
 
 	code, err := h.service.GenerateReferralCode(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to generate referral code", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to generate referral code", err)
 		return
 	}
 
@@ -63,12 +63,12 @@ func (h *IncentivesHandler) ApplyReferralCode(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	if err := h.service.ApplyReferralCode(c.Request.Context(), userID, req.Code); err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to apply referral code", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to apply referral code", err)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *IncentivesHandler) GetReferrals(c *gin.Context) {
 
 	referrals, err := h.service.GetReferrals(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get referrals", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to get referrals", err)
 		return
 	}
 
@@ -119,13 +119,13 @@ func (h *IncentivesHandler) GrantCircleCompletionReward(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	incentive, err := h.service.GrantCircleCompletionReward(c.Request.Context(), req.UserID, req.CircleID)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to grant circle completion reward", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to grant circle completion reward", err)
 		return
 	}
 
@@ -153,13 +153,13 @@ func (h *IncentivesHandler) GrantContributionMatch(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	incentive, err := h.service.GrantContributionMatch(c.Request.Context(), req.UserID, req.CircleID, req.Amount)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to grant contribution match", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to grant contribution match", err)
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *IncentivesHandler) RecordContribution(c *gin.Context) {
 
 	streak, err := h.service.RecordContribution(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to record contribution", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to record contribution", err)
 		return
 	}
 
@@ -206,7 +206,7 @@ func (h *IncentivesHandler) GrantStreakBonus(c *gin.Context) {
 
 	incentive, err := h.service.GrantStreakBonus(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to grant streak bonus", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to grant streak bonus", err)
 		return
 	}
 
@@ -233,13 +233,13 @@ func (h *IncentivesHandler) GrantFirstDepositBonus(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	incentive, err := h.service.GrantFirstDepositBonus(c.Request.Context(), req.UserID, req.DepositAmount)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to grant first deposit bonus", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to grant first deposit bonus", err)
 		return
 	}
 
@@ -265,12 +265,12 @@ func (h *IncentivesHandler) ClaimIncentive(c *gin.Context) {
 	incentiveID := c.Param("id")
 
 	if _, err := uuid.Parse(incentiveID); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid incentive ID", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid incentive ID", err)
 		return
 	}
 
 	if err := h.service.ClaimIncentive(c.Request.Context(), userID, incentiveID); err != nil {
-		response.Error(c, http.StatusBadRequest, "Failed to claim incentive", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Failed to claim incentive", err)
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *IncentivesHandler) GetUserIncentives(c *gin.Context) {
 
 	userIncentives, err := h.service.GetUserIncentives(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get incentives", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to get incentives", err)
 		return
 	}
 
@@ -329,7 +329,7 @@ func (h *IncentivesHandler) GetPendingIncentives(c *gin.Context) {
 
 	incentives, err := h.service.GetPendingIncentives(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get pending incentives", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to get pending incentives", err)
 		return
 	}
 
@@ -352,7 +352,7 @@ func (h *IncentivesHandler) GetUserSummary(c *gin.Context) {
 
 	summary, err := h.service.GetUserSummary(c.Request.Context(), userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get user summary", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to get user summary", err)
 		return
 	}
 
@@ -374,7 +374,7 @@ func (h *IncentivesHandler) GetUserSummary(c *gin.Context) {
 func (h *IncentivesHandler) GetConfig(c *gin.Context) {
 	config, err := h.service.GetConfig(c.Request.Context())
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to get config", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to get config", err)
 		return
 	}
 
@@ -399,12 +399,12 @@ func (h *IncentivesHandler) UpdateConfig(c *gin.Context) {
 	var config incentives.IncentiveConfig
 
 	if err := c.ShouldBindJSON(&config); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	if err := h.service.UpdateConfig(c.Request.Context(), &config); err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to update config", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to update config", err)
 		return
 	}
 
@@ -431,13 +431,13 @@ func (h *IncentivesHandler) CalculateContributionMatch(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid request body", err)
+		response.Error(c, http.StatusBadRequest, "ERROR", "Invalid request body", err)
 		return
 	}
 
 	matchAmount, err := h.service.CalculateContributionMatch(c.Request.Context(), req.UserID, req.Amount)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to calculate match", err)
+		response.Error(c, http.StatusInternalServerError, "ERROR", "Failed to calculate match", err)
 		return
 	}
 

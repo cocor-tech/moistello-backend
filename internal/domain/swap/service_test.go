@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/moistello/backend/internal/domain/user"
-	"github.com/moistello/backend/pkg/apperrors"
 )
 
 // ── Fakes ─────────────────────────────────────────────────────────────────
@@ -144,7 +143,7 @@ func TestSweepExpiredOffers_SkipsOfferWhenOnChainCancelFails(t *testing.T) {
 		return walletUser(id), nil
 	}}
 	escrow := &fakeEscrow{cancelSwapFn: func(ctx context.Context, swapID, canceller string) (string, error) {
-		ifa swapID == "offer-1" {
+		if swapID == "offer-1" {
 			return "", errors.New("simulation failed")
 		}
 		return "tx-" + swapID, nil
@@ -198,7 +197,7 @@ func TestCancelSwapOffer_Success(t *testing.T) {
 func TestAcceptSwapOffer_ConcurrencyAndCAS(t *testing.T) {
 	ctx := context.Background()
 	offer := createdOffer("offer-1", "u1")
-	
+
 	var currentStatus SwapOfferStatus = SwapOfferStatusCreated
 	var statusMu sync.Mutex
 
@@ -206,8 +205,9 @@ func TestAcceptSwapOffer_ConcurrencyAndCAS(t *testing.T) {
 		getByIDFn: func(ctx context.Context, id string) (*SwapOffer, error) {
 			statusMu.Lock()
 			defer statusMu.Unlock()
-			o.Status = currentStatus
-			return o, nil
+			copy := *offer
+			copy.Status = currentStatus
+			return &copy, nil
 		},
 		casFn: func(ctx context.Context, id string, expectedStatus, newStatus SwapOfferStatus, transactionHash *string) (bool, error) {
 			statusMu.Lock()

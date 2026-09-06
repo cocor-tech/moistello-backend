@@ -3,6 +3,7 @@ package swap
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"

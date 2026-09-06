@@ -164,7 +164,6 @@ func TestApplyReferralCode_RaceCondition(t *testing.T) {
 	wg.Wait()
 	close(errs)
 
-	successCount := 0
 	otherErrors := 0
 	for err := range errs {
 		if err.Error() == "referral code already used" || err.Error() == "not found" {

@@ -13,6 +13,7 @@ import (
 	contribMocks "github.com/moistello/backend/internal/domain/contribution/mocks"
 	"github.com/moistello/backend/internal/domain/payout"
 	payoutMocks "github.com/moistello/backend/internal/domain/payout/mocks"
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 func TestIntegration_Contribution_VerificationStatusFlow(t *testing.T) {
@@ -32,6 +33,7 @@ func TestIntegration_Contribution_VerificationStatusFlow(t *testing.T) {
 			TxnHash:     "tx_client_unverified_1",
 		}
 
+		repo.On("FindByTxnHash", ctx, "tx_client_unverified_1").Return(nil, apperrors.ErrNotFound).Once()
 		repo.On("Create", ctx, mock.MatchedBy(func(c *contribution.Contribution) bool {
 			return c.VerifiedOnchain == false &&
 				c.VerificationStatus == contribution.VerificationStatusUnverified &&
@@ -59,6 +61,7 @@ func TestIntegration_Contribution_VerificationStatusFlow(t *testing.T) {
 			VerificationStatus: &status,
 		}
 
+		repo.On("FindByTxnHash", ctx, "tx_verified_onchain_2").Return(nil, apperrors.ErrNotFound).Once()
 		repo.On("Create", ctx, mock.MatchedBy(func(c *contribution.Contribution) bool {
 			return c.VerifiedOnchain == true &&
 				c.VerificationStatus == contribution.VerificationStatusVerified &&
@@ -104,6 +107,7 @@ func TestIntegration_Payout_VerificationStatusFlow(t *testing.T) {
 			PayoutType:  payout.PayoutTypeFixed,
 		}
 
+		repo.On("FindByTxnHash", ctx, "tx_payout_unverified_1").Return(nil, apperrors.ErrNotFound).Once()
 		repo.On("Create", ctx, mock.MatchedBy(func(p *payout.Payout) bool {
 			return p.VerifiedOnchain == false &&
 				p.VerificationStatus == payout.VerificationStatusUnverified &&
@@ -132,6 +136,7 @@ func TestIntegration_Payout_VerificationStatusFlow(t *testing.T) {
 			VerificationStatus: &status,
 		}
 
+		repo.On("FindByTxnHash", ctx, "tx_payout_verified_2").Return(nil, apperrors.ErrNotFound).Once()
 		repo.On("Create", ctx, mock.MatchedBy(func(p *payout.Payout) bool {
 			return p.VerifiedOnchain == true &&
 				p.VerificationStatus == payout.VerificationStatusVerified

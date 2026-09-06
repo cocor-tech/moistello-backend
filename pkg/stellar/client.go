@@ -104,63 +104,92 @@ func (c *Client) GetTransaction(ctx context.Context, txnHash string) (result map
 	return result, nil
 }
 
+// VerifyTransaction checks that a transaction exists, was successful, and
+// contains a payment operation where the sender matches expectedFrom AND the
+// amount matches expectedAmount. Pass an empty string to skip a check.
 func (c *Client) VerifyTransaction(ctx context.Context, txnHash string, expectedFrom string, expectedAmount string) (bool, error) {
-	// Ensure transaction exists and was successful
-	txn, err := c.GetTransaction(ctx, txnHash)
+	ops, err := c.getTransactionOperations(ctx, txnHash)
 	if err != nil {
-		log.Warn().Err(err).Str("txn", txnHash).Msg("failed to fetch transaction")
 		return false, err
 	}
+	for _, r := range ops {
+		from, _ := r["from"].(string)
+		amount, _ := r["amount"].(string)
+		if expectedFrom != "" && from != expectedFrom {
+			continue
+		}
+		if expectedAmount != "" && amount != expectedAmount {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// VerifyPayment checks that a transaction exists, was successful, and contains
+// a payment operation where recipient matches expectedTo AND amount matches
+// expectedAmount. Pass an empty string to skip a check.
+func (c *Client) VerifyPayment(ctx context.Context, txnHash string, expectedTo string, expectedAmount string) (bool, error) {
+	ops, err := c.getTransactionOperations(ctx, txnHash)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range ops {
+		to, _ := r["to"].(string)
+		amount, _ := r["amount"].(string)
+		if expectedTo != "" && to != expectedTo {
+			continue
+		}
+		if expectedAmount != "" && amount != expectedAmount {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// getTransactionOperations fetches a transaction from Horizon, asserts it was
+// successful, then returns its payment operation records.
+func (c *Client) getTransactionOperations(ctx context.Context, txnHash string) ([]map[string]any, error) {
+	txn, err := c.GetTransaction(ctx, txnHash)
+	if err != nil {
+		log.Warn().Err(err).Str("txn", txnHash).Msg("failed to fetch transaction from horizon")
+		return nil, err
+	}
 	if success, ok := txn["successful"].(bool); ok && !success {
-		return false, nil
+		return nil, fmt.Errorf("transaction %s was not successful on-chain", txnHash)
 	}
 
-	// Fetch operations for the transaction and look for a matching payment
 	url := fmt.Sprintf("%s/transactions/%s/operations?limit=200", c.horizonURL, txnHash)
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
-		return false, fmt.Errorf("horizon request: %w", err)
+		return nil, fmt.Errorf("horizon request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return false, fmt.Errorf("horizon error %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("horizon error %d: %s", resp.StatusCode, string(body))
 	}
 
-	var ops struct {
+	var envelope struct {
 		Embedded struct {
 			Records []map[string]any `json:"records"`
 		} `json:"_embedded"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&ops); err != nil {
-		return false, fmt.Errorf("decoding horizon operations: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decoding horizon operations: %w", err)
 	}
 
-	for _, r := range ops.Embedded.Records {
+	// Filter to payment-type operations only
+	var payments []map[string]any
+	for _, r := range envelope.Embedded.Records {
 		typ, _ := r["type"].(string)
-		if typ != "payment" && typ != "payment_strict_receive" && typ != "payment_strict_send" {
-			continue
-		}
-		to, _ := r["to"].(string)
-		amount, _ := r["amount"].(string)
-		from, _ := r["from"].(string)
-
-		// If expectedFrom is provided, ensure operation source matches
-		if expectedFrom != "" && from != expectedFrom {
-			// skip if source doesn't match expectedFrom when provided
-			continue
-		}
-
-		if amount == expectedAmount && (expectedFrom == "" || to == expectedFrom || from == expectedFrom) {
-			return true, nil
-		}
-		if expectedFrom != "" && to == expectedFrom && amount == expectedAmount {
-			return true, nil
+		if typ == "payment" || typ == "payment_strict_receive" || typ == "payment_strict_send" {
+			payments = append(payments, r)
 		}
 	}
-
-	return false, nil
+	return payments, nil
 }
 
 func (c *Client) NetworkPassphrase() string { return c.networkPassphrase }

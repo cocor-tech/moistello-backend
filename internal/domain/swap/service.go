@@ -2,7 +2,6 @@ package swap
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -10,16 +9,6 @@ import (
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/apperrors"
 )
-
-type Repository interface {
-	CreateSwapOffer(ctx context.Context, offer *SwapOffer) error
-	GetSwapOfferByID(ctx context.Context, id string) (*SwapOffer, error)
-	UpdateSwapOfferStatus(ctx context.Context, id string, status SwapOfferStatus, transactionHash *string) error
-	CompareAndSwapStatus(ctx context.Context, id string, expectedStatus, newStatus SwapOfferStatus, transactionHash *string) (bool, error)
-	ListUserSwapOffers(ctx context.Context, userID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
-	ListCircleSwapOffers(ctx context.Context, circleID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
-	ListExpiredCreatedOffers(ctx context.Context, now time.Time) ([]SwapOffer, error)
-}
 
 type CircleService interface {
 }
@@ -36,10 +25,10 @@ type EscrowClient interface {
 }
 
 type Service struct {
-	repo        Repository
-	circleSvc   CircleService
-	userSvc     UserService
-	escrow      EscrowClient
+	repo      Repository
+	circleSvc CircleService
+	userSvc   UserService
+	escrow    EscrowClient
 }
 
 func NewService(repo Repository, circleSvc CircleService, userSvc UserService, escrow EscrowClient) *Service {
@@ -51,21 +40,15 @@ func NewService(repo Repository, circleSvc CircleService, userSvc UserService, e
 	}
 }
 
-func (s *Service) CreateSwapOffer(ctx context.Context, userID string, input CreateSwapInput) (*SwapOffer, error) {
+func (s *Service) CreateSwapOffer(ctx context.Context, userID string, input SwapOfferRequest) (*SwapOffer, error) {
 	u, err := s.userSvc.GetByID(ctx, userID)
 	if err != nil {
 		return nil, apperrors.ErrNotFound
 	}
 
-	expiresAt := time.Now().Add(24 * time.Hour)
-	if input.ExpiresAt > 0 {
-		expiresAt = time.Unix(input.ExpiresAt, 0)
-	}
+	expiresAt := time.Now().Add(time.Duration(input.ExpiresIn) * time.Hour)
 
-	var offereeID *string
-	if input.OffereeUserID != "" {
-		offereeID = &input.OffereeUserID
-	}
+	offereeID := input.OffereeUserID
 
 	var offereeWallet string
 	if offereeID != nil {
@@ -124,7 +107,7 @@ func (s *Service) AcceptSwapOffer(ctx context.Context, userID string, offerID st
 	}
 
 	if time.Now().After(offer.ExpiresAt) {
-		return nil, apperrors.ErrBadRequest
+		return nil, apperrors.ErrInvalidInput
 	}
 
 	if offer.OffereeUserID != nil && *offer.OffereeUserID != userID {

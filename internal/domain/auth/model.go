@@ -31,3 +31,10 @@ type TokenPair struct {
 	RefreshToken string `json:"refreshToken"`
 	CSRFToken    string `json:"csrfToken,omitempty"`
 }
+
+type SessionInfo struct {
+	ID         string `json:"id"`
+	DeviceInfo string `json:"deviceInfo"`
+	LastActive string `json:"lastActive"`
+	IsCurrent  bool   `json:"isCurrent"`
+}

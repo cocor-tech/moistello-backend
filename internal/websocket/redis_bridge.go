@@ -27,10 +27,10 @@ type RedisBridge struct {
 
 // BridgeRateLimiter provides per-client rate limiting for websocket bridge relays.
 type BridgeRateLimiter struct {
-	mu       sync.Mutex
-	limits   map[string][]time.Time
-	maxRate  int           // e.g. max messages per window
-	window   time.Duration // e.g. 1 second
+	mu      sync.Mutex
+	limits  map[string][]time.Time
+	maxRate int           // e.g. max messages per window
+	window  time.Duration // e.g. 1 second
 }
 
 func NewBridgeRateLimiter(maxRate int, window time.Duration) *BridgeRateLimiter {
@@ -80,7 +80,7 @@ func NewRedisBridge(hub *Hub, rdb *redis.Client) *RedisBridge {
 		stop:        make(chan struct{}),
 		cancel:      cancel,
 		done:        make(chan struct{}),
-		queue:       make(chan []byte, 1024), // Bounded relay queue with backpressure
+		queue:       make(chan []byte, 1024),                // Bounded relay queue with backpressure
 		rateLimiter: NewBridgeRateLimiter(100, time.Second), // Per-client rate limiter default
 	}
 	go b.consume(ctx)

@@ -166,11 +166,11 @@ func (h *SwapHandler) GetSwapHistory(c *gin.Context) {
 		filter.Status = &status
 	}
 
-	history, err := h.swapService.GetSwapHistory(c.Request.Context(), userID.(string), filter)
+	history, total, err := h.swapService.GetSwapHistory(c.Request.Context(), userID.(string), filter)
 	if err != nil {
 		response.InternalError(c, err.Error())
 		return
 	}
 
-	response.OK(c, history)
+	response.OK(c, swap.SwapHistoryResponse{Swaps: history, Total: total, Limit: filter.Limit, Offset: filter.Offset})
 }

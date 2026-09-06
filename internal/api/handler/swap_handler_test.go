@@ -98,6 +98,15 @@ func (m *swapMockRepoForHandler) GetSwapOfferByID(ctx context.Context, id string
 func (m *swapMockRepoForHandler) UpdateSwapOfferStatus(ctx context.Context, id string, status swap.SwapOfferStatus, transactionHash *string) error {
 	return nil
 }
+func (m *swapMockRepoForHandler) CompareAndSwapStatus(ctx context.Context, id string, expectedStatus, newStatus swap.SwapOfferStatus, transactionHash *string) (bool, error) {
+	offer, ok := m.offers[id]
+	if !ok || offer.Status != expectedStatus {
+		return false, nil
+	}
+	offer.Status = newStatus
+	offer.TransactionHash = transactionHash
+	return true, nil
+}
 func (m *swapMockRepoForHandler) ListUserSwapOffers(ctx context.Context, userID string, filter swap.SwapHistoryFilter) ([]swap.SwapOffer, int, error) {
 	return []swap.SwapOffer{}, 0, nil
 }

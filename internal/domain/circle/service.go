@@ -100,6 +100,16 @@ type NotificationSender interface {
 	Create(ctx context.Context, input notification.CreateInput) (*notification.Notification, error)
 }
 
+// Dependencies holds the optional collaborators injected into the circle
+// service. All fields are optional; nil values are safely handled at call sites.
+type Dependencies struct {
+	CommunityChecker CommunityMembershipChecker
+	Broadcaster      Broadcaster
+	Transactor       Transactor
+	AuditLogger      AuditLogger
+	NotificationSvc  NotificationSender
+}
+
 type circleService struct {
 	repo             Repository
 	userRepo         UserMOIFetcher
@@ -110,23 +120,16 @@ type circleService struct {
 	notificationSvc  NotificationSender
 }
 
-func NewService(repo Repository, userRepo UserMOIFetcher, dependencies ...any) Service {
-	service := &circleService{repo: repo, userRepo: userRepo}
-	for _, dependency := range dependencies {
-		switch value := dependency.(type) {
-		case CommunityMembershipChecker:
-			service.communityChecker = value
-		case Broadcaster:
-			service.broadcaster = value
-		case Transactor:
-			service.tx = value
-		case AuditLogger:
-			service.auditRepo = value
-		case NotificationSender:
-			service.notificationSvc = value
-		}
+func NewService(repo Repository, userRepo UserMOIFetcher, deps Dependencies) Service {
+	return &circleService{
+		repo:             repo,
+		userRepo:         userRepo,
+		communityChecker: deps.CommunityChecker,
+		broadcaster:      deps.Broadcaster,
+		tx:               deps.Transactor,
+		auditRepo:        deps.AuditLogger,
+		notificationSvc:  deps.NotificationSvc,
 	}
-	return service
 }
 
 type circleTransactor struct {

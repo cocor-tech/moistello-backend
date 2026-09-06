@@ -2,7 +2,6 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/response"
 )

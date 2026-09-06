@@ -2,7 +2,9 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -133,10 +135,11 @@ func TestDispatchPayload_DetachedBackgroundContext(t *testing.T) {
 	repo := &fakeWebhookRepo{
 		webhooks: map[string]*WebhookRegistration{
 			"wh-1": {
-				ID:        "wh-1",
-				UserID:    "user-1",
-				TargetURL: server.URL,
-				Secret:    "secret-123",
+				ID:         "wh-1",
+				UserID:     "user-1",
+				TargetURL:  server.URL,
+				Secret:     "secret-123",
+				SecretHash: webhookSHA256("secret-123"),
 			},
 		},
 	}
@@ -160,12 +163,17 @@ func TestDispatchPayload_DetachedBackgroundContext(t *testing.T) {
 		assert.Contains(t, string(body), "user.created")
 		sig := <-receivedSig
 		assert.NotEmpty(t, sig)
-		assert.True(t, VerifyWebhookSignature(body, sig, "secret-123"))
+		assert.True(t, VerifyWebhookSignature(body, sig, webhookSHA256("secret-123")))
 		reqID := <-receivedReqID
 		assert.Equal(t, "req-test-999", reqID)
 	case <-time.After(1 * time.Second):
 		t.Fatal("webhook delivery failed or was cancelled by request context")
 	}
+}
+
+func webhookSHA256(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 func TestDispatchPayload_BoundedConcurrency(t *testing.T) {

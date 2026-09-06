@@ -78,6 +78,20 @@ func (a *moiAdapter) FindByID(ctx context.Context, id uuid.UUID) (*circle.UserMO
 	return &circle.UserMOIData{MoiScore: u.MoiScore}, nil
 }
 
+// payoutWalletAdapter satisfies payout.WalletLookup by resolving a user's
+// on-chain Stellar wallet address from the user repository.
+type payoutWalletAdapter struct {
+	repo user.Repository
+}
+
+func (a *payoutWalletAdapter) WalletAddressForUser(ctx context.Context, userID uuid.UUID) (string, error) {
+	u, err := a.repo.FindByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return u.WalletAddress, nil
+}
+
 type communityAdapter struct {
 	repo community.Repository
 }
@@ -156,12 +170,16 @@ func main() {
 	_ = ws.NewRedisBridge(wsHub, redisClient)
 
 	userSvc := user.NewService(userRepo, circleRepo)
-	circleSvc := circle.NewService(circleRepo, &moiAdapter{repo: userRepo}, &communityAdapter{repo: communityRepo}, wsBroadcaster, circle.NewTransactor(db))
+	circleSvc := circle.NewService(circleRepo, &moiAdapter{repo: userRepo}, circle.Dependencies{
+		CommunityChecker: &communityAdapter{repo: communityRepo},
+		Broadcaster:      wsBroadcaster,
+		Transactor:       circle.NewTransactor(db),
+	})
 	// Stellar client used for on-chain verification
 	horizonClient := stellar.NewClient(cfg.Stellar.HorizonURL, cfg.Stellar.SorobanRPCURL, cfg.Stellar.NetworkPassphrase)
 
 	contribSvc := contribution.NewService(contribRepo, wsBroadcaster, contribution.NewTransactor(db), horizonClient, cfg.Stellar.MasterPublicKey)
-	payoutSvc := payout.NewService(payoutRepo, horizonClient, userRepo)
+	payoutSvc := payout.NewService(payoutRepo, horizonClient, &payoutWalletAdapter{repo: userRepo})
 	reputationSvc := reputation.NewService(reputationRepo)
 	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPublicKeyPEM)
 	if err != nil {
@@ -237,7 +255,7 @@ func main() {
 	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo)
-	userH := handler.NewUserHandler(userSvc, redisClient)
+	userH := handler.NewUserHandler(userSvc)
 	circleH := handler.NewCircleHandler(circleSvc, inviteSvc, contribSvc, payoutSvc)
 	contribH := handler.NewContributionHandler(contribSvc, contribRepo)
 	payoutH := handler.NewPayoutHandler(payoutSvc, payoutRepo)

@@ -1,24 +1,22 @@
 package integration_test
 
 import (
-	"bytes"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/user"
+	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
 )
-
-tabsTest := func(t *testing.T) {}
 
 func TestRESTSemantics_SessionAndClaim(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	mockUserRepo := new(mockUserRepo)
+	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo, nil)
 	authH := handler.NewAuthHandler(nil, userSvc, nil, nil, nil, nil, nil, mockUserRepo)
 	userH := handler.NewUserHandler(userSvc)
@@ -36,21 +34,28 @@ func TestRESTSemantics_SessionAndClaim(t *testing.T) {
 		v1.POST("/claim-name", userH.ClaimName)
 	}
 
-	// Test DELETE /v1/auth/sessions
+	// Test DELETE /v1/auth/sessions without a bearer token — requires auth.
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/v1/auth/sessions", nil)
 	r.ServeHTTP(w, req)
-	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
-	// Test DELETE /v1/auth/sessions/:id
+	// Test DELETE /v1/auth/sessions/:id — revokes the session.
 	w = httptest.NewRecorder()
 	req, _ = http.NewRequest("DELETE", "/v1/auth/sessions/abc-123", nil)
 	r.ServeHTTP(w, req)
-	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Test POST /v1/users/username/claim
+	mockUserRepo.On("ClaimNextName", mock.Anything).Return(int64(5), nil)
 	w = httptest.NewRecorder()
 	req, _ = http.NewRequest("POST", "/v1/users/username/claim", nil)
 	r.ServeHTTP(w, req)
-	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Test POST /v1/claim-name
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/v1/claim-name", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

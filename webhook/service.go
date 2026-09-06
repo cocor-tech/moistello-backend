@@ -274,13 +274,9 @@ func (d *Dispatcher) DispatchPayload(ctx context.Context, payload interface{}, m
 }
 
 func (d *Dispatcher) deliverWithRetry(ctx context.Context, wh WebhookRegistration, body []byte, maxRetries int, reqID string) {
-	// Attempt initial delivery on background context with per-attempt timeout
-	// Use SecretHash as signing key (hex-encoded). If wh.Secret is present in-memory prefer it, otherwise use SecretHash.
-	key := wh.Secret
-	if key == "" {
-		key = wh.SecretHash
-	}
-	err := d.sendHTTP(ctx, wh.TargetURL, key, body, reqID)
+	// Always sign with SecretHash. The raw secret is never persisted; the hash
+	// is the canonical HMAC key for all outbound deliveries.
+	err := d.sendHTTP(ctx, wh.TargetURL, wh.SecretHash, body, reqID)
 	if err == nil {
 		return
 	}
@@ -314,11 +310,7 @@ func (d *Dispatcher) inMemoryRetry(ctx context.Context, wh WebhookRegistration, 
 		case <-time.After(backoff):
 		}
 
-		key := wh.Secret
-		if key == "" {
-			key = wh.SecretHash
-		}
-		err := d.sendHTTP(ctx, wh.TargetURL, key, body, reqID)
+		err := d.sendHTTP(ctx, wh.TargetURL, wh.SecretHash, body, reqID)
 		if err == nil {
 			return
 		}

@@ -29,6 +29,14 @@ func (m *Repository) FindByCircleAndUser(ctx context.Context, circleID, userID u
 	return args.Get(0).(*contribution.Contribution), args.Error(1)
 }
 
+func (m *Repository) FindByTxnHash(ctx context.Context, txnHash string) (*contribution.Contribution, error) {
+	args := m.Called(ctx, txnHash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*contribution.Contribution), args.Error(1)
+}
+
 func (m *Repository) Create(ctx context.Context, c *contribution.Contribution) error {
 	return m.Called(ctx, c).Error(0)
 }

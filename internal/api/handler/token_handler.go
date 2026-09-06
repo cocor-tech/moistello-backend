@@ -39,8 +39,7 @@ func (h *TokenHandler) Stake(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var req struct {
-		Amount      uint64 `json:"amount" binding:"required,gt=0"`
-		PasskeySeed string `json:"passkeySeed"`
+		Amount uint64 `json:"amount" binding:"required,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
@@ -62,8 +61,7 @@ func (h *TokenHandler) Unstake(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var req struct {
-		Amount      uint64 `json:"amount" binding:"required,gt=0"`
-		PasskeySeed string `json:"passkeySeed"`
+		Amount uint64 `json:"amount" binding:"required,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())

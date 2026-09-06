@@ -2,10 +2,6 @@ package wallet
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -14,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
-	"github.com/stellar/go/txnbuild"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -35,10 +30,10 @@ type Config struct {
 	USDCIssuer        string
 	NetworkPassphrase string
 	MinBalanceXLM     float64
-	WalletPepper  string
-	Argon2Time    int
-	Argon2Memory  int
-	Argon2Threads int
+	WalletPepper      string
+	Argon2Time        int
+	Argon2Memory      int
+	Argon2Threads     int
 }
 
 type service struct {
@@ -95,9 +90,9 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 
 	walletID := uuid.New().String()
 	w := &Wallet{
-		ID:     walletID,
-		UserID: userID,
-		Address: kp.Address(),
+		ID:        walletID,
+		UserID:    userID,
+		PublicKey: kp.Address(),
 	}
 
 	if s.repo != nil {
@@ -111,11 +106,11 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_ = s.fundAccountWithRetry(bgCtx, w.Address)
+		_ = s.fundAccountWithRetry(bgCtx, w.PublicKey)
 	}()
 
 	return w,
-	nil
+		nil
 }
 
 func (s *service) fundAccountWithRetry(ctx context.Context, address string) error {
@@ -141,7 +136,7 @@ func (s *service) GetWallets(ctx context.Context, userID string) ([]Wallet, erro
 	if s.repo == nil {
 		return nil, nil
 	}
-	return s.repo.GetByUserID(ctx, userID)
+	return s.repo.FindByUserID(ctx, userID)
 }
 
 func (s *service) GetBalance(ctx context.Context, userID string) (*Balance, error) {
@@ -156,5 +151,5 @@ func (s *service) DeleteWallet(ctx context.Context, userID, walletID string) err
 	if s.repo == nil {
 		return nil
 	}
-	return s.repo.Delete(ctx, userID, walletID)
+	return s.repo.DeleteByOwner(ctx, walletID, userID)
 }

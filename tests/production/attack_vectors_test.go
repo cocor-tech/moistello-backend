@@ -1241,7 +1241,7 @@ func TestCircle_TierBasedEnforcement(t *testing.T) {
 		// This test validates the error variable exists and the model supports
 		// the field, which is enforced on-chain via Soroban host functions.
 		repo := new(circleMocks.Repository)
-		svc := circle.NewService(repo, nil)
+		svc := circle.NewService(repo, nil, circle.Dependencies{})
 		ctx := context.Background()
 
 		// Simulate a circle with a high MinMoiScore requirement

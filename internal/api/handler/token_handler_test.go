@@ -115,4 +115,68 @@ func TestTokenHandler_Stake_MissingAmount(t *testing.T) {
 	svc.AssertNotCalled(t, "Stake", mock.Anything, mock.Anything, mock.Anything)
 }
 
+// TestTokenHandler_Stake_PasskeySeedIgnored ensures that if a client sends
+// passkeySeed in the body (backward-compat scenario), the field is silently
+// ignored and never echoed back in the response.
+func TestTokenHandler_Stake_PasskeySeedIgnored(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := new(mockTokenService)
+	svc.On("Stake", mock.Anything, "user-123", uint64(200)).Return("txhash-xyz", nil)
+
+	h := handler.NewTokenHandler(svc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "user-123")
+		c.Next()
+	})
+	r.POST("/v1/token/stake", h.Stake)
+
+	// Sending passkeySeed should be ignored, not cause a failure or leak.
+	body, _ := json.Marshal(map[string]any{
+		"amount":      200,
+		"passkeySeed": "PRIVATE_KEY_MATERIAL_MUST_NOT_BE_ECHOED",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/v1/token/stake", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.NotContains(t, w.Body.String(), "passkeySeed")
+	assert.NotContains(t, w.Body.String(), "PRIVATE_KEY_MATERIAL_MUST_NOT_BE_ECHOED")
+	assert.NotContains(t, w.Body.String(), "seed")
+	svc.AssertExpectations(t)
+}
+
+// TestTokenHandler_Unstake_PasskeySeedIgnored mirrors the stake test for unstake.
+func TestTokenHandler_Unstake_PasskeySeedIgnored(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := new(mockTokenService)
+	svc.On("Unstake", mock.Anything, "user-123", uint64(75)).Return("txhash-zzz", nil)
+
+	h := handler.NewTokenHandler(svc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "user-123")
+		c.Next()
+	})
+	r.POST("/v1/token/unstake", h.Unstake)
+
+	body, _ := json.Marshal(map[string]any{
+		"amount":      75,
+		"passkeySeed": "SENSITIVE_SEED_DATA",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/v1/token/unstake", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.NotContains(t, w.Body.String(), "passkeySeed")
+	assert.NotContains(t, w.Body.String(), "SENSITIVE_SEED_DATA")
+	svc.AssertExpectations(t)
+}
+
 var _ token.Service = (*mockTokenService)(nil)

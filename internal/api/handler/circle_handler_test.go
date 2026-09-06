@@ -27,7 +27,7 @@ func TestCircleHandler_CreateCircle_Valid(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	orgID := uuid.New()
 
 	repo.On("Create", mock.Anything, mock.AnythingOfType("*circle.Circle")).Return(nil)
@@ -65,7 +65,7 @@ func TestCircleHandler_CreateCircle_InvalidPayload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	h := handler.NewCircleHandler(svc, nil, nil, nil)
 	r := gin.New()
@@ -97,7 +97,7 @@ func TestCircleHandler_ListCircles_Empty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	filter := circle.CircleFilter{Page: 1, Limit: 20}
 	repo.On("List", mock.Anything, filter).Return([]circle.Circle{}, nil)
@@ -120,7 +120,7 @@ func TestCircleHandler_ListCircles_ServiceError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	filter := circle.CircleFilter{Page: 1, Limit: 20}
 	repo.On("List", mock.Anything, filter).Return(nil, apperrors.ErrInternal)
@@ -141,7 +141,7 @@ func TestCircleHandler_GetCircle_Exists(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 
 	expected := &circle.Circle{
@@ -166,7 +166,7 @@ func TestCircleHandler_GetCircle_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 
 	repo.On("FindByID", mock.Anything, cid).Return(nil, circle.ErrCircleNotFound)
@@ -187,7 +187,7 @@ func TestCircleHandler_JoinCircle_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 	uid := uuid.New()
 
@@ -222,7 +222,7 @@ func TestCircleHandler_JoinCircle_CircleFull(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 	uid := uuid.New()
 
@@ -254,7 +254,7 @@ func TestCircleHandler_GetMembers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 
 	c := &circle.Circle{ID: cid, Name: "Test"}
@@ -278,7 +278,7 @@ func TestCircleHandler_CancelCircle_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 	orgID := cid
 
@@ -310,7 +310,7 @@ func TestCircleHandler_CancelCircle_NotOrganizer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 	cid := uuid.New()
 	notOrg := uuid.New()
 
@@ -340,7 +340,7 @@ func TestCircleHandler_ListCircles_WithSearch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	circles := []circle.Circle{
 		{ID: uuid.New(), Name: "Savings Circle", Status: circle.CircleStatusActive},
@@ -369,7 +369,7 @@ func TestCircleHandler_ListCircles_WithStatusFilter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	circles := []circle.Circle{
 		{ID: uuid.New(), Name: "Active Circle", Status: circle.CircleStatusActive},
@@ -396,7 +396,7 @@ func TestCircleHandler_ListCircles_WithTypeFilter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	circles := []circle.Circle{
 		{ID: uuid.New(), Name: "Public Circle", Status: circle.CircleStatusPending, CircleType: circle.CircleTypePublic},
@@ -422,7 +422,7 @@ func TestCircleHandler_ListCircles_WithPagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	circles := []circle.Circle{
 		{ID: uuid.New(), Name: "Circle 3"},
@@ -453,7 +453,7 @@ func TestCircleHandler_ListCircles_DefaultPagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	filter := circle.CircleFilter{Page: 1, Limit: 20}
 	repo.On("List", mock.Anything, filter).Return([]circle.Circle{}, nil)
@@ -477,7 +477,7 @@ func TestCircleHandler_ListCircles_CombinedFilters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	circles := []circle.Circle{
 		{ID: uuid.New(), Name: "My Savings Circle", Status: circle.CircleStatusActive, CircleType: circle.CircleTypePublic},
@@ -512,7 +512,7 @@ func TestCircleHandler_ListCircles_WithCommunityFilter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	communityID := uuid.New()
 	circles := []circle.Circle{
@@ -539,7 +539,7 @@ func TestCircleHandler_ListCircles_PageSizeExceedsMax(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	filter := circle.CircleFilter{Page: 1, Limit: 100}
 	repo.On("List", mock.Anything, filter).Return([]circle.Circle{}, nil)
@@ -562,7 +562,7 @@ func TestCircleHandler_ListCircles_NilSliceReturned(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	filter := circle.CircleFilter{Page: 1, Limit: 20}
 	repo.On("List", mock.Anything, filter).Return([]circle.Circle{}, nil)
@@ -585,7 +585,7 @@ func TestCircleHandler_Dispute_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	cid := uuid.New()
 	uid := uuid.New()
@@ -626,7 +626,7 @@ func TestCircleHandler_Vote_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	cid := uuid.New()
 	voterID := uuid.New()
@@ -671,7 +671,7 @@ func TestCircleHandler_AuctionBid_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := new(circleMocks.Repository)
-	svc := circle.NewService(repo, nil)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
 
 	cid := uuid.New()
 	bidderID := uuid.New()
