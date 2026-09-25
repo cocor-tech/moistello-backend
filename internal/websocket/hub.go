@@ -136,12 +136,15 @@ func (h *Hub) Broadcast(circleID string, msg Message) {
 		select {
 		case client.Send <- data:
 		default:
-			// Client's send buffer is full — mark for deterministic unregister
+			// Client's send buffer is full — record metric and mark for deterministic unregister
+			metrics.WSDroppedMessagesTotal.Inc()
 			dropped = append(dropped, client)
 		}
 	}
 
 	for _, client := range dropped {
+		metrics.WSSlowClientsDisconnectedTotal.Inc()
+		log.Warn().Str("clientID", client.ID).Str("userID", client.UserID).Msg("disconnecting slow websocket client due to backpressure overflow")
 		h.Unregister(client)
 	}
 }
@@ -169,6 +172,9 @@ func (h *Hub) BroadcastToUser(userID string, msg Message) {
 		select {
 		case client.Send <- data:
 		default:
+			metrics.WSDroppedMessagesTotal.Inc()
+			metrics.WSSlowClientsDisconnectedTotal.Inc()
+			log.Warn().Str("clientID", client.ID).Str("userID", client.UserID).Msg("disconnecting slow client on user broadcast backpressure")
 			h.Unregister(client)
 		}
 	}

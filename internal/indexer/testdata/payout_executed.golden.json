@@ -1,0 +1,13 @@
+{
+  "contract_id": "CCIRCLE1234567890",
+  "event_type": "PayoutExecuted",
+  "ledger": 123458,
+  "tx_hash": "tx-payout-123",
+  "payload": {
+    "amount": 500,
+    "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+    "fee_amount": 5,
+    "recipient": "GRECIPIENT123",
+    "round": 1
+  }
+}

@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"database/sql"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/moistello/backend/internal/domain/admin"
 	"github.com/moistello/backend/internal/domain/audit"
 	"github.com/moistello/backend/internal/domain/circle"
@@ -262,3 +265,62 @@ func (h *AdminHandler) DeleteFeatureFlag(c *gin.Context) {
 
 	response.OK(c, gin.H{"deleted": flag})
 }
+
+// @Summary [Admin] Inspect circle state
+// @Description Read-only inspection of circle state (members, rounds, balances) with audit logging. Admin only.
+// @Tags Admin
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Success 200 {object} response.Envelope{data=object}
+// @Failure 403 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /admin/circles/{id}/inspect [get]
+func (h *AdminHandler) InspectCircleState(c *gin.Context) {
+	circleID := c.Param("id")
+	callerID := c.GetString("userID")
+	role := c.GetString("role")
+
+	if role != "admin" && c.GetString("user_role") != "admin" && !c.GetBool("isAdmin") {
+		response.Forbidden(c, "admin access required")
+		return
+	}
+
+	circ, err := h.circleService.Get(c.Request.Context(), circleID)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, circle.ErrCircleNotFound) {
+			response.NotFound(c, "circle not found")
+			return
+		}
+		response.InternalError(c, "failed to fetch circle")
+		return
+	}
+
+	members, err := h.circleService.GetMembers(c.Request.Context(), circleID)
+	if err != nil {
+		members = []circle.CircleMember{}
+	}
+
+	if h.auditRepo != nil {
+		callerUID, _ := uuid.Parse(callerID)
+		_ = h.auditRepo.Create(c.Request.Context(), &audit.AuditEntry{
+			ID:           uuid.New(),
+			ActorID:      callerUID,
+			Action:       "admin.circle.inspect",
+			ResourceType: "circle",
+			ResourceID:   sql.NullString{String: circleID, Valid: circleID != ""},
+			IPAddress:    sql.NullString{String: c.ClientIP(), Valid: c.ClientIP() != ""},
+			UserAgent:    sql.NullString{String: c.Request.UserAgent(), Valid: c.Request.UserAgent() != ""},
+			CreatedAt:    time.Now().UTC(),
+		})
+	}
+
+	response.OK(c, gin.H{
+		"circle":       circ,
+		"members":      members,
+		"memberCount":  len(members),
+		"currentRound": circ.CurrentRound,
+		"status":       circ.Status,
+	})
+}
+

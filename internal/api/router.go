@@ -116,6 +116,7 @@ func NewRouter(
 		{
 			authenticated.GET("/me", authHandler.Me)
 			authenticated.POST("/auth/logout", authHandler.Logout)
+			authenticated.POST("/auth/password/change", authHandler.ChangePassword)
 			authenticated.DELETE("/sessions/:id", authHandler.RevokeSessionByID)
 
 			authenticated.POST("/users/username/claim", userHandler.ClaimName)
@@ -255,6 +256,7 @@ func NewRouter(
 		{
 			admin.GET("/users", adminHandler.ListUsers)
 			admin.GET("/circles", adminHandler.ListCircles)
+			admin.GET("/circles/:id/inspect", adminHandler.InspectCircleState)
 			admin.GET("/audit-log", adminHandler.GetAuditLog)
 			admin.GET("/metrics", adminHandler.GetMetrics)
 			admin.GET("/feature-flags", adminHandler.ListFeatureFlags)
