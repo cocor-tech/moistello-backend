@@ -64,6 +64,16 @@ POST /auth/refresh   → Renew tokens (access: 15min, refresh: 7d)
 POST /auth/logout    → Invalidate session
 ```
 
+### Authenticator (TOTP) Enrollment
+All routes require a Bearer token. Code checks share the OTP rate limit.
+```
+POST /auth/totp/enroll          → New secret, otpauth:// URI and PNG QR (base64); pending until enabled
+POST /auth/totp/enable          → {code} from the app turns TOTP on, returns 10 single-use recovery codes
+POST /auth/totp/verify          → {code} or {recoveryCode} step-up check; a recovery code is consumed
+POST /auth/totp/disable         → {code} or {recoveryCode} turns TOTP off and discards the secret
+POST /auth/totp/recovery-codes  → {code} replaces every recovery code
+```
+
 ### Circle Operations
 ```
 POST /circles               → Create with name, type, payout mode
@@ -108,7 +118,17 @@ JWT_PUBLIC_KEY_PATH=./config/keys/jwt-public.pem
 STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+
+# Graceful shutdown (also server.shutdown_delay / server.shutdown_timeout in config.yaml)
+MOISTELLO_SERVER_SHUTDOWN_DELAY=0s      # keep serving after readiness fails so balancers drain us
+MOISTELLO_SERVER_SHUTDOWN_TIMEOUT=30s   # drain deadline; open connections are closed forcibly after it
 ```
+
+### Shutdown Sequence
+On SIGINT/SIGTERM the API server: fails `/health/ready` (liveness stays green), waits `shutdown_delay`,
+stops accepting connections and disables keep-alives, drains in-flight requests up to `shutdown_timeout`,
+closes WebSocket clients with a going-away frame, stops background loops, and only then closes the
+Postgres, Redis and RabbitMQ pools. Exceeding the timeout closes the remaining connections and exits non-zero.
 
 ## Security Architecture
 
@@ -152,7 +172,14 @@ Redis token bucket with sliding window, preventing API abuse.
 ```bash
 go test ./...              # Unit tests
 go test -v ./internal/api/handler/...  # Specific package
+go test ./pkg/stellar/...  # Stellar client contract tests against the offline Horizon/RPC mock
 ```
+
+The Stellar clients are pinned by contract tests in `pkg/stellar` and `pkg/stellar/soroban` that run
+against `pkg/stellar/stellartest`, an in-process Horizon + Soroban RPC mock. No network access is needed.
+
+Balances and amounts are handled by `pkg/money`, a seven-decimal fixed-point type (stroops underneath).
+Convert at the edges with `money.FromFloat64` / `money.FromString` and keep arithmetic on `Money`.
 
 Test coverage: 85% across 11 packages (127 tests).
 
