@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,7 @@ type HealthHandler struct {
 	horizonURL    string
 	checkTimeout  time.Duration
 	httpClient    *http.Client
+	shuttingDown  atomic.Bool
 }
 
 type DependencyStatus struct {
@@ -55,6 +57,18 @@ func NewHealthHandler(db *sql.DB, rds *redis.Client, sorobanRPCURL, horizonURL s
 func (h *HealthHandler) WithRabbitMQ(r rabbitChecker) *HealthHandler {
 	h.rabbit = r
 	return h
+}
+
+// BeginShutdown makes the readiness probe report 503 immediately so load
+// balancers stop routing new requests to this replica while it drains.
+// Liveness is unaffected: the process is healthy, just leaving rotation.
+func (h *HealthHandler) BeginShutdown() {
+	h.shuttingDown.Store(true)
+}
+
+// ShuttingDown reports whether BeginShutdown has been called.
+func (h *HealthHandler) ShuttingDown() bool {
+	return h.shuttingDown.Load()
 }
 
 func (h *HealthHandler) SetTimeout(d time.Duration) {
@@ -162,6 +176,14 @@ func (h *HealthHandler) Liveness(c *gin.Context) {
 // @Failure 503 {object} HealthResponse
 // @Router /health/ready [get]
 func (h *HealthHandler) Readiness(c *gin.Context) {
+	if h.shuttingDown.Load() {
+		c.JSON(http.StatusServiceUnavailable, HealthResponse{
+			Status:       "shutting down",
+			Dependencies: map[string]DependencyStatus{},
+		})
+		return
+	}
+
 	timeout := h.checkTimeout
 	deps := make(map[string]DependencyStatus)
 	allHealthy := true

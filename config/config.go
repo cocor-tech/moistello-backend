@@ -44,6 +44,9 @@ type ServerConfig struct {
 	TLSCertPath      string        `mapstructure:"tls_cert_path"`
 	TLSKeyPath       string        `mapstructure:"tls_key_path"`
 	HTTPRedirectPort int           `mapstructure:"http_redirect_port"`
+	// ShutdownTimeout bounds how long in-flight requests may take to finish
+	// after SIGTERM before their connections are closed forcibly.
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 }
 
 type DatabaseConfig struct {
@@ -287,6 +290,7 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "server.max_header_bytes", 1048576)
 	setDefault(v, "server.tls_enabled", false)
 	setDefault(v, "server.http_redirect_port", 80)
+	setDefault(v, "server.shutdown_timeout", "30s")
 	setDefault(v, "database.max_open_conns", 50)
 	setDefault(v, "database.max_idle_conns", 10)
 	setDefault(v, "database.conn_max_lifetime", "30m")
@@ -376,6 +380,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.max_header_bytes", 1048576)
 	v.SetDefault("server.tls_enabled", false)
 	v.SetDefault("server.http_redirect_port", 80)
+	v.SetDefault("server.shutdown_timeout", "30s")
 	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
 	// must be set explicitly. An empty URL will cause a clear startup failure rather than
 	// silently connecting with plaintext credentials and SSL disabled.

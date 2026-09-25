@@ -43,18 +43,38 @@ type Client struct {
 	Send        chan []byte
 	missedPings atomic.Int32
 	mu          sync.Mutex
+	closing     chan struct{}
+	closeOnce   sync.Once
 }
 
 // NewClient creates a new Client bound to the given Hub and WebSocket
 // connection. The userID identifies the authenticated user.
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 	return &Client{
-		ID:     uuid.New().String(),
-		UserID: userID,
-		Hub:    hub,
-		Conn:   conn,
-		Send:   make(chan []byte, sendBufferSize),
+		ID:      uuid.New().String(),
+		UserID:  userID,
+		Hub:     hub,
+		Conn:    conn,
+		Send:    make(chan []byte, sendBufferSize),
+		closing: make(chan struct{}),
 	}
+}
+
+// Close asks the connection to shut down cleanly: the write pump sends a
+// close frame to the peer and both pumps exit, which unregisters the client
+// from the hub. It is safe to call from any goroutine and more than once.
+// Clients built without NewClient (no write pump) have their socket closed
+// directly.
+func (c *Client) Close() {
+	c.closeOnce.Do(func() {
+		if c.closing != nil {
+			close(c.closing)
+			return
+		}
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
+	})
 }
 
 // ReadPump pumps messages from the WebSocket connection to the hub.
@@ -109,6 +129,12 @@ func (c *Client) WritePump() {
 
 	for {
 		select {
+		case <-c.closing:
+			// Server is shutting down: tell the peer to reconnect elsewhere.
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.Conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
+			return
 		case msg, ok := <-c.Send:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
