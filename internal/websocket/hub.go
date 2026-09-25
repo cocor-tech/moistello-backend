@@ -25,11 +25,11 @@ type SubscriptionAuthorizer interface {
 // Hub maintains the set of active WebSocket clients and manages circle-based
 // rooms for targeted broadcasts.
 type Hub struct {
-	mu           sync.RWMutex
-	clients      map[string]*Client            // clientID -> Client
-	userClients  map[string]map[string]*Client // userID -> clientID -> Client
-	rooms        map[string]map[string]*Client // circleID -> clientID -> Client
-	auth         SubscriptionAuthorizer
+	mu          sync.RWMutex
+	clients     map[string]*Client            // clientID -> Client
+	userClients map[string]map[string]*Client // userID -> clientID -> Client
+	rooms       map[string]map[string]*Client // circleID -> clientID -> Client
+	auth        SubscriptionAuthorizer
 }
 
 // NewHub creates a new Hub with empty client and room registries.

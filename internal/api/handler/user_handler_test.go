@@ -46,6 +46,10 @@ func (s *fakeUserService) GetByID(context.Context, string) (*user.User, error) {
 	return s.user, nil
 }
 
+func (s *fakeUserService) Update(context.Context, *user.User) error {
+	return nil
+}
+
 func (s *fakeUserService) GetByWallet(context.Context, string) (*user.User, error) {
 	return nil, nil
 }

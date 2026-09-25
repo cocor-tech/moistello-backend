@@ -15,7 +15,7 @@ import (
 
 func TestPayoutService_Record_Success(t *testing.T) {
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 	ctx := context.Background()
 
 	input := payout.RecordInput{
@@ -50,7 +50,7 @@ func TestPayoutService_Record_Success(t *testing.T) {
 
 func TestPayoutService_Record_VerifiedOnchain(t *testing.T) {
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 	ctx := context.Background()
 
 	verifiedTrue := true
@@ -86,7 +86,7 @@ func TestPayoutService_Record_VerifiedOnchain(t *testing.T) {
 
 func TestPayoutService_UpdateVerification(t *testing.T) {
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 	ctx := context.Background()
 	payoutID := uuid.New()
 
@@ -99,7 +99,7 @@ func TestPayoutService_UpdateVerification(t *testing.T) {
 
 func TestPayoutService_GetUserHistory(t *testing.T) {
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 	ctx := context.Background()
 	userID := uuid.New()
 
@@ -117,7 +117,7 @@ func TestPayoutService_GetUserHistory(t *testing.T) {
 
 func TestPayoutService_GetCircleHistory(t *testing.T) {
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 	ctx := context.Background()
 	circleID := uuid.New()
 

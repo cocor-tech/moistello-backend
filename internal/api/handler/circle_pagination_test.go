@@ -222,4 +222,3 @@ func TestCircleHandler_GetMembers_CursorPagination_250Members(t *testing.T) {
 	assert.Len(t, page3.Data.Members, 50)
 	assert.False(t, page3.Meta.HasMore)
 }
-

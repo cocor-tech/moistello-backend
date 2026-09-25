@@ -19,7 +19,7 @@ import (
 func TestIntegration_Contribution_VerificationStatusFlow(t *testing.T) {
 	ctx := context.Background()
 	repo := new(contribMocks.Repository)
-	svc := contribution.NewService(repo, nil, nil, nil, "")
+	svc := contribution.NewService(repo, nil, nil, nil, "", nil)
 
 	circleID := uuid.New().String()
 	userID := uuid.New().String()
@@ -88,7 +88,7 @@ func TestIntegration_Contribution_VerificationStatusFlow(t *testing.T) {
 func TestIntegration_Payout_VerificationStatusFlow(t *testing.T) {
 	ctx := context.Background()
 	repo := new(payoutMocks.Repository)
-	svc := payout.NewService(repo, nil, nil)
+	svc := payout.NewService(repo, nil, nil, nil)
 
 	circleUUID := uuid.New()
 	circleID := circleUUID.String()

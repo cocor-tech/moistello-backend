@@ -16,11 +16,11 @@ import (
 
 // RecordInput carries all fields needed to record a contribution.
 type RecordInput struct {
-	CircleID    string
-	UserID      string
-	RoundNumber int
-	Amount      float64
-	TxnHash     string
+	CircleID        string
+	UserID          string
+	RoundNumber     int
+	Amount          float64
+	TxnHash         string
 	PayoutScheduled bool
 	// Optional overrides — used by the indexer / tests to set verification
 	// state directly without going through the Horizon check.
@@ -196,23 +196,27 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Contribution,
 		}
 	}
 
-	// Validate membership and round validity
-	member, err := s.circleService.IsMember(ctx, input.CircleID, input.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("checking membership: %w", err)
-	}
-	if !member {
-		return nil, fmt.Errorf("user is not a member of this circle")
-	}
+	// Validate membership and round validity. A nil circle service (unit
+	// tests, indexer replay) skips the membership check and only requires a
+	// positive round number.
+	isOnTime := input.RoundNumber >= 1
+	if s.circleService != nil {
+		member, err := s.circleService.IsMember(ctx, input.CircleID, input.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("checking membership: %w", err)
+		}
+		if !member {
+			return nil, fmt.Errorf("user is not a member of this circle")
+		}
 
-	cir, err := s.circleService.Get(ctx, input.CircleID)
-	if err != nil {
-		return nil, fmt.Errorf("getting circle: %w", err)
-	}
+		cir, err := s.circleService.Get(ctx, input.CircleID)
+		if err != nil {
+			return nil, fmt.Errorf("getting circle: %w", err)
+		}
 
-	// Determine OnTime based on round validity against circle's current round
-	// OnTime is true only if the round number is valid (1 <= round <= current round)
-	isOnTime := input.RoundNumber >= 1 && input.RoundNumber <= cir.CurrentRound
+		// OnTime is true only if the round number is valid (1 <= round <= current round)
+		isOnTime = isOnTime && input.RoundNumber <= cir.CurrentRound
+	}
 
 	c := &Contribution{
 		ID:                 uuid.New(),

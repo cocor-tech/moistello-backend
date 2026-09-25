@@ -24,6 +24,7 @@ type Service interface {
 	GetMoiScore(ctx context.Context, id string) (*MoiScoreResponse, error)
 	GetCircles(ctx context.Context, id string) ([]any, error)
 	ClaimName(ctx context.Context) (string, error)
+	Update(ctx context.Context, u *User) error
 }
 
 type UpdateProfileInput struct {
@@ -333,4 +334,9 @@ func calcLevel(score int) string {
 	default:
 		return "Bronze"
 	}
+}
+
+// Update persists the given user record as-is.
+func (s *userService) Update(ctx context.Context, u *User) error {
+	return s.repo.Update(ctx, u)
 }

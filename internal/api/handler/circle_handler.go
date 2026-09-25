@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/moistello/backend/internal/api/middleware"
@@ -8,6 +11,7 @@ import (
 	"github.com/moistello/backend/internal/domain/contribution"
 	"github.com/moistello/backend/internal/domain/invite"
 	"github.com/moistello/backend/internal/domain/payout"
+	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
 	"github.com/moistello/backend/pkg/validator"
@@ -611,4 +615,3 @@ func (h *CircleHandler) GetRoundConfig(c *gin.Context) {
 
 	response.OK(c, snapshot)
 }
-
