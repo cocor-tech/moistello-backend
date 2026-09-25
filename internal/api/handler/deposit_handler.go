@@ -17,6 +17,7 @@ import (
 	"github.com/moistello/backend/internal/domain/wallet"
 	"github.com/moistello/backend/internal/domain/withdrawal"
 	"github.com/moistello/backend/internal/domain/yellowcard"
+	"github.com/moistello/backend/pkg/money"
 	"github.com/moistello/backend/pkg/response"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
@@ -467,11 +468,21 @@ func (h *DepositHandler) InitiateWithdraw(c *gin.Context) {
 	// failure here is logged loudly for manual reconciliation rather than
 	// silently discarded.
 	if h.withdrawals != nil {
+		amountUSDC, err := money.FromFloat64(req.AmountUSDC)
+		if err != nil {
+			response.BadRequest(c, "invalid amountUsdc")
+			return
+		}
+		estimatedNGN, err := money.FromFloat64(quote.ToAmount)
+		if err != nil {
+			response.InternalError(c, "invalid quote amount")
+			return
+		}
 		wd := &withdrawal.Withdrawal{
 			ID:              uuid.New().String(),
 			UserID:          userID,
-			AmountUSDC:      int64(req.AmountUSDC),
-			EstimatedNGN:    int64(quote.ToAmount),
+			AmountUSDC:      amountUSDC,
+			EstimatedNGN:    estimatedNGN,
 			BankCode:        req.BankCode,
 			AccountNumber:   req.AccountNumber,
 			AccountName:     req.AccountName,

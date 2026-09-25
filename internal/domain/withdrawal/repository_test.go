@@ -8,6 +8,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/moistello/backend/pkg/money"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,8 +29,8 @@ func TestRepository_Create(t *testing.T) {
 	w := &Withdrawal{
 		ID:              "wd-1",
 		UserID:          "user-1",
-		AmountUSDC:      100,
-		EstimatedNGN:    150000,
+		AmountUSDC:      money.MustFromString("100.5"),
+		EstimatedNGN:    money.MustFromString("150750.25"),
 		BankCode:        "044",
 		AccountNumber:   "0123456789",
 		AccountName:     "Jane Doe",
@@ -54,7 +56,7 @@ func withdrawalRows() *sqlmock.Rows {
 		"id", "user_id", "amount_usdc", "estimated_ngn", "bank_code", "account_number",
 		"account_name", "status", "platform_address", "usdc_tx_hash", "yellow_card_tx_id",
 		"created_at", "received_at", "completed_at", "failure_reason", "payment_ref",
-	}).AddRow("wd-1", "user-1", 100.0, 150000.0, "044", "0123456789",
+	}).AddRow("wd-1", "user-1", []byte("100.5000000"), []byte("150750.25"), "044", "0123456789",
 		"Jane Doe", WithdrawalStatusPending, "GPLATFORM", nil, nil,
 		time.Now(), nil, nil, nil, "MOIST-1")
 }
@@ -71,7 +73,8 @@ func TestRepository_GetByID(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "wd-1", w.ID)
-	assert.Equal(t, int64(100), w.AmountUSDC)
+	assert.Equal(t, "100.5000000", w.AmountUSDC.String())
+	assert.Equal(t, "150750.2500000", w.EstimatedNGN.String())
 }
 
 func TestRepository_GetByPaymentRef(t *testing.T) {

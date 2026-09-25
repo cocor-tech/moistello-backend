@@ -10,6 +10,7 @@ import (
 	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/metrics"
+	"github.com/moistello/backend/pkg/money"
 	"github.com/rs/zerolog/log"
 )
 
@@ -160,8 +161,11 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 				Msg("could not resolve recipient wallet; recording payout as pending")
 			verificationStatus = VerificationStatusPending
 		} else {
-			amountStr := fmt.Sprintf("%.7f", input.Amount)
-			ok, verErr := s.horizon.VerifyPayment(ctx, input.TxnHash, recipientWallet, amountStr)
+			amount, amtErr := money.FromFloat64(input.Amount)
+			if amtErr != nil {
+				return nil, fmt.Errorf("invalid payout amount: %w", amtErr)
+			}
+			ok, verErr := s.horizon.VerifyPayment(ctx, input.TxnHash, recipientWallet, amount.String())
 			if verErr != nil {
 				log.Warn().Err(verErr).Str("txn_hash", input.TxnHash).
 					Msg("horizon verification failed; recording payout as pending")

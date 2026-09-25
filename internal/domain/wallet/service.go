@@ -11,6 +11,7 @@ import (
 	"github.com/stellar/go/keypair"
 
 	"github.com/moistello/backend/pkg/crypto"
+	"github.com/moistello/backend/pkg/money"
 	"github.com/moistello/backend/pkg/stellar"
 )
 
@@ -101,12 +102,16 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 // the master pool. The service only orchestrates; the Stellar transaction
 // helpers (including retry/backoff) live in pkg/stellar.
 func (s *service) fundAccountWithRetry(ctx context.Context, address string) error {
+	startingBalance, err := money.FromFloat64(s.cfg.MinBalanceXLM)
+	if err != nil {
+		return fmt.Errorf("invalid wallet minimum balance: %w", err)
+	}
 	return stellar.FundAccountWithRetry(
 		ctx,
 		s.horizon,
 		s.master,
 		address,
-		fmt.Sprintf("%.7f", s.cfg.MinBalanceXLM),
+		startingBalance.String(),
 		s.cfg.NetworkPassphrase,
 	)
 }

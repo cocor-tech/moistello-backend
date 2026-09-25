@@ -11,6 +11,7 @@ import (
 	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/metrics"
+	"github.com/moistello/backend/pkg/money"
 	"github.com/rs/zerolog/log"
 )
 
@@ -179,8 +180,11 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Contribution,
 	if s.horizon != nil && input.TxnHash != "" &&
 		input.VerifiedOnchain == nil && input.VerificationStatus == nil {
 
-		amountStr := fmt.Sprintf("%.7f", input.Amount)
-		ok, verErr := s.horizon.VerifyTransaction(ctx, input.TxnHash, s.masterPublicKey, amountStr)
+		amount, amtErr := money.FromFloat64(input.Amount)
+		if amtErr != nil {
+			return nil, fmt.Errorf("invalid contribution amount: %w", amtErr)
+		}
+		ok, verErr := s.horizon.VerifyTransaction(ctx, input.TxnHash, s.masterPublicKey, amount.String())
 		if verErr != nil {
 			// Horizon is unavailable — record as pending for async retry.
 			log.Warn().Err(verErr).Str("txn_hash", input.TxnHash).
