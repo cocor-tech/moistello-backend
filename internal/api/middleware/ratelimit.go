@@ -157,6 +157,42 @@ func PerResourceRateLimitMiddleware(redisClient *redis.Client, resource string, 
 	}
 }
 
+// PasswordResetRateLimitMiddleware enforces dual-dimension rate limiting (per-IP and per-account) on password reset.
+func PasswordResetRateLimitMiddleware(redisClient *redis.Client, ipLimit, accountLimit, windowSeconds int) gin.HandlerFunc {
+	window := time.Duration(windowSeconds) * time.Second
+	if ipLimit <= 0 {
+		ipLimit = 5
+	}
+	if accountLimit <= 0 {
+		accountLimit = 3
+	}
+	if windowSeconds <= 0 {
+		window = 15 * time.Minute
+	}
+
+	return func(c *gin.Context) {
+		ipKey := fmt.Sprintf("pwreset:ip:%s", c.ClientIP())
+		if !enforceRateLimit(c, redisClient, ipKey, ipLimit, window, true, "password reset rate limit exceeded for this IP") {
+			c.Header("Retry-After", strconv.FormatInt(int64(window.Seconds()), 10))
+			return
+		}
+
+		account := c.Query("email")
+		if account == "" {
+			account = c.Query("account")
+		}
+		if account != "" {
+			accountKey := fmt.Sprintf("pwreset:account:%s", account)
+			if !enforceRateLimit(c, redisClient, accountKey, accountLimit, window, true, "password reset rate limit exceeded for this account") {
+				c.Header("Retry-After", strconv.FormatInt(int64(window.Seconds()), 10))
+				return
+			}
+		}
+
+		c.Next()
+	}
+}
+
 // checkLimitWithWindow implements a Redis-backed sliding window rate limiter
 // using a sorted set with timestamps as scores. It returns (allowed, remaining, ttl, err).
 // err is non-nil only when Redis is unreachable — the caller decides what that

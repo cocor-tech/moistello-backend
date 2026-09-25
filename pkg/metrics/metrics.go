@@ -52,6 +52,11 @@ var (
 		Help: "Number of active users",
 	})
 
+	WSStaleConnectionsClosedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "moistello_websocket_stale_connections_closed_total",
+		Help: "Total stale WebSocket connections closed due to missed heartbeat pongs",
+	})
+
 	WSDroppedMessagesTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "moistello_websocket_dropped_messages_total",
 		Help: "Total WebSocket messages dropped due to slow client backpressure",
@@ -62,4 +67,3 @@ var (
 		Help: "Total slow WebSocket clients disconnected due to backpressure overflow",
 	})
 )
-

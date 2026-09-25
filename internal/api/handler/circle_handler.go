@@ -310,7 +310,47 @@ func (h *CircleHandler) GetMembers(c *gin.Context) {
 		response.InternalError(c, "failed to get members")
 		return
 	}
-	response.OK(c, gin.H{"members": members})
+
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if parsedLimit, err := strconv.Atoi(l); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	cursorOffset := 0
+	if cur := c.Query("cursor"); cur != "" {
+		if offset, err := strconv.Atoi(cur); err == nil && offset >= 0 {
+			cursorOffset = offset
+		}
+	}
+
+	total := len(members)
+	if cursorOffset > total {
+		cursorOffset = total
+	}
+
+	end := cursorOffset + limit
+	hasMore := false
+	nextCursor := ""
+	if end < total {
+		hasMore = true
+		nextCursor = strconv.Itoa(end)
+	} else {
+		end = total
+	}
+
+	paged := members[cursorOffset:end]
+	response.OKWithMeta(c, gin.H{"members": paged}, gin.H{
+		"total":      total,
+		"limit":      limit,
+		"cursor":     c.Query("cursor"),
+		"nextCursor": nextCursor,
+		"hasMore":    hasMore,
+	})
 }
 
 func (h *CircleHandler) GetRounds(c *gin.Context) {

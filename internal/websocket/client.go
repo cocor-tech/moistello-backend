@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
+
+	"github.com/moistello/backend/pkg/metrics"
 )
 
 const (
@@ -28,7 +30,7 @@ const (
 	sendBufferSize = 256
 
 	// Max missed pings before closing stale connection.
-	maxMissedPings = 3
+	maxMissedPings = 2
 )
 
 // Client represents a single WebSocket connection. It is created when a
@@ -120,6 +122,7 @@ func (c *Client) WritePump() {
 			}
 		case <-ticker.C:
 			if c.missedPings.Load() >= maxMissedPings {
+				metrics.WSStaleConnectionsClosedTotal.Inc()
 				log.Warn().Str("clientID", c.ID).Int32("missedPings", c.missedPings.Load()).
 					Msg("closing stale websocket connection due to missed pings")
 				return
