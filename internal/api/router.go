@@ -137,6 +137,15 @@ func NewRouter(
 			authenticated.POST("/wallets/withdraw", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), walletHandler.Withdraw)
 			authenticated.DELETE("/wallets/:id", walletHandler.DeleteWallet)
 
+			// Authenticator (TOTP) enrollment. Code checks share the OTP
+			// limiter so six-digit codes cannot be brute-forced.
+			totpLimit := perResource(redisClient, "totp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds)
+			authenticated.POST("/auth/totp/enroll", authHandler.EnrollTOTP)
+			authenticated.POST("/auth/totp/enable", totpLimit, authHandler.EnableTOTP)
+			authenticated.POST("/auth/totp/verify", totpLimit, authHandler.VerifyTOTP)
+			authenticated.POST("/auth/totp/disable", totpLimit, authHandler.DisableTOTP)
+			authenticated.POST("/auth/totp/recovery-codes", totpLimit, authHandler.RegenerateTOTPRecoveryCodes)
+
 			// Deposit / Withdraw routes
 			authenticated.GET("/wallet/deposit/quote", depositHandler.GetDepositQuote)
 			authenticated.POST("/wallet/deposit", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), depositHandler.InitiateDeposit)
