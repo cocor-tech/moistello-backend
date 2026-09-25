@@ -134,3 +134,92 @@ func TestCircleHandler_GetRounds_AcceptsClientPaginationAndReturnsMeta(t *testin
 	assert.Equal(t, 3, body.Meta.Total)
 	assert.True(t, body.Meta.HasMore)
 }
+
+func (s *stubCircleService) GetMembers(_ context.Context, _ string) ([]circle.CircleMember, error) {
+	members := make([]circle.CircleMember, 250)
+	for i := 0; i < 250; i++ {
+		members[i] = circle.CircleMember{
+			UserID:   uuid.New(),
+			Position: i + 1,
+			Status:   circle.MemberStatusActive,
+		}
+	}
+	return members, nil
+}
+
+func TestCircleHandler_GetMembers_CursorPagination_250Members(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	circleID := uuid.New()
+	h := handler.NewCircleHandler(
+		&stubCircleService{},
+		nil,
+		nil,
+		nil,
+	)
+	r := gin.New()
+	r.GET("/circles/:id/members", h.GetMembers)
+
+	// Fetch first page of 100
+	w1 := httptest.NewRecorder()
+	req1, _ := http.NewRequest("GET", "/circles/"+circleID.String()+"/members?limit=100", nil)
+	r.ServeHTTP(w1, req1)
+	require.Equal(t, http.StatusOK, w1.Code)
+
+	var page1 struct {
+		Data struct {
+			Members []circle.CircleMember `json:"members"`
+		} `json:"data"`
+		Meta struct {
+			Total      int    `json:"total"`
+			Limit      int    `json:"limit"`
+			NextCursor string `json:"nextCursor"`
+			HasMore    bool   `json:"hasMore"`
+		} `json:"meta"`
+	}
+	require.NoError(t, json.Unmarshal(w1.Body.Bytes(), &page1))
+	assert.Len(t, page1.Data.Members, 100)
+	assert.Equal(t, 250, page1.Meta.Total)
+	assert.Equal(t, "100", page1.Meta.NextCursor)
+	assert.True(t, page1.Meta.HasMore)
+
+	// Fetch second page using nextCursor
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest("GET", "/circles/"+circleID.String()+"/members?limit=100&cursor="+page1.Meta.NextCursor, nil)
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+
+	var page2 struct {
+		Data struct {
+			Members []circle.CircleMember `json:"members"`
+		} `json:"data"`
+		Meta struct {
+			NextCursor string `json:"nextCursor"`
+			HasMore    bool   `json:"hasMore"`
+		} `json:"meta"`
+	}
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &page2))
+	assert.Len(t, page2.Data.Members, 100)
+	assert.Equal(t, "200", page2.Meta.NextCursor)
+	assert.True(t, page2.Meta.HasMore)
+
+	// Fetch final page using nextCursor
+	w3 := httptest.NewRecorder()
+	req3, _ := http.NewRequest("GET", "/circles/"+circleID.String()+"/members?limit=100&cursor="+page2.Meta.NextCursor, nil)
+	r.ServeHTTP(w3, req3)
+	require.Equal(t, http.StatusOK, w3.Code)
+
+	var page3 struct {
+		Data struct {
+			Members []circle.CircleMember `json:"members"`
+		} `json:"data"`
+		Meta struct {
+			NextCursor string `json:"nextCursor"`
+			HasMore    bool   `json:"hasMore"`
+		} `json:"meta"`
+	}
+	require.NoError(t, json.Unmarshal(w3.Body.Bytes(), &page3))
+	assert.Len(t, page3.Data.Members, 50)
+	assert.False(t, page3.Meta.HasMore)
+}
+

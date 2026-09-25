@@ -251,6 +251,9 @@ type RateLimitConfig struct {
 	WalletTransferWindowSeconds int `mapstructure:"wallet_transfer_window_seconds"`
 	ReferralLimit               int `mapstructure:"referral_limit"`
 	ReferralWindowSeconds       int `mapstructure:"referral_window_seconds"`
+	PasswordResetIPLimit        int `mapstructure:"password_reset_ip_limit"`
+	PasswordResetAccountLimit   int `mapstructure:"password_reset_account_limit"`
+	PasswordResetWindowSeconds  int `mapstructure:"password_reset_window_seconds"`
 }
 
 type LoggingConfig struct {

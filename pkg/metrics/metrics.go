@@ -51,4 +51,10 @@ var (
 		Name: "moistello_active_users",
 		Help: "Number of active users",
 	})
+
+	WSStaleConnectionsClosedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "moistello_websocket_stale_connections_closed_total",
+		Help: "Total stale WebSocket connections closed due to missed heartbeat pongs",
+	})
 )
+
