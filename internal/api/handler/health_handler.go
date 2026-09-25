@@ -373,4 +373,3 @@ func (h *HealthHandler) IndexerLag(c *gin.Context) {
 		"processingRate": 10.0,
 	})
 }
-

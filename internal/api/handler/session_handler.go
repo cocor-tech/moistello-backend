@@ -154,6 +154,10 @@ func (h *SessionHandler) RevokeSessionByID(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
+func (h *SessionHandler) RevokeSession(c *gin.Context) {
+	h.RevokeSessionByID(c)
+}
+
 // @Summary Change password and revoke other sessions
 // @Description Updates user password and revokes all other active sessions for account takeover defense.
 // @Tags Authentication
@@ -218,8 +222,62 @@ func (h *SessionHandler) ChangePassword(c *gin.Context) {
 	response.OK(c, gin.H{"success": true, "message": "password changed and other sessions revoked"})
 }
 
+// @Summary List all active sessions
+// @Description Returns all active sessions for the authenticated user, marking the current one.
+// @Tags Authentication
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=object{sessions=array}}
+// @Router /sessions [get]
+func (h *SessionHandler) ListSessions(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "not authenticated")
+		return
+	}
+
+	sessions, err := h.authService.ListSessions(c.Request.Context(), userID, currentSessionHash(c))
+	if err != nil {
+		response.InternalError(c, "failed to list sessions")
+		return
+	}
+
+	response.OK(c, gin.H{"sessions": sessions})
+}
+
+// @Summary Revoke all other sessions
+// @Description Revokes every session for the authenticated user except the current one.
+// @Tags Authentication
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Router /sessions [delete]
+func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if err := h.authService.RevokeAllSessions(c.Request.Context(), userID, currentSessionHash(c)); err != nil {
+		response.InternalError(c, "failed to revoke sessions")
+		return
+	}
+
+	response.OK(c, gin.H{"success": true})
+}
+
+// currentSessionHash returns the SHA-256 hex digest of the Bearer access
+// token so current-session-aware operations (list, revoke-all) can identify it.
+func currentSessionHash(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	sha := sha256.Sum256([]byte(parts[1]))
+	return fmt.Sprintf("%x", sha)
+}
+
 func sha256HashForLogout(s string) string {
 	hash := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", hash)
 }
-

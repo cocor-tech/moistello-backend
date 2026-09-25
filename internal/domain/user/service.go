@@ -17,6 +17,7 @@ type Service interface {
 	GetByWallet(ctx context.Context, wallet string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, wallet string) (*User, error)
+	Update(ctx context.Context, u *User) error
 	Delete(ctx context.Context, id string) error
 	UpdateProfile(ctx context.Context, id string, updates UpdateProfileInput) (*User, error)
 	UpdateNotificationPreferences(ctx context.Context, id string, prefs NotificationPrefsInput) (*User, error)
@@ -149,6 +150,13 @@ func (s *userService) Create(ctx context.Context, wallet string) (*User, error) 
 		return nil, fmt.Errorf("creating user: %w", err)
 	}
 	return u, nil
+}
+
+func (s *userService) Update(ctx context.Context, u *User) error {
+	if err := s.repo.Update(ctx, u); err != nil {
+		return fmt.Errorf("updating user: %w", err)
+	}
+	return nil
 }
 
 func (s *userService) Delete(ctx context.Context, id string) error {

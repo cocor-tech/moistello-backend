@@ -79,6 +79,10 @@ func TestGovernance_ProposalLifecycle_Persistence(t *testing.T) {
 	assert.Equal(t, 1, proposal.AgainstVotes)
 	assert.Equal(t, governance.ProposalStatusPending, proposal.Status)
 
+	thirdVoter := uuid.New()
+	err = svc.VoteProposal(ctx, created.ID.String(), thirdVoter.String(), true)
+	require.NoError(t, err)
+
 	// Execute proposal
 	err = svc.ExecuteProposal(ctx, created.ID.String())
 	require.NoError(t, err)

@@ -158,6 +158,10 @@ func (s *lifecycleCircleService) SubmitAuctionBid(_ context.Context, _, _ string
 	return nil, nil
 }
 
+func (s *lifecycleCircleService) QueryRoundConfig(context.Context, string, int) (*circle.RoundConfigSnapshot, error) {
+	return nil, errors.New("round config not configured")
+}
+
 type lifecycleContributionService struct{ store *lifecycleStore }
 
 func (s *lifecycleContributionService) Record(

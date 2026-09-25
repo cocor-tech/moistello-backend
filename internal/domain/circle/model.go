@@ -165,4 +165,3 @@ type RoundConfigSnapshot struct {
 	ConfigJSON  string    `json:"configJson" db:"config_json"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 }
-

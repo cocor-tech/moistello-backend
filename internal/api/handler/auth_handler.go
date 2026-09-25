@@ -16,26 +16,42 @@ import (
 )
 
 // AuthHandler aggregates the focused auth sub-handlers while preserving the
-// public method surface used by the router and existing tests. The wallet
-// authentication flows (nonce/verify) live in WalletAuthHandler, session
-// management (refresh/me/logout/revoke) in SessionHandler, and the email
-// registration flow in RegistrationHandler.
+// public method surface used by the router and existing tests (#155). The
+// wallet authentication flows (nonce/verify) live in WalletAuthHandler,
+// session management (refresh/me/logout/list/revoke) in SessionHandler, the
+// email registration flow in RegistrationHandler, email/password login in
+// LoginHandler, passkey auth in PasskeyHandler, TOTP 2FA in TOTPHandler,
+// backup-code recovery in RecoveryHandler, and wallet initialization in
+// WalletInitHandler.
 type AuthHandler struct {
 	*WalletAuthHandler
 	*SessionHandler
 	*RegistrationHandler
+	*LoginHandler
+	*PasskeyHandler
+	*TOTPHandler
+	*RecoveryHandler
+	*WalletInitHandler
 }
 
 // NewAuthHandler builds the auth handler aggregate. The signature is kept for
 // backward compatibility; each focused sub-handler consumes the dependencies
 // it actually needs.
 func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet.Service,
-	_ *totp.Service, verificationSvc *verification.Service, _ *email.Service,
+	totpSvc *totp.Service, verificationSvc *verification.Service, _ *email.Service,
 	redisClient *redis.Client, userRepo user.Repository) *AuthHandler {
+	if totpSvc == nil {
+		totpSvc = totp.NewService()
+	}
 	return &AuthHandler{
 		WalletAuthHandler:   NewWalletAuthHandler(authSvc, userSvc),
 		SessionHandler:      NewSessionHandler(authSvc, userSvc, redisClient),
 		RegistrationHandler: NewRegistrationHandler(authSvc, userRepo, verificationSvc, walletSvc),
+		LoginHandler:        NewLoginHandler(authSvc, userSvc, verificationSvc),
+		PasskeyHandler:      NewPasskeyHandler(authSvc, userSvc, userRepo),
+		TOTPHandler:         NewTOTPHandler(userSvc, userRepo, totpSvc),
+		RecoveryHandler:     NewRecoveryHandler(authSvc, userSvc, userRepo, totpSvc),
+		WalletInitHandler:   NewWalletInitHandler(userSvc, walletSvc),
 	}
 }
 

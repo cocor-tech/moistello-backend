@@ -996,4 +996,3 @@ func (s *circleService) QueryRoundConfig(ctx context.Context, circleID string, r
 	}
 	return s.repo.GetRoundConfigSnapshot(ctx, cid, round)
 }
-

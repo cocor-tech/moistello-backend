@@ -7,7 +7,6 @@ import (
 	"github.com/moistello/backend/internal/domain/contribution"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
-	"github.com/moistello/backend/pkg/validator"
 )
 
 type ContributionHandler struct {

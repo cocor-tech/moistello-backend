@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/metrics"
@@ -61,9 +60,9 @@ type ServiceWithCircle interface {
 }
 
 type service struct {
-	repo         Repository
-	horizon      HorizonVerifier
-	walletLookup WalletLookup
+	repo          Repository
+	horizon       HorizonVerifier
+	walletLookup  WalletLookup
 	circleService circle.Service
 }
 
@@ -77,7 +76,7 @@ type service struct {
 // concrete *user.pgRepo (which satisfies WalletLookup when wrapped) or nil.
 // If it already satisfies WalletLookup it is used directly; otherwise it is
 // ignored.
-func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface{}, circleSvc circle.Service) Service {
+func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface{}, circleServices ...circle.Service) Service {
 	var wl WalletLookup
 	if walletLookup != nil {
 		if v, ok := walletLookup.(WalletLookup); ok {
@@ -86,10 +85,14 @@ func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface
 		// If it doesn't satisfy WalletLookup (e.g. bare *user.pgRepo),
 		// main.go must wrap it with a NewWalletLookupAdapter first.
 	}
+	var circleSvc circle.Service
+	if len(circleServices) > 0 {
+		circleSvc = circleServices[0]
+	}
 	return &service{
-		repo:         repo,
-		horizon:      horizon,
-		walletLookup: wl,
+		repo:          repo,
+		horizon:       horizon,
+		walletLookup:  wl,
 		circleService: circleSvc,
 	}
 }
@@ -116,34 +119,22 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 		}
 	}
 
-	// Validate membership and round validity
-	member, err := s.circleService.IsMember(ctx, input.CircleID, input.RecipientID)
-	if err != nil {
-		return nil, fmt.Errorf("checking membership: %w", err)
-	}
-	if !member {
-		return nil, fmt.Errorf("recipient is not a member of this circle")
-	}
-
-	cir, err := s.circleService.Get(ctx, input.CircleID)
-	if err != nil {
-		return nil, fmt.Errorf("getting circle: %w", err)
-	}
-
-	// Determine OnTime based on round validity against circle's current round
-	// OnTime is true only if the round number is valid (1 <= round <= current round)
-	isOnTime := input.RoundNumber >= 1 && input.RoundNumber <= cir.CurrentRound
-
-	// Guard against duplicate payouts in the same circle/round/recipient
-	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
-	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
-	for _, p := range existingPayouts {
-		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
-			log.Warn().Str("circle_id", input.CircleID).
-				Int("round", input.RoundNumber).
-				Msg("payout already exists for this circle/round/recipient")
-			return &p, nil
+	isOnTime := input.RoundNumber >= 1
+	if s.circleService != nil {
+		member, err := s.circleService.IsMember(ctx, input.CircleID, input.RecipientID)
+		if err != nil {
+			return nil, fmt.Errorf("checking membership: %w", err)
 		}
+		if !member {
+			return nil, fmt.Errorf("recipient is not a member of this circle")
+		}
+
+		cir, err := s.circleService.Get(ctx, input.CircleID)
+		if err != nil {
+			return nil, fmt.Errorf("getting circle: %w", err)
+		}
+
+		isOnTime = input.RoundNumber <= cir.CurrentRound
 	}
 
 	// Determine verification state — caller may override (e.g. indexer).
@@ -182,6 +173,18 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 				verifiedOnchain = true
 				verificationStatus = VerificationStatusVerified
 			}
+		}
+	}
+
+	// Guard against duplicate payouts in the same circle/round/recipient
+	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
+	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
+	for _, p := range existingPayouts {
+		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
+			log.Warn().Str("circle_id", input.CircleID).
+				Int("round", input.RoundNumber).
+				Msg("payout already exists for this circle/round/recipient")
+			return &p, nil
 		}
 	}
 

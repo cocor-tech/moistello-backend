@@ -163,4 +163,3 @@ func (m *Repository) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.U
 	}
 	return args.Get(0).(*circle.RoundConfigSnapshot), args.Error(1)
 }
-

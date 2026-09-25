@@ -303,7 +303,7 @@ func (h *AdminHandler) InspectCircleState(c *gin.Context) {
 
 	if h.auditRepo != nil {
 		callerUID, _ := uuid.Parse(callerID)
-		_ = h.auditRepo.Create(c.Request.Context(), &audit.AuditEntry{
+		_ = h.auditRepo.Log(c.Request.Context(), &audit.AuditEntry{
 			ID:           uuid.New(),
 			ActorID:      callerUID,
 			Action:       "admin.circle.inspect",
@@ -323,4 +323,3 @@ func (h *AdminHandler) InspectCircleState(c *gin.Context) {
 		"status":       circ.Status,
 	})
 }
-

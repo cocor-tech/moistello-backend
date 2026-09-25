@@ -58,6 +58,10 @@ func (s *fakeUserService) Create(context.Context, string) (*user.User, error) {
 	return nil, nil
 }
 
+func (s *fakeUserService) Update(context.Context, *user.User) error {
+	return nil
+}
+
 func (s *fakeUserService) Delete(context.Context, string) error {
 	return nil
 }
