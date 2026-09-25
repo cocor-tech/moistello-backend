@@ -2,6 +2,7 @@ package circle
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,7 @@ type Service interface {
 	RaiseDispute(ctx context.Context, circleID, userID string, input DisputeInput) (*CircleDispute, error)
 	CastVote(ctx context.Context, circleID, userID string, input VoteInput) (*CircleVote, bool, string, error)
 	SubmitAuctionBid(ctx context.Context, circleID, userID string, input AuctionBidInput) (*CircleAuctionBid, error)
+	QueryRoundConfig(ctx context.Context, circleID string, round int) (*RoundConfigSnapshot, error)
 }
 
 type UserMOIFetcher interface {
@@ -401,6 +403,7 @@ func (s *circleService) Start(ctx context.Context, id, userID string) error {
 	if err := s.repo.Update(ctx, c); err != nil {
 		return fmt.Errorf("activating circle: %w", err)
 	}
+	_ = s.snapshotRoundConfig(ctx, c, 1)
 	if s.broadcaster != nil {
 		s.broadcaster.CircleStatusChanged(ctx, id, "active")
 	}
@@ -957,3 +960,40 @@ func (s *circleService) ProcessMissedContributions(ctx context.Context, circleID
 
 	return nil
 }
+
+func (s *circleService) snapshotRoundConfig(ctx context.Context, c *Circle, round int) error {
+	configData, err := json.Marshal(map[string]any{
+		"name":               c.Name,
+		"contributionAmount": c.ContributionAmount,
+		"currency":           c.Currency,
+		"frequency":          c.Frequency,
+		"maxMembers":         c.MaxMembers,
+		"collateralPercent":  c.CollateralPercent,
+		"lateFeePercent":     c.LateFeePercent,
+		"gracePeriodHours":   c.GracePeriodHours,
+		"maxStrikes":         c.MaxStrikes,
+		"payoutType":         c.PayoutType,
+	})
+	if err != nil {
+		return err
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256(configData))
+	snapshot := &RoundConfigSnapshot{
+		ID:          uuid.New(),
+		CircleID:    c.ID,
+		RoundNumber: round,
+		ConfigHash:  hash,
+		ConfigJSON:  string(configData),
+		CreatedAt:   time.Now().UTC(),
+	}
+	return s.repo.SaveRoundConfigSnapshot(ctx, snapshot)
+}
+
+func (s *circleService) QueryRoundConfig(ctx context.Context, circleID string, round int) (*RoundConfigSnapshot, error) {
+	cid, err := parseUUID(circleID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetRoundConfigSnapshot(ctx, cid, round)
+}
+

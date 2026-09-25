@@ -20,6 +20,7 @@ var (
 	ErrInvalidInvite     = errors.New("invalid or expired invite code")
 	ErrMaxStrikes        = errors.New("maximum strikes reached")
 	ErrDuplicateFile     = errors.New("file with this name already exists")
+	ErrLateContributionRejected = errors.New("contributions rejected: payout scheduling has already begun for this round")
 )
 
 type ValidationError struct {

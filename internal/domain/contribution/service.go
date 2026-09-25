@@ -20,10 +20,16 @@ type RecordInput struct {
 	RoundNumber int
 	Amount      float64
 	TxnHash     string
+	PayoutScheduled bool
 	// Optional overrides — used by the indexer / tests to set verification
 	// state directly without going through the Horizon check.
 	VerifiedOnchain    *bool
 	VerificationStatus *VerificationStatus
+}
+
+// PayoutScheduleChecker checks if payout scheduling has begun for a given circle round.
+type PayoutScheduleChecker interface {
+	IsPayoutScheduled(ctx context.Context, circleID string, roundNumber int) (bool, error)
 }
 
 // HorizonVerifier is satisfied by *stellar.Client.
@@ -59,7 +65,13 @@ type service struct {
 	broadcaster     Broadcaster
 	tx              Transactor
 	horizon         HorizonVerifier
+	payoutChecker   PayoutScheduleChecker
 	masterPublicKey string
+}
+
+// SetPayoutChecker sets the payout schedule checker on the contribution service.
+func (s *service) SetPayoutChecker(checker PayoutScheduleChecker) {
+	s.payoutChecker = checker
 }
 
 // NewService constructs the contribution service.
@@ -114,6 +126,17 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Contribution,
 	userUID, err := uuid.Parse(input.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid userID: %w", err)
+	}
+
+	// Reject contribution if payout scheduling has begun for this round
+	if input.PayoutScheduled {
+		return nil, apperrors.ErrLateContributionRejected
+	}
+	if s.payoutChecker != nil {
+		scheduled, err := s.payoutChecker.IsPayoutScheduled(ctx, input.CircleID, input.RoundNumber)
+		if err == nil && scheduled {
+			return nil, apperrors.ErrLateContributionRejected
+		}
 	}
 
 	// Idempotency: if this txnHash was already recorded, return existing row.

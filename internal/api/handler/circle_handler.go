@@ -530,3 +530,37 @@ func (h *CircleHandler) AuctionBid(c *gin.Context) {
 
 	response.Created(c, gin.H{"success": true, "bid": bid})
 }
+
+// GetRoundConfig returns the immutable configuration snapshot captured for a round.
+// @Summary Get circle configuration snapshot for a round
+// @Tags Circles
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Param round path int true "Round Number"
+// @Success 200 {object} response.Envelope{data=circle.RoundConfigSnapshot}
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /circles/{id}/rounds/{round}/config [get]
+func (h *CircleHandler) GetRoundConfig(c *gin.Context) {
+	circleID := c.Param("id")
+	roundStr := c.Param("round")
+	round, err := strconv.Atoi(roundStr)
+	if err != nil || round <= 0 {
+		response.BadRequest(c, "invalid round number")
+		return
+	}
+
+	snapshot, err := h.circleService.QueryRoundConfig(c.Request.Context(), circleID, round)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, circle.ErrCircleNotFound) {
+			response.NotFound(c, "round configuration snapshot not found")
+			return
+		}
+		response.InternalError(c, "failed to query round config: "+err.Error())
+		return
+	}
+
+	response.OK(c, snapshot)
+}
+

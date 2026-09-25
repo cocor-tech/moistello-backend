@@ -543,3 +543,31 @@ func (r *pgRepo) GetAuctionBidsByRound(ctx context.Context, circleID uuid.UUID, 
 	}
 	return bids, nil
 }
+
+func (r *pgRepo) SaveRoundConfigSnapshot(ctx context.Context, snapshot *RoundConfigSnapshot) error {
+	query := `
+		INSERT INTO round_config_snapshots (id, circle_id, round_number, config_hash, config_json, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (circle_id, round_number) DO NOTHING
+	`
+	_, err := r.db.ExecContext(ctx, query, snapshot.ID, snapshot.CircleID, snapshot.RoundNumber, snapshot.ConfigHash, snapshot.ConfigJSON, snapshot.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("saving round config snapshot: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID, roundNumber int) (*RoundConfigSnapshot, error) {
+	query := `SELECT id, circle_id, round_number, config_hash, config_json, created_at
+		FROM round_config_snapshots WHERE circle_id = $1 AND round_number = $2`
+	var snapshot RoundConfigSnapshot
+	err := r.db.GetContext(ctx, &snapshot, query, circleID, roundNumber)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperrors.ErrNotFound
+		}
+		return nil, fmt.Errorf("getting round config snapshot: %w", err)
+	}
+	return &snapshot, nil
+}
+

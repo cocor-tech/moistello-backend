@@ -156,3 +156,13 @@ type CircleAuctionBid struct {
 type AuctionBidInput struct {
 	BidAmount float64 `json:"bidAmount" validate:"required,gt=0"`
 }
+
+type RoundConfigSnapshot struct {
+	ID          uuid.UUID `json:"id" db:"id"`
+	CircleID    uuid.UUID `json:"circleId" db:"circle_id"`
+	RoundNumber int       `json:"roundNumber" db:"round_number"`
+	ConfigHash  string    `json:"configHash" db:"config_hash"`
+	ConfigJSON  string    `json:"configJson" db:"config_json"`
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+}
+

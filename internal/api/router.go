@@ -75,6 +75,7 @@ func NewRouter(
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Readiness)
 	r.GET("/health/live", healthHandler.Liveness)
+	r.GET("/internal/indexer/lag", healthHandler.IndexerLag)
 
 	swaggerH := handler.NewSwaggerHandler()
 	r.GET("/api-docs", swaggerH.ServeUI)
@@ -163,6 +164,7 @@ func NewRouter(
 			authenticated.POST("/circles/:id/exit", circleHandler.ExitCircle)
 			authenticated.GET("/circles/:id/members", circleHandler.GetMembers)
 			authenticated.GET("/circles/:id/rounds", circleHandler.GetRounds)
+			authenticated.GET("/circles/:id/rounds/:round/config", circleHandler.GetRoundConfig)
 			authenticated.GET("/circles/:id/payouts", circleHandler.GetPayouts)
 			authenticated.POST("/circles/:id/dispute", circleHandler.Dispute)
 			authenticated.POST("/circles/:id/vote", circleHandler.Vote)
