@@ -41,4 +41,6 @@ type Repository interface {
 	GetVotesByRound(ctx context.Context, circleID uuid.UUID, roundNumber int) ([]CircleVote, error)
 	CreateAuctionBid(ctx context.Context, bid *CircleAuctionBid) error
 	GetAuctionBidsByRound(ctx context.Context, circleID uuid.UUID, roundNumber int) ([]CircleAuctionBid, error)
+	SaveRoundConfigSnapshot(ctx context.Context, snapshot *RoundConfigSnapshot) error
+	GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID, roundNumber int) (*RoundConfigSnapshot, error)
 }

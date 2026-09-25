@@ -10,7 +10,8 @@ import (
 type Repository interface {
 	CreateProposal(ctx context.Context, p *Proposal) error
 	GetProposal(ctx context.Context, id uuid.UUID) (*Proposal, error)
-	ListProposals(ctx context.Context) ([]Proposal, error)
+	ListProposals(ctx context.Context, page, limit int) ([]Proposal, int, error)
 	RecordVote(ctx context.Context, proposalID, voterID uuid.UUID, vote bool) error
-	UpdateStatus(ctx context.Context, id uuid.UUID, status ProposalStatus, executedAt *string) error
+	HasVoted(ctx context.Context, proposalID, voterID uuid.UUID) (bool, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status ProposalStatus, executedAt *time.Time) error
 }

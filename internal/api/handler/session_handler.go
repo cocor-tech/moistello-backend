@@ -2,11 +2,13 @@ package handler
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 
 	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/auth"
@@ -152,7 +154,72 @@ func (h *SessionHandler) RevokeSessionByID(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
+// @Summary Change password and revoke other sessions
+// @Description Updates user password and revokes all other active sessions for account takeover defense.
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "Change password payload"
+// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Failure 400 {object} response.Envelope
+// @Failure 401 {object} response.Envelope
+// @Router /auth/password/change [post]
+func (h *SessionHandler) ChangePassword(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "authentication required")
+		return
+	}
+
+	var req struct {
+		OldPassword string `json:"oldPassword" binding:"required"`
+		NewPassword string `json:"newPassword" binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	u, err := h.userService.GetByID(c.Request.Context(), userID)
+	if err != nil || u == nil {
+		response.Unauthorized(c, "user not found")
+		return
+	}
+
+	if u.PasswordHash.Valid && u.PasswordHash.String != "" {
+		if !auth.VerifyPassword(req.OldPassword, u.PasswordHash.String) {
+			response.BadRequest(c, "incorrect existing password")
+			return
+		}
+	}
+
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		response.InternalError(c, "failed to hash new password")
+		return
+	}
+
+	u.PasswordHash = sql.NullString{String: newHash, Valid: true}
+	if err := h.userService.Update(c.Request.Context(), u); err != nil {
+		response.InternalError(c, "failed to update password")
+		return
+	}
+
+	currentHash := ""
+	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		currentHash = fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+	}
+	_ = h.authService.RevokeAllSessions(c.Request.Context(), userID, currentHash)
+
+	log.Info().Str("userID", userID).Str("event", "auth.password_changed.sessions_revoked").Msg("password changed, all other sessions invalidated")
+
+	response.OK(c, gin.H{"success": true, "message": "password changed and other sessions revoked"})
+}
+
 func sha256HashForLogout(s string) string {
 	hash := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", hash)
 }
+

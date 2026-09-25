@@ -32,9 +32,13 @@ func LoggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader("X-Request-ID")
 		if requestID == "" {
+			requestID = c.GetHeader("X-Request-Id")
+		}
+		if requestID == "" {
 			requestID = uuid.New().String()
 		}
 		c.Set("requestID", requestID)
+		c.Set("request_id", requestID)
 		c.Header("X-Request-ID", requestID)
 
 		ctx := context.WithValue(c.Request.Context(), logger.RequestIDKey, requestID)

@@ -37,4 +37,6 @@ type Payout struct {
 	VerifiedOnchain    bool               `json:"verifiedOnchain" db:"verified_onchain"`
 	VerificationStatus VerificationStatus `json:"verificationStatus" db:"verification_status"`
 	CreatedAt          time.Time          `json:"createdAt" db:"created_at"`
+	UpdatedAt          time.Time          `json:"updatedAt" db:"updated_at"`
+	OnTime             bool               `json:"onTime" db:"on_time"`
 }

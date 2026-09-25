@@ -1,0 +1,12 @@
+{
+  "contract_id": "CCIRCLE1234567890",
+  "event_type": "ContributionReceived",
+  "ledger": 123457,
+  "tx_hash": "tx-contrib-123",
+  "payload": {
+    "amount": 100,
+    "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+    "member": "GMEMBER123",
+    "round": 1
+  }
+}

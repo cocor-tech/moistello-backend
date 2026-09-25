@@ -40,11 +40,19 @@ func NewPaginationMeta(page, limit, total int) PaginationMeta {
 }
 
 func getRequestID(c *gin.Context) string {
+	if rid := c.GetHeader("X-Request-ID"); rid != "" {
+		return rid
+	}
 	if rid := c.GetHeader("X-Request-Id"); rid != "" {
 		return rid
 	}
+	if rid, exists := c.Get("requestID"); exists {
+		if s, ok := rid.(string); ok && s != "" {
+			return s
+		}
+	}
 	if rid, exists := c.Get("request_id"); exists {
-		if s, ok := rid.(string); ok {
+		if s, ok := rid.(string); ok && s != "" {
 			return s
 		}
 	}

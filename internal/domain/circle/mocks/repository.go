@@ -151,3 +151,16 @@ func (m *Repository) GetAuctionBidsByRound(ctx context.Context, circleID uuid.UU
 	}
 	return args.Get(0).([]circle.CircleAuctionBid), args.Error(1)
 }
+
+func (m *Repository) SaveRoundConfigSnapshot(ctx context.Context, snapshot *circle.RoundConfigSnapshot) error {
+	return m.Called(ctx, snapshot).Error(0)
+}
+
+func (m *Repository) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID, roundNumber int) (*circle.RoundConfigSnapshot, error) {
+	args := m.Called(ctx, circleID, roundNumber)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*circle.RoundConfigSnapshot), args.Error(1)
+}
+

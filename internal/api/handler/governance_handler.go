@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -36,12 +37,20 @@ func (h *GovernanceHandler) CreateProposal(c *gin.Context) {
 }
 
 func (h *GovernanceHandler) ListProposals(c *gin.Context) {
-	proposals, err := h.service.ListProposals(c.Request.Context())
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	proposals, total, err := h.service.ListProposals(c.Request.Context(), page, limit)
 	if err != nil {
 		response.InternalError(c, "failed to list proposals")
 		return
 	}
-	response.OK(c, gin.H{"proposals": proposals})
+	response.OK(c, gin.H{
+		"proposals": proposals,
+		"total":     total,
+		"page":      page,
+		"limit":     limit,
+	})
 }
 
 func (h *GovernanceHandler) GetProposal(c *gin.Context) {

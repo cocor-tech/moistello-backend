@@ -194,3 +194,24 @@ func TestContributionService_UpdateVerification(t *testing.T) {
 	assert.NoError(t, err)
 	repo.AssertExpectations(t)
 }
+
+func TestContributionService_Record_RejectLateContributionAfterPayout(t *testing.T) {
+	repo := new(contribMocks.Repository)
+	svc := contribution.NewService(repo, nil, nil, nil, "")
+	ctx := context.Background()
+
+	input := contribution.RecordInput{
+		CircleID:        uuid.New().String(),
+		UserID:          uuid.New().String(),
+		RoundNumber:     2,
+		Amount:          150.0,
+		TxnHash:         "txn-late-123",
+		PayoutScheduled: true,
+	}
+
+	c, err := svc.Record(ctx, input)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, apperrors.ErrLateContributionRejected)
+	assert.Nil(t, c)
+	repo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+}

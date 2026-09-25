@@ -178,6 +178,10 @@ func (h *CircleHandler) TriggerPayout(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if err := validator.Validate.Struct(req); err != nil {
+		response.ValidationErrors(c, "validation failed: "+err.Error())
+		return
+	}
 	req.CircleID = circleID
 	record, err := h.payoutService.Record(c.Request.Context(), req)
 	if err != nil {
@@ -245,12 +249,16 @@ func (h *CircleHandler) Contribute(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)
 	var req struct {
-		Amount      float64 `json:"amount" binding:"required,gt=0"`
-		TxnHash     string  `json:"txnHash" binding:"required"`
-		RoundNumber int     `json:"roundNumber" binding:"required,gte=1"`
+		Amount      float64 `json:"amount" validate:"required,gt=0"`
+		TxnHash     string  `json:"txnHash" validate:"required"`
+		RoundNumber int     `json:"roundNumber" validate:"required,gte=1"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validator.Validate.Struct(req); err != nil {
+		response.ValidationErrors(c, "validation failed: "+err.Error())
 		return
 	}
 
@@ -570,3 +578,37 @@ func (h *CircleHandler) AuctionBid(c *gin.Context) {
 
 	response.Created(c, gin.H{"success": true, "bid": bid})
 }
+
+// GetRoundConfig returns the immutable configuration snapshot captured for a round.
+// @Summary Get circle configuration snapshot for a round
+// @Tags Circles
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Param round path int true "Round Number"
+// @Success 200 {object} response.Envelope{data=circle.RoundConfigSnapshot}
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /circles/{id}/rounds/{round}/config [get]
+func (h *CircleHandler) GetRoundConfig(c *gin.Context) {
+	circleID := c.Param("id")
+	roundStr := c.Param("round")
+	round, err := strconv.Atoi(roundStr)
+	if err != nil || round <= 0 {
+		response.BadRequest(c, "invalid round number")
+		return
+	}
+
+	snapshot, err := h.circleService.QueryRoundConfig(c.Request.Context(), circleID, round)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, circle.ErrCircleNotFound) {
+			response.NotFound(c, "round configuration snapshot not found")
+			return
+		}
+		response.InternalError(c, "failed to query round config: "+err.Error())
+		return
+	}
+
+	response.OK(c, snapshot)
+}
+

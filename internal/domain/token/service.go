@@ -8,6 +8,7 @@ import (
 	"github.com/stellar/go/keypair"
 
 	"github.com/moistello/backend/internal/domain/wallet"
+	"github.com/moistello/backend/pkg/crypto"
 	"github.com/moistello/backend/pkg/stellar"
 	"github.com/moistello/backend/pkg/stellar/soroban"
 )
@@ -42,7 +43,7 @@ func NewService(walletRepo wallet.Repository, cfg Config) (Service, error) {
 	var encKey []byte
 	if cfg.EncryptionKey != "" {
 		var err error
-		encKey, err = wallet.ParseEncryptionKey(cfg.EncryptionKey)
+		encKey, err = crypto.ParseEncryptionKey(cfg.EncryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("parsing encryption key: %w", err)
 		}

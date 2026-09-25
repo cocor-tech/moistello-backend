@@ -2,7 +2,6 @@ package wallet
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -10,7 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
-	"golang.org/x/crypto/argon2"
+
+	"github.com/moistello/backend/pkg/crypto"
+	"github.com/moistello/backend/pkg/stellar"
 )
 
 type Service interface {
@@ -57,27 +58,9 @@ func NewService(repo Repository, cfg Config) (Service, error) {
 }
 
 func (s *service) DeriveWalletSeed(ctx context.Context, email string) (string, error) {
-	pepper := s.cfg.WalletPepper
-	if pepper == "" {
-		return "", fmt.Errorf("wallet pepper is not configured")
-	}
-
-	argonTime := s.cfg.Argon2Time
-	if argonTime <= 0 {
-		argonTime = 1
-	}
-	argonMemory := s.cfg.Argon2Memory
-	if argonMemory <= 0 {
-		argonMemory = 64 * 1024
-	}
-	argonThreads := s.cfg.Argon2Threads
-	if argonThreads <= 0 {
-		argonThreads = 4
-	}
-
-	salt := []byte(pepper + email)
-	key := argon2.IDKey([]byte(email), salt, uint32(argonTime), uint32(argonMemory), uint8(argonThreads), 32)
-	return hex.EncodeToString(key), nil
+	// Deterministic Argon2id key derivation lives in pkg/crypto; the service
+	// only supplies the configured pepper and derivation parameters.
+	return crypto.DeriveWalletSeed(email, s.cfg.WalletPepper, s.cfg.Argon2Time, s.cfg.Argon2Memory, s.cfg.Argon2Threads)
 }
 
 func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed []byte) (*Wallet, error) {
@@ -101,7 +84,8 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		}
 	}
 
-	// Bounded async funding with context and timeout
+	// Bounded async funding with context and timeout. The actual create-account
+	// transaction building, signing, and retry logic lives in pkg/stellar.
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -113,19 +97,18 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 		nil
 }
 
+// fundAccountWithRetry best-effort funds a newly created wallet account from
+// the master pool. The service only orchestrates; the Stellar transaction
+// helpers (including retry/backoff) live in pkg/stellar.
 func (s *service) fundAccountWithRetry(ctx context.Context, address string) error {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			// Perform non-blocking best-effort fund or trustline setup here
-			return nil
-		}
-	}
+	return stellar.FundAccountWithRetry(
+		ctx,
+		s.horizon,
+		s.master,
+		address,
+		fmt.Sprintf("%.7f", s.cfg.MinBalanceXLM),
+		s.cfg.NetworkPassphrase,
+	)
 }
 
 func (s *service) SignTransaction(ctx context.Context, walletID string, passkeySeed []byte, txnXDR string) (string, error) {
