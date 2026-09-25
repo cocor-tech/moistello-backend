@@ -27,7 +27,7 @@ func testConfig() config.ServerConfig {
 		ReadTimeout:     5 * time.Second,
 		WriteTimeout:    5 * time.Second,
 		MaxHeaderBytes:  1 << 20,
-		ShutdownTimeout: 5 * time.Second,
+		ShutdownTimeout: 15 * time.Second,
 	}
 }
 
@@ -44,8 +44,10 @@ func get(t *testing.T, client *http.Client, url string) (int, error) {
 
 // TestServer_RollingRestart_NoFailedRequests simulates a rolling restart: a
 // readiness-aware balancer keeps sending traffic until PreDrain flips the
-// replica to not-ready, and every request accepted before that point must
-// complete successfully even though shutdown starts while they are in flight.
+// replica to not-ready, the server keeps the listener open for the
+// configured delay so the balancer can react, and every request accepted
+// before that point must complete successfully even though the handler is
+// still running when the listener closes.
 func TestServer_RollingRestart_NoFailedRequests(t *testing.T) {
 	var ready atomic.Bool
 	ready.Store(true)
@@ -60,11 +62,13 @@ func TestServer_RollingRestart_NoFailedRequests(t *testing.T) {
 	var closeLastAt atomic.Int64
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(60 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond) // longer than the delay: still in flight when the listener closes
 		lastHandlerDone.Store(time.Now().UnixNano())
 		w.WriteHeader(http.StatusOK)
 	})
-	srv := api.NewServer(handler, testConfig(), api.ShutdownHooks{
+	cfg := testConfig()
+	cfg.ShutdownDelay = 100 * time.Millisecond
+	srv := api.NewServer(handler, cfg, api.ShutdownHooks{
 		PreDrain:  []func(){func() { ready.Store(false); record("pre-drain") }},
 		Drain:     []func(context.Context){func(context.Context) { record("drain") }},
 		CloseLast: []func(){func() { closeLastAt.Store(time.Now().UnixNano()); record("close-last") }},
@@ -74,6 +78,7 @@ func TestServer_RollingRestart_NoFailedRequests(t *testing.T) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	var served, failed atomic.Int64
+	var firstFailure atomic.Value
 	var wg sync.WaitGroup
 	for w := 0; w < 16; w++ {
 		wg.Add(1)
@@ -83,6 +88,9 @@ func TestServer_RollingRestart_NoFailedRequests(t *testing.T) {
 				code, err := get(t, client, url)
 				if err != nil || code != http.StatusOK {
 					failed.Add(1)
+					if err != nil {
+						firstFailure.CompareAndSwap(nil, err.Error())
+					}
 					continue
 				}
 				served.Add(1)
@@ -90,13 +98,15 @@ func TestServer_RollingRestart_NoFailedRequests(t *testing.T) {
 		}()
 	}
 
-	time.Sleep(150 * time.Millisecond) // let traffic build up
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	time.Sleep(400 * time.Millisecond) // let traffic build up
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
+	begin := time.Now()
 	require.NoError(t, srv.Shutdown(ctx))
+	assert.GreaterOrEqual(t, time.Since(begin), cfg.ShutdownDelay, "listener stays open for the configured delay")
 	wg.Wait()
 
-	assert.Zero(t, failed.Load(), "requests accepted before the replica left rotation must succeed")
+	assert.Zero(t, failed.Load(), "requests accepted before the replica left rotation must succeed: %v", firstFailure.Load())
 	assert.Greater(t, served.Load(), int64(16), "traffic must have been flowing during shutdown")
 	assert.Equal(t, []string{"pre-drain", "drain", "close-last"}, order)
 	assert.Greater(t, closeLastAt.Load(), lastHandlerDone.Load(), "pools close only after the last request finished")

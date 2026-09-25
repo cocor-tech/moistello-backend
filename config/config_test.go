@@ -27,6 +27,7 @@ func TestLoad_SucceedsWithRequiredConfig(t *testing.T) {
 	require.NotEmpty(t, cfg.Auth.JWTPrivateKeyPEM)
 	require.NotEmpty(t, cfg.Auth.JWTPublicKeyPEM)
 	require.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
+	require.Equal(t, time.Duration(0), cfg.Server.ShutdownDelay)
 }
 
 func TestLoad_ShutdownTimeoutIsConfigurable(t *testing.T) {
@@ -38,10 +39,12 @@ func TestLoad_ShutdownTimeoutIsConfigurable(t *testing.T) {
 	t.Setenv("JWT_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBALs=\n-----END RSA PRIVATE KEY-----")
 	t.Setenv("JWT_PUBLIC_KEY", "-----BEGIN RSA PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBALs=\n-----END RSA PUBLIC KEY-----")
 	t.Setenv("MOISTELLO_SERVER_SHUTDOWN_TIMEOUT", "5s")
+	t.Setenv("MOISTELLO_SERVER_SHUTDOWN_DELAY", "2s")
 
 	cfg, err := config.Load("")
 	require.NoError(t, err)
 	require.Equal(t, 5*time.Second, cfg.Server.ShutdownTimeout)
+	require.Equal(t, 2*time.Second, cfg.Server.ShutdownDelay)
 }
 
 func TestLoad_PanicsWithoutCriticalConfig(t *testing.T) {

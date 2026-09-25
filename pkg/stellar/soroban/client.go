@@ -16,13 +16,33 @@ import (
 type Client struct {
 	rpcURL     string
 	httpClient *http.Client
+	submitCfg  SubmitConfig
+	pollCfg    PollConfig
+	backoff    stellar.BackoffConfig
 }
 
 func NewClient(rpcURL string) *Client {
 	return &Client{
 		rpcURL:     rpcURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		submitCfg:  DefaultSubmitConfig(),
+		pollCfg:    DefaultPollConfig(),
+		backoff:    stellar.DefaultBackoffConfig(),
 	}
+}
+
+// WithTimings overrides the submit retry and poll cadence used by
+// SendTransaction. Production keeps the defaults; tests shorten them.
+func (c *Client) WithTimings(submit SubmitConfig, poll PollConfig) *Client {
+	c.submitCfg = submit
+	c.pollCfg = poll
+	return c
+}
+
+// WithBackoff overrides the retry policy for read-only RPC calls.
+func (c *Client) WithBackoff(cfg stellar.BackoffConfig) *Client {
+	c.backoff = cfg
+	return c
 }
 
 // GetAccount fetches account info from Horizon via the parent stellar client.
@@ -57,12 +77,12 @@ func (c *Client) SendTransaction(ctx context.Context, signedTxEnvelope string) (
 		rpcURL:     c.rpcURL,
 		httpClient: c.httpClient,
 	}
-	return submitter.submitAndPoll(ctx, signedTxEnvelope, DefaultSubmitConfig(), DefaultPollConfig())
+	return submitter.submitAndPoll(ctx, signedTxEnvelope, c.submitCfg, c.pollCfg)
 }
 
 func (c *Client) rpcCall(ctx context.Context, body string) (map[string]any, error) {
 	var result map[string]any
-	err := stellar.ExecuteWithBackoff(ctx, "soroban_rpcCall", func(ctx context.Context) error {
+	err := stellar.ExecuteWithBackoffConfig(ctx, "soroban_rpcCall", c.backoff, func(ctx context.Context) error {
 		req, err := http.NewRequestWithContext(ctx, "POST", c.rpcURL, bytes.NewBufferString(body))
 		if err != nil {
 			return fmt.Errorf("creating request: %w", err)

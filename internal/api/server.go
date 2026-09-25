@@ -151,10 +151,11 @@ func (s *Server) Err() <-chan error { return s.serveErr }
 // Shutdown performs the ordered graceful shutdown:
 //
 //  1. PreDrain hooks (readiness flips to not-ready),
-//  2. stop accepting connections and disable keep-alives,
-//  3. wait for in-flight requests until ctx expires, then force-close,
-//  4. Drain hooks (WebSocket hub, bridges, background loops),
-//  5. CloseLast hooks (database, cache, queue pools).
+//  2. keep serving for cfg.ShutdownDelay so balancers drop this replica,
+//  3. stop accepting connections and disable keep-alives,
+//  4. wait for in-flight requests until ctx expires, then force-close,
+//  5. Drain hooks (WebSocket hub, bridges, background loops),
+//  6. CloseLast hooks (database, cache, queue pools).
 //
 // Every stage runs even when an earlier one timed out, so pools are always
 // closed. ErrDrainDeadlineExceeded is returned when requests were cut off.
@@ -162,6 +163,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	start := time.Now()
 	for _, hook := range s.hooks.PreDrain {
 		hook()
+	}
+
+	if s.cfg.ShutdownDelay > 0 {
+		log.Info().Dur("delay", s.cfg.ShutdownDelay).Msg("readiness is now failing; waiting for load balancers before closing the listener")
+		select {
+		case <-time.After(s.cfg.ShutdownDelay):
+		case <-ctx.Done():
+		}
 	}
 
 	// Stop accepting new connections and tell keep-alive clients to reconnect elsewhere.
@@ -220,7 +229,7 @@ func RunServerWithHooks(router http.Handler, cfg config.ServerConfig, hooks Shut
 
 	select {
 	case sig := <-quit:
-		log.Info().Str("signal", sig.String()).Dur("timeout", shutdownTimeout(cfg)).
+		log.Info().Str("signal", sig.String()).Dur("delay", cfg.ShutdownDelay).Dur("timeout", shutdownTimeout(cfg)).
 			Msg("received shutdown signal, stopping new connections and draining in-flight requests...")
 	case err := <-server.Err():
 		return err
