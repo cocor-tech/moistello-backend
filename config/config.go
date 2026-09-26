@@ -484,6 +484,8 @@ func Load(path string) (*Config, error) {
 		panic(fmt.Errorf("database.url must not use sslmode=disable outside development; use sslmode=require or stronger"))
 	}
 
+	validateMainnetConfig(&cfg)
+
 	cfg.Hot = NewHotReloader(&cfg)
 
 	return &cfg, nil
@@ -580,5 +582,37 @@ func validateHexKey(value string) {
 func validateDuration(name string, ok bool) {
 	if !ok {
 		panic(fmt.Errorf("config: %s must be greater than zero", name))
+	}
+}
+
+func validateMainnetConfig(cfg *Config) {
+	const (
+		testnetNetwork    = "testnet"
+		testnetHorizon    = "https://horizon-testnet.stellar.org"
+		testnetSorobanRPC = "https://soroban-testnet.stellar.org"
+		testnetPassphrase = "Test SDF Network ; September 2015"
+		testnetUSDCIssuer = "GAX23V3WWDPPR5WRER3KTEUTDLSCGZYMSJY5FDRRKKCIQ4JADF5T27RC"
+	)
+
+	if cfg.Stellar.Network == "mainnet" {
+		issues := []string{}
+		if cfg.Stellar.Network == testnetNetwork {
+			issues = append(issues, "network still set to testnet")
+		}
+		if cfg.Stellar.HorizonURL == testnetHorizon {
+			issues = append(issues, "horizon_url still set to testnet")
+		}
+		if cfg.Stellar.SorobanRPCURL == testnetSorobanRPC {
+			issues = append(issues, "soroban_rpc_url still set to testnet")
+		}
+		if cfg.Stellar.NetworkPassphrase == testnetPassphrase {
+			issues = append(issues, "network_passphrase still set to testnet")
+		}
+		if cfg.Stellar.USDCIssuer == testnetUSDCIssuer {
+			issues = append(issues, "usdc_issuer still set to testnet")
+		}
+		if len(issues) > 0 {
+			panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
+		}
 	}
 }
