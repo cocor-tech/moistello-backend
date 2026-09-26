@@ -75,14 +75,6 @@ func (s *service) Verify(ctx context.Context, walletAddress, signature string) (
 		return false, fmt.Errorf("retrieving nonce from redis: %w", err)
 	}
 
-	// Delete nonce immediately to prevent any replay
-	if err := s.redis.Del(ctx, key).Err(); err != nil {
-		// Log but don't fail - expiry fallback will handle cleanup
-		if expireErr := s.redis.Expire(ctx, key, 1*time.Second).Err(); expireErr != nil {
-			// Nonce will expire naturally
-		}
-	}
-
 	// Parse nonce value and creation timestamp
 	parts := strings.SplitN(stored, ":", 2)
 	if len(parts) != 2 {
@@ -116,6 +108,14 @@ func (s *service) Verify(ctx context.Context, walletAddress, signature string) (
 
 	message := sha256.Sum256([]byte(nonceStr))
 	valid := ed25519.Verify(publicKey, message[:], sigBytes)
+
+	if valid {
+		// Atomically delete nonce on successful verification (single-use enforcement)
+		if err := s.redis.Del(ctx, key).Err(); err != nil {
+			// Set short expiry if deletion fails - nonce will expire naturally
+			_ = s.redis.Expire(ctx, key, 1*time.Second)
+		}
+	}
 
 	return valid, nil
 }
