@@ -117,7 +117,8 @@ func TestDepositHandler_InitiateWithdraw_PersistsRecord(t *testing.T) {
 	}
 	require.NotNil(t, wd)
 	assert.Equal(t, "test-user-123", wd.UserID)
-	assert.Equal(t, int64(100), wd.AmountUSDC)
+	assert.Equal(t, "100.0000000", wd.AmountUSDC.String())
+	assert.Equal(t, "33.3300000", wd.EstimatedNGN.String(), "quote amount must keep its decimals")
 	require.NotNil(t, wd.YellowCardTxID)
 	assert.Equal(t, "s-1", *wd.YellowCardTxID)
 }

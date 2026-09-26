@@ -1,6 +1,10 @@
 package withdrawal
 
-import "time"
+import (
+	"time"
+
+	"github.com/moistello/backend/pkg/money"
+)
 
 type WithdrawalStatus string
 
@@ -16,8 +20,8 @@ const (
 type Withdrawal struct {
 	ID            string           `json:"id" db:"id"`
 	UserID        string           `json:"userId" db:"user_id"`
-	AmountUSDC    int64            `json:"amountUsdc" db:"amount_usdc"`
-	EstimatedNGN  int64            `json:"estimatedNgn" db:"estimated_ngn"`
+	AmountUSDC    money.Money      `json:"amountUsdc" db:"amount_usdc"`
+	EstimatedNGN  money.Money      `json:"estimatedNgn" db:"estimated_ngn"`
 	BankCode      string           `json:"bankCode" db:"bank_code"`
 	AccountNumber string           `json:"accountNumber" db:"account_number"`
 	AccountName   string           `json:"accountName" db:"account_name"`

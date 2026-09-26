@@ -47,6 +47,10 @@ func (s *lifecycleStore) reset() {
 
 type lifecycleCircleService struct{ store *lifecycleStore }
 
+func (s *lifecycleCircleService) QueryRoundConfig(_ context.Context, _ string, _ int) (*circle.RoundConfigSnapshot, error) {
+	return nil, circle.ErrCircleNotFound
+}
+
 func (s *lifecycleCircleService) Get(_ context.Context, id string) (*circle.Circle, error) {
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
@@ -506,7 +510,7 @@ func TestCircleLifecycle_Contribute_MissingFields(t *testing.T) {
 	require.Equal(t, http.StatusCreated, code)
 
 	code, _ = lifecycleRequest(t, router, http.MethodPost, "/circles/"+store.circle.ID.String()+"/contribute", organizer.String(), map[string]any{})
-	assert.Equal(t, http.StatusBadRequest, code)
+	assert.Equal(t, http.StatusUnprocessableEntity, code)
 }
 
 func TestCircleLifecycle_TriggerPayout_NonOrganizer(t *testing.T) {

@@ -45,7 +45,7 @@ func TestWalletBalance_ConcurrentTransactions_LostUpdatePrevention(t *testing.T)
 
 	numGoroutines := 50
 	depositsPerRoutine := 20
-	depositAmount := int64(500) // $5.00
+	depositAmount := int64(500)  // $5.00
 	withdrawAmount := int64(700) // $7.00
 
 	// Run concurrent deposits

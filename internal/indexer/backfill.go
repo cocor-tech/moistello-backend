@@ -26,30 +26,25 @@ func (b *BackfillJob) Run(ctx context.Context, fromLedger, toLedger int64, dryRu
 
 	totalProcessed := 0
 	for seq := fromLedger; seq <= toLedger; seq++ {
-		txs, err := b.poller.FetchTransactionsForLedger(ctx, seq)
+		txs, err := b.poller.FetchTransactions(ctx, seq)
 		if err != nil {
 			log.Warn().Err(err).Int64("ledger", seq).Msg("failed to fetch transactions for ledger in backfill")
 			continue
 		}
 
-		for _, tx := range txs {
-			events, err := b.poller.ExtractContractEvents(tx)
-			if err != nil {
+		for _, tx := range b.poller.FilterByContract(txs) {
+			if dryRun {
+				log.Info().Int64("ledger", tx.Ledger).Str("txHash", tx.Hash).Msg("[DRY-RUN] would backfill transaction")
+				totalProcessed++
 				continue
 			}
-			for _, evt := range events {
-				if dryRun {
-					log.Info().Str("event", evt.EventType).Int64("ledger", evt.Ledger).Str("txHash", evt.TxHash).Msg("[DRY-RUN] would backfill event")
-					totalProcessed++
-				} else {
-					if err := b.processor.ProcessEvent(ctx, evt); err == nil {
-						totalProcessed++
-					}
-				}
+			tx := tx
+			if err := b.processor.ProcessTransaction(ctx, &tx); err == nil {
+				totalProcessed++
 			}
 		}
 	}
 
-	log.Info().Int("totalEvents", totalProcessed).Msg("backfill completed")
+	log.Info().Int("totalTransactions", totalProcessed).Msg("backfill completed")
 	return totalProcessed, nil
 }

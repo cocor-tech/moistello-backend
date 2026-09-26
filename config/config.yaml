@@ -6,6 +6,13 @@ server:
   read_timeout: "10s"
   write_timeout: "30s"
   max_header_bytes: 1048576
+  # Time to keep serving after readiness flips to not-ready, so load
+  # balancers stop routing here before the listener closes. Set it to your
+  # platform's endpoint propagation time (a few seconds on Kubernetes).
+  shutdown_delay: "0s"
+  # Maximum time to drain in-flight requests after SIGTERM before the
+  # remaining connections are closed forcibly.
+  shutdown_timeout: "30s"
 
 database:
   max_open_conns: 50

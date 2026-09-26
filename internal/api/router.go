@@ -7,15 +7,6 @@ import (
 	"github.com/moistello/backend/config"
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/api/middleware"
-	"github.com/redis/go-redis/v9"
-)
-
-func SetupRouter(
-	redisClient *redis.Client,
-	rateLimitCfg config.RateLimitConfig,
-	authHandler *handler.AuthHandler,
-	userHandler *handler.UserHandler,
-	pubKey []byte,
 	"github.com/moistello/backend/webhook"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -69,14 +60,6 @@ func NewRouter(
 ) *gin.Engine {
 	r := gin.New()
 
-	// Global rate limiter: fail-open for safe GET routes, fail-closed for others
-	// Individual routes can override with middleware.WithFailClosed() or WithFailOpen()
-	r.Use(middleware.RateLimitMiddleware(redisClient, rateLimitCfg))
-
-	v1 := r.Group("/v1")
-	{
-		// Auth routes - use AuthRateLimitMiddleware (always fail-closed for auth/OTP)
-		authGroup := v1.Group("/auth", middleware.AuthRateLimitMiddleware(redisClient, rateLimitCfg))
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.TracingMiddleware(cfg.Tracing.ServiceName))
 	r.Use(middleware.LoggingMiddleware())
@@ -124,7 +107,6 @@ func NewRouter(
 		}
 
 		// User & Profile routes (authenticated)
-		usersGroup := v1.Group("/users", middleware.AuthMiddleware(pubKey))
 		authenticated := api.Group("")
 		authenticated.Use(middleware.AuthMiddleware(jwtPublicKey))
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
@@ -154,6 +136,15 @@ func NewRouter(
 			authenticated.GET("/wallets/balance", walletHandler.GetBalance)
 			authenticated.POST("/wallets/withdraw", perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), walletHandler.Withdraw)
 			authenticated.DELETE("/wallets/:id", walletHandler.DeleteWallet)
+
+			// Authenticator (TOTP) enrollment. Code checks share the OTP
+			// limiter so six-digit codes cannot be brute-forced.
+			totpLimit := perResource(redisClient, "totp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds)
+			authenticated.POST("/auth/totp/enroll", authHandler.EnrollTOTP)
+			authenticated.POST("/auth/totp/enable", totpLimit, authHandler.EnableTOTP)
+			authenticated.POST("/auth/totp/verify", totpLimit, authHandler.VerifyTOTP)
+			authenticated.POST("/auth/totp/disable", totpLimit, authHandler.DisableTOTP)
+			authenticated.POST("/auth/totp/recovery-codes", totpLimit, authHandler.RegenerateTOTPRecoveryCodes)
 
 			// Deposit / Withdraw routes
 			authenticated.GET("/wallet/deposit/quote", depositHandler.GetDepositQuote)

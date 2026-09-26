@@ -39,7 +39,7 @@ func TestPayoutService_Record_VerifiesOnChain_Success(t *testing.T) {
 	repo := new(payoutMocks.Repository)
 	horizon := new(mockPayoutHorizon)
 	wallets := new(mockWalletLookup)
-	svc := payout.NewService(repo, horizon, wallets)
+	svc := payout.NewService(repo, horizon, wallets, nil)
 	ctx := context.Background()
 
 	recipientID := uuid.New()
@@ -90,7 +90,7 @@ func TestPayoutService_Record_RejectsWrongRecipient(t *testing.T) {
 	repo := new(payoutMocks.Repository)
 	horizon := new(mockPayoutHorizon)
 	wallets := new(mockWalletLookup)
-	svc := payout.NewService(repo, horizon, wallets)
+	svc := payout.NewService(repo, horizon, wallets, nil)
 	ctx := context.Background()
 
 	recipientID := uuid.New()
@@ -132,7 +132,7 @@ func TestPayoutService_Record_RejectsWrongRecipient(t *testing.T) {
 func TestPayoutService_Record_IdempotentOnReplay(t *testing.T) {
 	repo := new(payoutMocks.Repository)
 	horizon := new(mockPayoutHorizon)
-	svc := payout.NewService(repo, horizon, nil)
+	svc := payout.NewService(repo, horizon, nil, nil)
 	ctx := context.Background()
 
 	existingPayout := &payout.Payout{
@@ -174,7 +174,7 @@ func TestPayoutService_Record_PendingWhenHorizonUnavailable(t *testing.T) {
 	repo := new(payoutMocks.Repository)
 	horizon := new(mockPayoutHorizon)
 	wallets := new(mockWalletLookup)
-	svc := payout.NewService(repo, horizon, wallets)
+	svc := payout.NewService(repo, horizon, wallets, nil)
 	ctx := context.Background()
 
 	recipientID := uuid.New()
@@ -219,7 +219,7 @@ func TestPayoutService_Record_PendingWhenWalletLookupFails(t *testing.T) {
 	repo := new(payoutMocks.Repository)
 	horizon := new(mockPayoutHorizon)
 	wallets := new(mockWalletLookup)
-	svc := payout.NewService(repo, horizon, wallets)
+	svc := payout.NewService(repo, horizon, wallets, nil)
 	ctx := context.Background()
 
 	recipientID := uuid.New()

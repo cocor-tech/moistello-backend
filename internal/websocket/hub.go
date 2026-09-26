@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -25,12 +26,16 @@ type SubscriptionAuthorizer interface {
 // Hub maintains the set of active WebSocket clients and manages circle-based
 // rooms for targeted broadcasts.
 type Hub struct {
-	mu           sync.RWMutex
-	clients      map[string]*Client            // clientID -> Client
-	userClients  map[string]map[string]*Client // userID -> clientID -> Client
-	rooms        map[string]map[string]*Client // circleID -> clientID -> Client
-	auth         SubscriptionAuthorizer
+	mu          sync.RWMutex
+	clients     map[string]*Client            // clientID -> Client
+	userClients map[string]map[string]*Client // userID -> clientID -> Client
+	rooms       map[string]map[string]*Client // circleID -> clientID -> Client
+	auth        SubscriptionAuthorizer
+	closed      bool // set by Shutdown; Register rejects new clients afterwards
 }
+
+// shutdownPollInterval is how often Shutdown re-checks the client count.
+const shutdownPollInterval = 10 * time.Millisecond
 
 // NewHub creates a new Hub with empty client and room registries.
 func NewHub() *Hub {
@@ -44,6 +49,12 @@ func NewHub() *Hub {
 // Register adds a client to the hub so it can receive broadcasts and updates metrics.
 func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		log.Debug().Str("clientID", client.ID).Msg("hub is shutting down; refusing new client")
+		client.Close()
+		return
+	}
 	if _, ok := h.clients[client.ID]; !ok {
 		h.clients[client.ID] = client
 		if h.userClients[client.UserID] == nil {
@@ -221,4 +232,48 @@ func (h *Hub) RoomCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.rooms)
+}
+
+// Shutdown stops accepting clients and asks every connected client to close.
+// It waits until all clients have unregistered or ctx expires; connections
+// still open at the deadline are closed forcibly so that the pools they
+// depend on can be shut down afterwards. Calling Shutdown twice is safe.
+func (h *Hub) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	h.closed = true
+	clients := make([]*Client, 0, len(h.clients))
+	for _, c := range h.clients {
+		clients = append(clients, c)
+	}
+	h.mu.Unlock()
+
+	log.Info().Int("clients", len(clients)).Msg("draining websocket clients")
+	for _, c := range clients {
+		c.Close()
+	}
+
+	ticker := time.NewTicker(shutdownPollInterval)
+	defer ticker.Stop()
+	for h.ClientCount() > 0 {
+		select {
+		case <-ctx.Done():
+			h.mu.Lock()
+			remaining := make([]*Client, 0, len(h.clients))
+			for _, c := range h.clients {
+				remaining = append(remaining, c)
+			}
+			h.mu.Unlock()
+			for _, c := range remaining {
+				if c.Conn != nil {
+					_ = c.Conn.Close()
+				}
+				h.Unregister(c)
+			}
+			log.Warn().Int("forced", len(remaining)).Msg("websocket clients did not close in time; connections closed forcibly")
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	log.Info().Msg("all websocket clients drained")
+	return nil
 }

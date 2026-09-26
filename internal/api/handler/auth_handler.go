@@ -18,24 +18,27 @@ import (
 // AuthHandler aggregates the focused auth sub-handlers while preserving the
 // public method surface used by the router and existing tests. The wallet
 // authentication flows (nonce/verify) live in WalletAuthHandler, session
-// management (refresh/me/logout/revoke) in SessionHandler, and the email
-// registration flow in RegistrationHandler.
+// management (refresh/me/logout/revoke) in SessionHandler, the email
+// registration flow in RegistrationHandler, and authenticator enrollment
+// (enroll/enable/verify/disable/recovery codes) in TOTPEnrollmentHandler.
 type AuthHandler struct {
 	*WalletAuthHandler
 	*SessionHandler
 	*RegistrationHandler
+	*TOTPEnrollmentHandler
 }
 
 // NewAuthHandler builds the auth handler aggregate. The signature is kept for
 // backward compatibility; each focused sub-handler consumes the dependencies
 // it actually needs.
 func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet.Service,
-	_ *totp.Service, verificationSvc *verification.Service, _ *email.Service,
+	totpSvc *totp.Service, verificationSvc *verification.Service, _ *email.Service,
 	redisClient *redis.Client, userRepo user.Repository) *AuthHandler {
 	return &AuthHandler{
-		WalletAuthHandler:   NewWalletAuthHandler(authSvc, userSvc),
-		SessionHandler:      NewSessionHandler(authSvc, userSvc, redisClient),
-		RegistrationHandler: NewRegistrationHandler(authSvc, userRepo, verificationSvc, walletSvc),
+		WalletAuthHandler:     NewWalletAuthHandler(authSvc, userSvc),
+		SessionHandler:        NewSessionHandler(authSvc, userSvc, redisClient),
+		RegistrationHandler:   NewRegistrationHandler(authSvc, userRepo, verificationSvc, walletSvc),
+		TOTPEnrollmentHandler: NewTOTPEnrollmentHandler(userSvc, userRepo, totpSvc),
 	}
 }
 

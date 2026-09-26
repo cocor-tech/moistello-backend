@@ -145,13 +145,11 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to database")
 	}
-	defer db.Close()
 
 	redisClient, err := redis.New(cfg.Redis)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to redis")
 	}
-	defer redisClient.Close()
 
 	userRepo := user.NewRepository(db)
 	circleRepo := circle.NewRepository(db)
@@ -167,7 +165,7 @@ func main() {
 
 	wsHub := ws.NewHub()
 	wsBroadcaster := ws.NewBroadcaster(wsHub, redisClient)
-	_ = ws.NewRedisBridge(wsHub, redisClient)
+	wsBridge := ws.NewRedisBridge(wsHub, redisClient)
 
 	userSvc := user.NewService(userRepo, circleRepo)
 	circleSvc := circle.NewService(circleRepo, &moiAdapter{repo: userRepo}, circle.Dependencies{
@@ -399,8 +397,6 @@ func main() {
 	rmqClient, rmqErr := rabbitmq.New(cfg.RabbitMQ)
 	if rmqErr != nil {
 		log.Warn().Err(rmqErr).Msg("RabbitMQ unavailable — health checks will report degraded")
-	} else {
-		defer rmqClient.Close()
 	}
 
 	// Wire RabbitMQ into health handler for /health and /health/ready probes
@@ -414,10 +410,44 @@ func main() {
 
 	router := api.NewRouter(cfg, redisClient, authH, userH, circleH, contribH, payoutH, inviteH, notifH, adminH, webhookH, healthH, passkeyCredH, walletH, depositH, mobileMoneyH, chatH, communityH, wsH, savingsH, tokenH, swapH, governanceH, reputationH, referralH, consentH, adminJobQueueH, webhookRepo, ycWebhookH, jwtPublicKey)
 
-	if err := api.RunServer(router, cfg.Server, func(context.Context) {
-		featureFlagCache.Stop()
-		close(mmReconcileStop)
-	}); err != nil {
+	// Shutdown order: fail readiness first so the load balancer stops sending
+	// traffic, drain in-flight HTTP requests (bounded by
+	// server.shutdown_timeout), close long-lived WebSocket connections and
+	// background loops, and only then close the pools they were using.
+	hooks := api.ShutdownHooks{
+		PreDrain: []func(){healthH.BeginShutdown},
+		Drain: []func(context.Context){
+			func(ctx context.Context) {
+				if err := wsHub.Shutdown(ctx); err != nil {
+					log.Warn().Err(err).Msg("websocket drain incomplete")
+				}
+			},
+			func(context.Context) { wsBridge.Close() },
+			func(context.Context) {
+				featureFlagCache.Stop()
+				close(mmReconcileStop)
+			},
+		},
+		CloseLast: []func(){
+			func() {
+				if rmqClient != nil {
+					rmqClient.Close()
+				}
+			},
+			func() {
+				if err := redisClient.Close(); err != nil {
+					log.Warn().Err(err).Msg("closing redis")
+				}
+			},
+			func() {
+				if err := db.Close(); err != nil {
+					log.Warn().Err(err).Msg("closing postgres")
+				}
+			},
+		},
+	}
+
+	if err := api.RunServerWithHooks(router, cfg.Server, hooks); err != nil {
 		log.Fatal().Err(err).Msg("server error")
 	}
 }

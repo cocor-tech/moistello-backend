@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/moistello/backend/pkg/money"
 	"github.com/moistello/backend/pkg/stellar"
 )
 
@@ -159,8 +160,15 @@ func toSorobanArg(v interface{}) stellar.SorobanArg {
 		return stellar.SorobanArg{Type: "u32", Value: fmt.Sprintf("%d", val)}
 	case uint64:
 		return stellar.SorobanArg{Type: "u64", Value: fmt.Sprintf("%d", val)}
+	case money.Money:
+		return stellar.SorobanArg{Type: "i128", Value: fmt.Sprintf("%d", val.Stroops())}
 	case float64:
-		return stellar.SorobanArg{Type: "i128", Value: fmt.Sprintf("%d", int64(val))}
+		// A float is a whole-token amount; contracts take base units.
+		amount, err := money.FromFloat64(val)
+		if err != nil {
+			return stellar.SorobanArg{Type: "i128", Value: "0"}
+		}
+		return stellar.SorobanArg{Type: "i128", Value: fmt.Sprintf("%d", amount.Stroops())}
 	case bool:
 		return stellar.SorobanArg{Type: "bool", Value: fmt.Sprintf("%v", val)}
 	case []byte:

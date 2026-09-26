@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/metrics"
+	"github.com/moistello/backend/pkg/money"
 	"github.com/rs/zerolog/log"
 )
 
@@ -61,9 +61,9 @@ type ServiceWithCircle interface {
 }
 
 type service struct {
-	repo         Repository
-	horizon      HorizonVerifier
-	walletLookup WalletLookup
+	repo          Repository
+	horizon       HorizonVerifier
+	walletLookup  WalletLookup
 	circleService circle.Service
 }
 
@@ -87,9 +87,9 @@ func NewService(repo Repository, horizon HorizonVerifier, walletLookup interface
 		// main.go must wrap it with a NewWalletLookupAdapter first.
 	}
 	return &service{
-		repo:         repo,
-		horizon:      horizon,
-		walletLookup: wl,
+		repo:          repo,
+		horizon:       horizon,
+		walletLookup:  wl,
 		circleService: circleSvc,
 	}
 }
@@ -116,34 +116,26 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 		}
 	}
 
-	// Validate membership and round validity
-	member, err := s.circleService.IsMember(ctx, input.CircleID, input.RecipientID)
-	if err != nil {
-		return nil, fmt.Errorf("checking membership: %w", err)
-	}
-	if !member {
-		return nil, fmt.Errorf("recipient is not a member of this circle")
-	}
-
-	cir, err := s.circleService.Get(ctx, input.CircleID)
-	if err != nil {
-		return nil, fmt.Errorf("getting circle: %w", err)
-	}
-
-	// Determine OnTime based on round validity against circle's current round
-	// OnTime is true only if the round number is valid (1 <= round <= current round)
-	isOnTime := input.RoundNumber >= 1 && input.RoundNumber <= cir.CurrentRound
-
-	// Guard against duplicate payouts in the same circle/round/recipient
-	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
-	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
-	for _, p := range existingPayouts {
-		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
-			log.Warn().Str("circle_id", input.CircleID).
-				Int("round", input.RoundNumber).
-				Msg("payout already exists for this circle/round/recipient")
-			return &p, nil
+	// Validate membership and round validity. A nil circle service (unit
+	// tests, indexer replay) skips the membership check and only requires a
+	// positive round number.
+	isOnTime := input.RoundNumber >= 1
+	if s.circleService != nil {
+		member, err := s.circleService.IsMember(ctx, input.CircleID, input.RecipientID)
+		if err != nil {
+			return nil, fmt.Errorf("checking membership: %w", err)
 		}
+		if !member {
+			return nil, fmt.Errorf("recipient is not a member of this circle")
+		}
+
+		cir, err := s.circleService.Get(ctx, input.CircleID)
+		if err != nil {
+			return nil, fmt.Errorf("getting circle: %w", err)
+		}
+
+		// OnTime is true only if the round number is valid (1 <= round <= current round)
+		isOnTime = isOnTime && input.RoundNumber <= cir.CurrentRound
 	}
 
 	// Determine verification state — caller may override (e.g. indexer).
@@ -169,8 +161,11 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 				Msg("could not resolve recipient wallet; recording payout as pending")
 			verificationStatus = VerificationStatusPending
 		} else {
-			amountStr := fmt.Sprintf("%.7f", input.Amount)
-			ok, verErr := s.horizon.VerifyPayment(ctx, input.TxnHash, recipientWallet, amountStr)
+			amount, amtErr := money.FromFloat64(input.Amount)
+			if amtErr != nil {
+				return nil, fmt.Errorf("invalid payout amount: %w", amtErr)
+			}
+			ok, verErr := s.horizon.VerifyPayment(ctx, input.TxnHash, recipientWallet, amount.String())
 			if verErr != nil {
 				log.Warn().Err(verErr).Str("txn_hash", input.TxnHash).
 					Msg("horizon verification failed; recording payout as pending")
@@ -182,6 +177,18 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Payout, error
 				verifiedOnchain = true
 				verificationStatus = VerificationStatusVerified
 			}
+		}
+	}
+
+	// Guard against duplicate payouts in the same circle/round/recipient
+	// (belt-and-suspenders alongside the DB UNIQUE index on txn_hash).
+	existingPayouts, _, _ := s.repo.ListByCircle(ctx, circleUID, 1, 100)
+	for _, p := range existingPayouts {
+		if p.RecipientID == recipientUID && p.RoundNumber == input.RoundNumber {
+			log.Warn().Str("circle_id", input.CircleID).
+				Int("round", input.RoundNumber).
+				Msg("payout already exists for this circle/round/recipient")
+			return &p, nil
 		}
 	}
 

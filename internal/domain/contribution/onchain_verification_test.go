@@ -31,7 +31,7 @@ func (m *mockHorizon) VerifyTransaction(ctx context.Context, txnHash, from, amou
 func TestContributionService_Record_VerifiesOnChain_Success(t *testing.T) {
 	repo := new(contribMocks.Repository)
 	horizon := new(mockHorizon)
-	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY")
+	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY", nil)
 	ctx := context.Background()
 
 	input := contribution.RecordInput{
@@ -73,7 +73,7 @@ func TestContributionService_Record_VerifiesOnChain_Success(t *testing.T) {
 func TestContributionService_Record_RejectsOnChainMismatch(t *testing.T) {
 	repo := new(contribMocks.Repository)
 	horizon := new(mockHorizon)
-	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY")
+	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY", nil)
 	ctx := context.Background()
 
 	input := contribution.RecordInput{
@@ -106,7 +106,7 @@ func TestContributionService_Record_RejectsOnChainMismatch(t *testing.T) {
 func TestContributionService_Record_IdempotentOnReplay(t *testing.T) {
 	repo := new(contribMocks.Repository)
 	horizon := new(mockHorizon)
-	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY")
+	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY", nil)
 	ctx := context.Background()
 
 	existing := &contribution.Contribution{
@@ -148,7 +148,7 @@ func TestContributionService_Record_IdempotentOnReplay(t *testing.T) {
 func TestContributionService_Record_PendingWhenHorizonUnavailable(t *testing.T) {
 	repo := new(contribMocks.Repository)
 	horizon := new(mockHorizon)
-	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY")
+	svc := contribution.NewService(repo, nil, nil, horizon, "MASTER_PUBLIC_KEY", nil)
 	ctx := context.Background()
 
 	input := contribution.RecordInput{
@@ -187,7 +187,7 @@ func TestContributionService_Record_PendingWhenHorizonUnavailable(t *testing.T) 
 func TestContributionService_Record_UsesCallerVerificationState(t *testing.T) {
 	repo := new(contribMocks.Repository)
 	// No horizon client — verification state comes from caller.
-	svc := contribution.NewService(repo, nil, nil, nil, "")
+	svc := contribution.NewService(repo, nil, nil, nil, "", nil)
 	ctx := context.Background()
 
 	verified := true
@@ -223,7 +223,7 @@ func TestContributionService_Record_UsesCallerVerificationState(t *testing.T) {
 
 func TestContributionService_Record_HandlesCreateConflict(t *testing.T) {
 	repo := new(contribMocks.Repository)
-	svc := contribution.NewService(repo, nil, nil, nil, "")
+	svc := contribution.NewService(repo, nil, nil, nil, "", nil)
 	ctx := context.Background()
 
 	existing := &contribution.Contribution{

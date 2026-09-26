@@ -1,8 +1,9 @@
 package circle
 
 import (
-	"math"
 	"math/rand"
+
+	"github.com/moistello/backend/pkg/money"
 )
 
 func RandomOrder(seed int64, memberCount int) []int {
@@ -41,8 +42,30 @@ func VoteTally(votes map[string]int) string {
 	return winner
 }
 
+// PayoutPool returns the total pool for a round: every member's contribution
+// plus any late penalties collected, computed exactly in stroops.
+func PayoutPool(contribution money.Money, memberCount int, latePenalties money.Money) (money.Money, error) {
+	pool, err := contribution.MulInt(int64(memberCount))
+	if err != nil {
+		return money.Money{}, err
+	}
+	return pool.Add(latePenalties)
+}
+
+// CalculatePayout is the float adapter over PayoutPool kept for callers that
+// still carry float64 circle fields. Non-finite inputs yield zero.
 func CalculatePayout(contributionAmount float64, memberCount int, roundNumber int, latePenalties float64) float64 {
-	totalPool := contributionAmount*float64(memberCount) + latePenalties
-	precision := math.Pow(10, 7)
-	return math.Round(totalPool*precision) / precision
+	contribution, err := money.FromFloat64(contributionAmount)
+	if err != nil {
+		return 0
+	}
+	penalties, err := money.FromFloat64(latePenalties)
+	if err != nil {
+		return 0
+	}
+	pool, err := PayoutPool(contribution, memberCount, penalties)
+	if err != nil {
+		return 0
+	}
+	return pool.Float64()
 }

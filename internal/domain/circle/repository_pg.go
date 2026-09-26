@@ -19,6 +19,7 @@ type dbExecutor interface {
 	NamedExecContext(ctx context.Context, query string, arg interface{}) (sql.Result, error)
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
 type pgRepo struct {
@@ -570,4 +571,3 @@ func (r *pgRepo) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID,
 	}
 	return &snapshot, nil
 }
-
