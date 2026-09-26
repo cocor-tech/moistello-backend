@@ -3,7 +3,6 @@ package wallet
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +10,7 @@ import (
 	"github.com/stellar/go/keypair"
 
 	"github.com/moistello/backend/pkg/crypto"
+	"github.com/moistello/backend/pkg/logger"
 	"github.com/moistello/backend/pkg/money"
 	"github.com/moistello/backend/pkg/stellar"
 )
@@ -69,7 +69,8 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 	copy(rawSeed[:], passkeySeed[:32])
 	kp, err := keypair.FromRawSeed(rawSeed)
 	if err != nil {
-		log.Printf("Failed to derive keypair: %v", err)
+		logger.Ctx(ctx).Error().Err(err).Str("userID", userID).Msg("failed to derive keypair")
+		return nil, err
 	}
 
 	walletID := uuid.New().String()

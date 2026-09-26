@@ -134,6 +134,20 @@ func main() {
 	logger.Init(cfg.Logging.Level, cfg.Logging.Format)
 	validator.Init()
 
+	// Apply whitelisted, non-critical config changes (log level, rate limits)
+	// without a restart; an invalid edit is rejected and the old values stay.
+	if err := cfg.Hot.Watch(
+		func(h config.HotConfig) {
+			logger.SetLevel(h.LogLevel)
+			log.Info().Str("log_level", h.LogLevel).Msg("config reloaded")
+		},
+		func(err error) {
+			log.Warn().Err(err).Msg("config reload rejected; keeping previous values")
+		},
+	); err != nil {
+		log.Warn().Err(err).Msg("config hot-reload disabled")
+	}
+
 	// Initialize OpenTelemetry tracing
 	if err := tracing.Init(cfg.Tracing); err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize tracing")
@@ -150,6 +164,14 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to redis")
 	}
+
+	// Detect connection leaks and pool exhaustion; alerts are logged and counted
+	// in moistello_db_pool_alerts_total.
+	poolMonitorCtx, stopPoolMonitor := context.WithCancel(context.Background())
+	poolMonitor := postgres.NewPoolMonitor(db, postgres.PoolMonitorOptions{}, func(a postgres.PoolAlert) {
+		log.Warn().Str("kind", a.Kind).Str("detail", a.Detail).Msg("db pool alert")
+	})
+	go poolMonitor.Run(poolMonitorCtx)
 
 	userRepo := user.NewRepository(db)
 	circleRepo := circle.NewRepository(db)
@@ -423,6 +445,7 @@ func main() {
 				}
 			},
 			func(context.Context) { wsBridge.Close() },
+			func(context.Context) { stopPoolMonitor() },
 			func(context.Context) {
 				featureFlagCache.Stop()
 				close(mmReconcileStop)

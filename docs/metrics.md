@@ -11,6 +11,16 @@ Moistello exports Prometheus business metrics for monitoring contributions, payo
 - `moistello_user_registrations_total{method}`: Counter of user sign-ups.
 - `moistello_active_users_current`: Gauge representing active platform users.
 
+## Database Pool Metrics
+
+- `moistello_db_pool_utilization{type}`: Gauge of pool state (`open`, `in_use`, `idle`, `max_open`, `saturation`).
+- `moistello_db_pool_wait_total`: Counter of callers that had to wait for a free connection.
+- `moistello_db_pool_wait_seconds_total`: Counter of time spent waiting to acquire a connection.
+- `moistello_db_idle_in_transaction_connections`: Gauge of connections idle in a transaction for over 60s (leak indicator).
+- `moistello_db_pool_alerts_total{kind}`: Counter of alerts raised (`pool_saturated`, `idle_in_transaction`).
+
+Alerts are also logged at warn level with the offending pool numbers.
+
 ## Useful Prometheus Queries
 
 - Contribution Rate (per sec):
