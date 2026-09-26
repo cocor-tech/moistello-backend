@@ -2,12 +2,56 @@ package indexer
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
+	"github.com/rs/zerolog/log"
 	"github.com/stellar/go/xdr"
 )
+
+// maxPayloadSnippet bounds how much raw payload is attached to a log line.
+const maxPayloadSnippet = 128
+
+// payloadSnippet truncates s so failure logs carry enough of the raw payload
+// for triage without dumping an entire event.
+func payloadSnippet(s string) string {
+	if len(s) > maxPayloadSnippet {
+		return s[:maxPayloadSnippet] + "..."
+	}
+	return s
+}
+
+// eventTypeHash returns a stable hex digest identifying an event type from
+// its raw bytes (or its name), so undecodable events can still be grouped.
+func eventTypeHash(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
+}
+
+// logSkippedEvent records why a contract event could not be decoded, with the
+// contract, event type hash, ledger, and a raw payload snippet.
+func logSkippedEvent(reason, txHash string, ledger int64, contractID string, raw xdr.ContractEvent, topics []xdr.ScVal) {
+	var typeHash, snippet string
+	if len(topics) > 0 {
+		if b, err := topics[0].MarshalBinary(); err == nil {
+			typeHash = eventTypeHash(b)
+		}
+	}
+	if b, err := raw.MarshalBinary(); err == nil {
+		snippet = payloadSnippet(base64.StdEncoding.EncodeToString(b))
+	}
+	log.Warn().
+		Str("reason", reason).
+		Str("contract", contractID).
+		Str("event_type_hash", typeHash).
+		Int64("ledger", ledger).
+		Str("hash", txHash).
+		Str("payload", snippet).
+		Msg("skipping undecodable contract event")
+}
 
 // ParseContractEvents decodes the base64-encoded result_meta_xdr from a Stellar
 // transaction and extracts all Soroban contract events contained within. Each
@@ -65,16 +109,19 @@ func decodeContractEvent(txHash string, ledger int64, raw xdr.ContractEvent) (Co
 
 	body, ok := raw.Body.GetV0()
 	if !ok {
+		logSkippedEvent("unsupported event body version", txHash, ledger, contractID, raw, nil)
 		return ContractEvent{}, false
 	}
 
 	topics := body.Topics
 	if len(topics) == 0 {
+		logSkippedEvent("event has no topics", txHash, ledger, contractID, raw, topics)
 		return ContractEvent{}, false
 	}
 
 	eventType := decodeSymbol(topics[0])
 	if eventType == "" {
+		logSkippedEvent("event type topic is not a symbol or string", txHash, ledger, contractID, raw, topics)
 		return ContractEvent{}, false
 	}
 

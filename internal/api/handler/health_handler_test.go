@@ -2,10 +2,12 @@ package handler
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/alicebob/miniredis/v2"
@@ -105,6 +107,55 @@ func TestHealthHandler_Readiness_Unhealthy(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Contains(t, w.Body.String(), "not ready")
+}
+
+func TestHealthHandler_Readiness_ReportsPerDependencyStatus(t *testing.T) {
+	h, mock, cleanup := setupTestHealthHandler(t)
+	defer cleanup()
+
+	mock.ExpectPing().WillReturnError(sql.ErrConnDone)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+
+	h.Readiness(c)
+
+	var resp HealthResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "not ready", resp.Status)
+	assert.Equal(t, "unhealthy", resp.Dependencies["postgres"].Status)
+	assert.Equal(t, "healthy", resp.Dependencies["redis"].Status)
+	assert.Equal(t, "healthy", resp.Dependencies["rabbitmq"].Status)
+}
+
+func TestHealthHandler_Readiness_RedisDown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mockDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
+	require.NoError(t, err)
+	defer mockDB.Close()
+	mock.ExpectPing()
+
+	// Nothing listens on this address, so the Redis check must fail.
+	rds := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
+	defer rds.Close()
+
+	h := NewHealthHandler(mockDB, rds, "", "")
+	h.WithRabbitMQ(&mockRabbit{alive: true})
+	h.SetTimeout(200 * time.Millisecond)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+
+	h.Readiness(c)
+
+	var resp HealthResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, "unhealthy", resp.Dependencies["redis"].Status)
+	assert.Equal(t, "healthy", resp.Dependencies["postgres"].Status)
 }
 
 func TestHealthHandler_Liveness(t *testing.T) {

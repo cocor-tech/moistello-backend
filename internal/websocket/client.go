@@ -45,6 +45,11 @@ type Client struct {
 	mu          sync.Mutex
 	closing     chan struct{}
 	closeOnce   sync.Once
+
+	// reconnectAfter is the backoff hint (nanoseconds) sent in the close
+	// frame on shutdown; zero means pick a default jittered delay.
+	reconnectAfter atomic.Int64
+	subscribeLimit tokenBucket
 }
 
 // NewClient creates a new Client bound to the given Hub and WebSocket
@@ -132,8 +137,12 @@ func (c *Client) WritePump() {
 		case <-c.closing:
 			// Server is shutting down: tell the peer to reconnect elsewhere.
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			delay := time.Duration(c.reconnectAfter.Load())
+			if delay <= 0 {
+				delay = reconnectDelay(reconnectSpread(0))
+			}
 			_ = c.Conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, shutdownCloseReason(delay)))
 			return
 		case msg, ok := <-c.Send:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
@@ -205,6 +214,10 @@ func (c *Client) handleMessage(data []byte) {
 	case "subscribe":
 		circleID, _ := msg["circleId"].(string)
 		if circleID == "" {
+			return
+		}
+		if !c.subscribeLimit.allow(time.Now(), subscribeBurst, subscribeRefill) {
+			c.sendError("rate limited: too many subscribe requests")
 			return
 		}
 		if !c.Hub.JoinRoom(circleID, c.ID) {

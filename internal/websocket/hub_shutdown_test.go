@@ -65,7 +65,9 @@ func TestHub_Shutdown_SendsCloseFrameAndDrains(t *testing.T) {
 		var closeErr *websocket.CloseError
 		require.ErrorAs(t, err, &closeErr, "peer must receive a close frame")
 		assert.Equal(t, websocket.CloseGoingAway, closeErr.Code)
-		assert.Equal(t, "server shutting down", closeErr.Text)
+		assert.True(t, strings.HasPrefix(closeErr.Text, shutdownReason))
+		_, ok := parseReconnectAfter(closeErr.Text)
+		assert.True(t, ok, "close reason must carry a reconnect hint")
 	}
 
 	// Idempotent.

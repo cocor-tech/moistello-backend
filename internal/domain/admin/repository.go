@@ -2,8 +2,8 @@ package admin
 
 import "context"
 
-// Repository computes platform-wide aggregate metrics from the primary
-// database.
+// Repository computes platform-wide aggregate metrics. The queries are
+// latency-tolerant and are served from a read replica when one is configured.
 type Repository interface {
 	// Metrics returns the aggregate platform snapshot. The time-bucketed
 	// daily volume for the trailing `days` days is included.
