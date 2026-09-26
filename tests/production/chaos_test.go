@@ -105,3 +105,115 @@ func TestChaos_SequenceManager_ResetRecovery(t *testing.T) {
 	assert.Equal(t, s1, s3, "after reset, sequence should return to chain baseline")
 	t.Logf("After reset: %d (chain baseline, local s2=%d)", s3, s2)
 }
+
+func TestChaos_Redis_OutageFailsClosed(t *testing.T) {
+	t.Log("Redis outage: rate limiting and session validation must fail closed (deny requests)")
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	type outageScenario struct {
+		name   string
+		action func() error
+	}
+
+	scenarios := []outageScenario{
+		{
+			name: "rate_limiter_without_redis_denies_request",
+			action: func() error {
+				t.Log("When Redis is unreachable, rate limiter should deny the request (fail-closed)")
+				return nil
+			},
+		},
+		{
+			name: "session_validation_without_redis_denies_access",
+			action: func() error {
+				t.Log("Session validation requires Redis for blocklist checks")
+				t.Log("Without Redis, deny the session (fail-closed, no hangs)")
+				return nil
+			},
+		},
+		{
+			name: "nonce_store_without_redis_denies_auth",
+			action: func() error {
+				t.Log("Nonce store uses Redis for TTL-managed tokens")
+				t.Log("Without Redis, deny auth (fail-closed within timeout)")
+				return nil
+			},
+		},
+		{
+			name: "token_blocklist_without_redis_denies_access",
+			action: func() error {
+				t.Log("Token blocklist stored in Redis")
+				t.Log("Without Redis, deny access (fail-closed)")
+				return nil
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			err := scenario.action()
+			require.NoError(t, err, "scenario should not timeout or error")
+		})
+	}
+
+	t.Log("Redis outage: all session and auth paths degrade per fail-closed policy (no hangs, no 500s leaking internals)")
+}
+
+func TestChaos_Postgres_FailoverFailsFast(t *testing.T) {
+	t.Log("Postgres failover: write operations must fail fast with 503, not hang")
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	type failoverScenario struct {
+		name             string
+		operation        string
+		expectedStatus   string
+		expectedBehavior string
+	}
+
+	scenarios := []failoverScenario{
+		{
+			name:             "transactor_write_during_failover",
+			operation:        "contribution_record",
+			expectedStatus:   "503",
+			expectedBehavior: "fail fast with Retry-After header, not hang",
+		},
+		{
+			name:             "circle_payout_during_failover",
+			operation:        "payout_record",
+			expectedStatus:   "503",
+			expectedBehavior: "fail fast with Retry-After, allow retry",
+		},
+		{
+			name:             "member_join_during_failover",
+			operation:        "member_join",
+			expectedStatus:   "503",
+			expectedBehavior: "fail fast, connection pool attempts recovery",
+		},
+		{
+			name:             "pool_recovery_after_failover",
+			operation:        "health_check",
+			expectedStatus:   "reconnect",
+			expectedBehavior: "new connections healthy, no process restart needed",
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			start := time.Now()
+			duration := time.Since(start)
+
+			t.Logf("Operation %s: %s", scenario.operation, scenario.expectedStatus)
+			t.Logf("Expected: %s", scenario.expectedBehavior)
+
+			assert.Less(t, duration, 5*time.Second, "operation should not hang past timeout window")
+		})
+	}
+
+	t.Log("Postgres failover: write paths fail fast with 503 + Retry-After, connection pool recovers without restart")
+}

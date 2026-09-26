@@ -406,6 +406,18 @@ func (h *CircleHandler) GetRounds(c *gin.Context) {
 		entry["payout"] = p
 	}
 
+	roundNumbers := make([]int, 0, len(roundMap))
+	for roundNum := range roundMap {
+		roundNumbers = append(roundNumbers, roundNum)
+	}
+
+	for roundNum, entry := range roundMap {
+		configSnapshot, err := h.circleService.QueryRoundConfig(c.Request.Context(), circleID, roundNum)
+		if err == nil && configSnapshot != nil {
+			entry["configSnapshot"] = configSnapshot
+		}
+	}
+
 	rounds := make([]map[string]any, 0, len(roundMap))
 	for _, v := range roundMap {
 		rounds = append(rounds, v)
