@@ -32,6 +32,10 @@ type Config struct {
 	Tracing      TracingConfig
 	Swap         SwapConfig        `mapstructure:"swap"`
 	MobileMoney  MobileMoneyConfig `mapstructure:"mobile_money"`
+
+	// Hot holds the live values of the keys that can be reloaded without a
+	// restart (see HotReloader).
+	Hot *HotReloader `mapstructure:"-"`
 }
 
 type ServerConfig struct {
@@ -278,7 +282,7 @@ type TracingConfig struct {
 	SampleRate        float64 `mapstructure:"sample_rate"`
 }
 
-func Load(path string) (*Config, error) {
+func newViper() *viper.Viper {
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
@@ -288,6 +292,11 @@ func Load(path string) (*Config, error) {
 	v.SetEnvPrefix("MOISTELLO")
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	return v
+}
+
+func Load(path string) (*Config, error) {
+	v := newViper()
 
 	setDefault(v, "server.port", 1100)
 	setDefault(v, "server.host", "0.0.0.0")
@@ -474,6 +483,8 @@ func Load(path string) (*Config, error) {
 	if cfg.Environment != "development" && strings.Contains(cfg.Database.URL, "sslmode=disable") {
 		panic(fmt.Errorf("database.url must not use sslmode=disable outside development; use sslmode=require or stronger"))
 	}
+
+	cfg.Hot = NewHotReloader(&cfg)
 
 	return &cfg, nil
 }

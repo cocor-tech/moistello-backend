@@ -43,6 +43,13 @@ func NewEngine(
 	reconciler *Reconciler,
 	cursor *CursorTracker,
 ) *Engine {
+	metrics := NewIndexerMetrics()
+	if processor != nil {
+		processor.unknownEvents = metrics.UnknownContractEvents
+		if poller != nil {
+			processor.SetKnownContracts(poller.ContractIDs())
+		}
+	}
 	return &Engine{
 		cfg:         cfg,
 		db:          db,
@@ -54,7 +61,7 @@ func NewEngine(
 		reconciler:  reconciler,
 		dedup:       NewDeduplicator(24 * time.Hour),
 		stopCh:      make(chan struct{}),
-		metrics:     NewIndexerMetrics(),
+		metrics:     metrics,
 	}
 }
 

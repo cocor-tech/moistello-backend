@@ -36,6 +36,26 @@ var (
 		Help: "Database connection pool stats and utilization",
 	}, []string{"type"})
 
+	DBPoolWaitTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "moistello_db_pool_wait_total",
+		Help: "Total number of times a caller had to wait for a free database connection",
+	})
+
+	DBPoolWaitSecondsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "moistello_db_pool_wait_seconds_total",
+		Help: "Total time callers spent waiting to acquire a database connection",
+	})
+
+	DBIdleInTransaction = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "moistello_db_idle_in_transaction_connections",
+		Help: "Connections idle in transaction longer than the leak threshold",
+	})
+
+	DBPoolAlertsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "moistello_db_pool_alerts_total",
+		Help: "Database pool alerts raised (pool_saturated, idle_in_transaction)",
+	}, []string{"kind"})
+
 	RPCLatencySeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "moistello_rpc_latency_seconds",
 		Help:    "RPC call latency in seconds",

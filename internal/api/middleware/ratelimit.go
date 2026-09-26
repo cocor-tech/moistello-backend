@@ -47,6 +47,7 @@ const (
 
 type rateLimitOptions struct {
 	policy rateLimitPolicy
+	limits func() config.RateLimitConfig
 }
 
 type RateLimitOption func(*rateLimitOptions)
@@ -62,6 +63,25 @@ func WithFailClosed() RateLimitOption {
 // limit.
 func WithFailOpen() RateLimitOption {
 	return func(o *rateLimitOptions) { o.policy = policyFailOpen }
+}
+
+// WithLiveLimits makes the middleware read its Global/Authenticated/Auth limits
+// from fn on every request instead of the value captured at startup, so they
+// can be hot-reloaded. The outage policy is still taken from the startup config.
+func WithLiveLimits(fn func() config.RateLimitConfig) RateLimitOption {
+	return func(o *rateLimitOptions) { o.limits = fn }
+}
+
+// currentLimits returns the limits to enforce for this request.
+func currentLimits(cfg config.RateLimitConfig, opts ...RateLimitOption) func() config.RateLimitConfig {
+	o := rateLimitOptions{}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.limits != nil {
+		return o.limits
+	}
+	return func() config.RateLimitConfig { return cfg }
 }
 
 func resolveFailClosed(cfg config.RateLimitConfig, opts ...RateLimitOption) bool {
@@ -115,12 +135,14 @@ func enforceRateLimit(c *gin.Context, redisClient *redis.Client, key string, lim
 
 func RateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConfig, opts ...RateLimitOption) gin.HandlerFunc {
 	failClosed := resolveFailClosed(cfg, opts...)
+	limits := currentLimits(cfg, opts...)
 	return func(c *gin.Context) {
+		live := limits()
 		key := "ratelimit:g:" + c.ClientIP()
-		limit := cfg.Global
+		limit := live.Global
 		if _, exists := c.Get("userID"); exists {
 			key = "ratelimit:u:" + GetUserID(c)
-			limit = cfg.Authenticated
+			limit = live.Authenticated
 		}
 
 		if !enforceRateLimit(c, redisClient, key, limit, 1*time.Minute, failClosed, "rate limit exceeded") {
@@ -134,9 +156,10 @@ func AuthRateLimitMiddleware(redisClient *redis.Client, cfg config.RateLimitConf
 	// Auth/OTP is the case the policy exists for: fail closed even if the
 	// global config is ever flipped, unless the caller explicitly overrides.
 	failClosed := resolveFailClosed(cfg, append(opts, WithFailClosed())...)
+	limits := currentLimits(cfg, opts...)
 	return func(c *gin.Context) {
 		key := "ratelimit:a:" + c.ClientIP()
-		limit := cfg.Auth
+		limit := limits().Auth
 
 		if !enforceRateLimit(c, redisClient, key, limit, 1*time.Minute, failClosed, "too many auth attempts") {
 			return

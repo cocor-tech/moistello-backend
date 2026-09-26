@@ -26,6 +26,15 @@ func perResource(redisClient *redis.Client, resource string, limit, windowSecond
 	)
 }
 
+// liveLimitOptions wires the hot-reloadable rate limits into a middleware when
+// the config carries a reloader.
+func liveLimitOptions(cfg *config.Config) []middleware.RateLimitOption {
+	if cfg.Hot == nil {
+		return nil
+	}
+	return []middleware.RateLimitOption{middleware.WithLiveLimits(cfg.Hot.RateLimit)}
+}
+
 func NewRouter(
 	cfg *config.Config,
 	redisClient *redis.Client,
@@ -70,7 +79,7 @@ func NewRouter(
 	metricsKey := cfg.Auth.AdminAPIKey
 	r.GET("/metrics", middleware.AdminAPIKeyMiddleware(metricsKey), gin.WrapH(promhttp.Handler()))
 
-	r.Use(middleware.RateLimitMiddleware(redisClient, cfg.RateLimit))
+	r.Use(middleware.RateLimitMiddleware(redisClient, cfg.RateLimit, liveLimitOptions(cfg)...))
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/health/ready", healthHandler.Readiness)
@@ -97,7 +106,7 @@ func NewRouter(
 	api := r.Group("/v1")
 	{
 		auth := api.Group("/auth")
-		auth.Use(middleware.AuthRateLimitMiddleware(redisClient, cfg.RateLimit))
+		auth.Use(middleware.AuthRateLimitMiddleware(redisClient, cfg.RateLimit, liveLimitOptions(cfg)...))
 		{
 			auth.POST("/register", perResource(redisClient, "otp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds), authHandler.Register)
 			auth.POST("/register/verify", perResource(redisClient, "otp", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds), authHandler.RegisterVerify)

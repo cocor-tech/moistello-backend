@@ -9,7 +9,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
@@ -482,6 +483,34 @@ func TestDispatchEvent_UnknownType_NoError(t *testing.T) {
 	ev := contractEvent("UnknownEventXYZ", "cid1", nil)
 	err := p.dispatchEvent(context.Background(), ev)
 	assert.NoError(t, err)
+}
+
+func TestProcessContractEvents_UnknownContractSkipped(t *testing.T) {
+	p := newTestProcessor(nil, nil, nil, nil, nil)
+	p.SetKnownContracts([]string{"known"})
+	p.unknownEvents = prometheus.NewCounter(prometheus.CounterOpts{Name: "test_unknown_events"})
+
+	p.processContractEvents(context.Background(), "tx1", []ContractEvent{
+		*contractEvent(EventCircleCreated, "stranger", nil),
+	})
+
+	assert.Equal(t, 1.0, testutil.ToFloat64(p.unknownEvents))
+}
+
+func TestProcessContractEvents_PoisonEventDoesNotHaltProcessing(t *testing.T) {
+	// Nil repositories make the CircleCreated handler panic; the following
+	// event must still be processed.
+	p := newTestProcessor(nil, nil, nil, nil, nil)
+	p.SetKnownContracts([]string{"known"})
+	p.unknownEvents = prometheus.NewCounter(prometheus.CounterOpts{Name: "test_unknown_events"})
+
+	assert.NotPanics(t, func() {
+		p.processContractEvents(context.Background(), "tx1", []ContractEvent{
+			*contractEvent(EventCircleCreated, "known", nil),
+			*contractEvent(EventCircleCreated, "stranger", nil),
+		})
+	})
+	assert.Equal(t, 1.0, testutil.ToFloat64(p.unknownEvents))
 }
 
 // ---------------------------------------------------------------------------

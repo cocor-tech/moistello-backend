@@ -7,13 +7,14 @@ import (
 
 // IndexerMetrics exposes Prometheus counters and gauges for the indexer engine.
 type IndexerMetrics struct {
-	EventsProcessed  prometheus.Counter
-	PollErrors       prometheus.Counter
-	ProcessErrors    prometheus.Counter
-	LastLedger       prometheus.Gauge
-	ReconcilerRuns   prometheus.Counter
-	DedupSize        prometheus.Gauge
-	CursorLagSeconds prometheus.Gauge
+	EventsProcessed       prometheus.Counter
+	PollErrors            prometheus.Counter
+	ProcessErrors         prometheus.Counter
+	LastLedger            prometheus.Gauge
+	ReconcilerRuns        prometheus.Counter
+	DedupSize             prometheus.Gauge
+	CursorLagSeconds      prometheus.Gauge
+	UnknownContractEvents prometheus.Counter
 }
 
 // NewIndexerMetrics creates and registers all indexer Prometheus metrics.
@@ -46,6 +47,10 @@ func NewIndexerMetrics() *IndexerMetrics {
 		CursorLagSeconds: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "moistello_indexer_cursor_lag_seconds",
 			Help: "Seconds since the indexer cursor was last advanced",
+		}),
+		UnknownContractEvents: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "moistello_indexer_unknown_contract_events_total",
+			Help: "Total contract events skipped because they came from an unknown contract",
 		}),
 	}
 }

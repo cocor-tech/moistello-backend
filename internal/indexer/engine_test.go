@@ -24,13 +24,14 @@ import (
 // tripping "duplicate metrics collector registration" panics.
 func newUnregisteredMetrics() *IndexerMetrics {
 	return &IndexerMetrics{
-		EventsProcessed:  prometheus.NewCounter(prometheus.CounterOpts{Name: "test_events_processed"}),
-		PollErrors:       prometheus.NewCounter(prometheus.CounterOpts{Name: "test_poll_errors"}),
-		ProcessErrors:    prometheus.NewCounter(prometheus.CounterOpts{Name: "test_process_errors"}),
-		LastLedger:       prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_last_ledger"}),
-		ReconcilerRuns:   prometheus.NewCounter(prometheus.CounterOpts{Name: "test_reconciler_runs"}),
-		DedupSize:        prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_dedup_size"}),
-		CursorLagSeconds: prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_cursor_lag_seconds"}),
+		EventsProcessed:       prometheus.NewCounter(prometheus.CounterOpts{Name: "test_events_processed"}),
+		PollErrors:            prometheus.NewCounter(prometheus.CounterOpts{Name: "test_poll_errors"}),
+		ProcessErrors:         prometheus.NewCounter(prometheus.CounterOpts{Name: "test_process_errors"}),
+		LastLedger:            prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_last_ledger"}),
+		ReconcilerRuns:        prometheus.NewCounter(prometheus.CounterOpts{Name: "test_reconciler_runs"}),
+		DedupSize:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_dedup_size"}),
+		CursorLagSeconds:      prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_cursor_lag_seconds"}),
+		UnknownContractEvents: prometheus.NewCounter(prometheus.CounterOpts{Name: "test_unknown_contract_events"}),
 	}
 }
 

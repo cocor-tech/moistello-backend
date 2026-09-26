@@ -10,7 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
+	"github.com/stellar/go/strkey"
 
 	"github.com/moistello/backend/internal/domain/circle"
 	"github.com/moistello/backend/internal/domain/contribution"
@@ -33,6 +35,11 @@ type EventProcessor struct {
 	reputationRepo reputation.Repository
 	userRepo       user.Repository
 	wsBroadcast    func(circleID string, data any)
+
+	// knownContracts is the set of contract IDs the indexer decodes events for.
+	// Events from any other contract are skipped and recorded, never dispatched.
+	knownContracts map[string]struct{}
+	unknownEvents  prometheus.Counter
 }
 
 // NewEventProcessor creates a new EventProcessor with all required dependencies.
@@ -61,6 +68,28 @@ func NewEventProcessor(
 // subscribed to the relevant circle room.
 func (p *EventProcessor) SetWebSocketBroadcast(fn func(circleID string, data any)) {
 	p.wsBroadcast = fn
+}
+
+// SetKnownContracts sets the contract IDs whose events are dispatched to
+// handlers. Contract strkeys ("C...") are also registered in the hex form used
+// by decoded events. When empty, no event is treated as coming from an
+// unknown contract.
+func (p *EventProcessor) SetKnownContracts(ids []string) {
+	p.knownContracts = make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		p.knownContracts[id] = struct{}{}
+		if raw, err := strkey.Decode(strkey.VersionByteContract, id); err == nil {
+			p.knownContracts[fmt.Sprintf("%x", raw)] = struct{}{}
+		}
+	}
+}
+
+func (p *EventProcessor) isUnknownContract(contractID string) bool {
+	if len(p.knownContracts) == 0 {
+		return false
+	}
+	_, ok := p.knownContracts[contractID]
+	return !ok
 }
 
 // ProcessTransaction maps a Stellar transaction to domain events and
@@ -151,35 +180,60 @@ func (p *EventProcessor) handleSorobanInvoke(ctx context.Context, txn *Transacti
 		return nil
 	}
 
-	// Re-scanning a ledger range must be a no-op: events already recorded in
-	// the contract_events log are skipped, and an event is recorded only
-	// after it was applied so a failed one is retried on the next pass.
+	p.processContractEvents(ctx, txn.Hash, events)
+	return nil
+}
+
+// processContractEvents dispatches decoded events and records all of them in
+// the contract_events log. Events from unknown contracts are skipped, counted
+// and only recorded so they can be decoded later; a single bad event never
+// stops the rest of the transaction from being processed.
+func (p *EventProcessor) processContractEvents(ctx context.Context, txHash string, events []ContractEvent) {
 	for _, ev := range events {
-		if p.eventRecorded(ctx, &ev) {
-			log.Debug().
+		if p.isUnknownContract(ev.ContractID) {
+			if p.unknownEvents != nil {
+				p.unknownEvents.Inc()
+			}
+			log.Warn().
 				Str("event_type", ev.EventType).
-				Str("hash", txn.Hash).
-				Msg("contract event already processed — skipping")
+				Str("contract", ev.ContractID).
+				Str("hash", txHash).
+				Msg("skipping event from unknown contract")
 			continue
 		}
-		if err := p.dispatchEvent(ctx, &ev); err != nil {
+		if err := p.safeDispatchEvent(ctx, &ev); err != nil {
 			log.Warn().Err(err).
 				Str("event_type", ev.EventType).
 				Str("contract", ev.ContractID).
-				Str("event_type_hash", eventTypeHash([]byte(ev.EventType))).
-				Int64("ledger", ev.Ledger).
-				Str("hash", txn.Hash).
-				Str("payload", payloadSnippet(fmt.Sprint(ev.Payload))).
+				Str("hash", txHash).
 				Msg("dispatching contract event")
 			continue
 		}
+	}
+
+	// Persist every event to the contract_events audit table regardless of
+	// individual dispatch success (idempotent append-only log).
+	if p.db == nil {
+		return
+	}
+	for _, ev := range events {
 		if err := p.persistContractEvent(ctx, &ev); err != nil {
 			log.Warn().Err(err).
 				Str("event_type", ev.EventType).
 				Msg("persisting contract event to audit log")
 		}
 	}
-	return nil
+}
+
+// safeDispatchEvent runs dispatchEvent and converts a handler panic caused by
+// a malformed (poison) event into an error.
+func (p *EventProcessor) safeDispatchEvent(ctx context.Context, ev *ContractEvent) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic dispatching %s: %v", ev.EventType, r)
+		}
+	}()
+	return p.dispatchEvent(ctx, ev)
 }
 
 func (p *EventProcessor) handleExtendTTL(ctx context.Context, txn *Transaction, op *Operation) error {

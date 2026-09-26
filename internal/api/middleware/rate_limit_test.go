@@ -379,3 +379,25 @@ func TestPerResourceRateLimitMiddleware_IndependentBudgetsPerResource(t *testing
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code, "contribute has its own independent budget")
 }
+
+// TestRateLimitMiddleware_LiveLimitsApplyWithoutRestart verifies that limits
+// supplied through WithLiveLimits are re-read on every request.
+func TestRateLimitMiddleware_LiveLimitsApplyWithoutRestart(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rdb := newUnreachableRedis()
+	defer rdb.Close()
+
+	live := newRateLimitConfig()
+	r := gin.New()
+	r.Use(middleware.RateLimitMiddleware(rdb, newRateLimitConfig(), middleware.WithLiveLimits(func() config.RateLimitConfig { return live })))
+	r.GET("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
+	assert.Equal(t, "100", w.Header().Get("X-RateLimit-Limit"))
+
+	live.Global = 7
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil))
+	assert.Equal(t, "7", w.Header().Get("X-RateLimit-Limit"))
+}

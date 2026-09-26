@@ -55,7 +55,8 @@ func Ctx(ctx context.Context) zerolog.Logger {
 	return logger.Logger()
 }
 
-func Init(level string, format string) {
+// SetLevel changes the global log level; unknown values fall back to info.
+func SetLevel(level string) {
 	switch level {
 	case "debug":
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
@@ -68,6 +69,10 @@ func Init(level string, format string) {
 	default:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
+}
+
+func Init(level string, format string) {
+	SetLevel(level)
 	if format == "console" {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	}

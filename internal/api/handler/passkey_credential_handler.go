@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+
+	"github.com/moistello/backend/pkg/logger"
 )
 
 type PasskeyCredentialHandler struct {
@@ -44,7 +45,7 @@ func (h *PasskeyCredentialHandler) StoreCredential(c *gin.Context) {
 		req.CredentialID, req.PublicKey, req.Counter, pq.Array(req.Transports), req.EmailHash,
 	)
 	if err != nil {
-		log.Printf("StoreCredential error: %v", err)
+		logger.Ctx(c.Request.Context()).Error().Err(err).Msg("failed to store passkey credential")
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "failed to store credential"})
 		return
 	}

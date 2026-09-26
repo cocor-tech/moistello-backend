@@ -6,12 +6,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/moistello/backend/pkg/apperrors"
+	"github.com/moistello/backend/pkg/logger"
 )
 
 type Service interface {
@@ -83,10 +83,10 @@ func (s *inviteService) Generate(ctx context.Context, input GenerateInput) (*Inv
 	}
 
 	if err := s.repo.Create(ctx, inv); err != nil {
-		log.Printf("[invite] ERROR creating invite for circle %s: %v", input.CircleID, err)
+		logger.Ctx(ctx).Error().Err(err).Str("circleID", input.CircleID).Msg("failed to create invite")
 		return nil, fmt.Errorf("generating invite: %w", err)
 	}
-	log.Printf("[invite] created invite %s for circle %s", code, input.CircleID)
+	logger.Ctx(ctx).Info().Str("inviteID", inv.ID.String()).Str("circleID", input.CircleID).Msg("invite created")
 	return inv, nil
 }
 

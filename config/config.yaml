@@ -104,6 +104,8 @@ cors:
   allow_credentials: true
   max_age: "24h"
 
+# logging.level and rate_limit.global/authenticated/auth are hot-reloaded when
+# this file changes; every other key requires a restart.
 rate_limit:
   global: 100
   authenticated: 300
