@@ -56,6 +56,7 @@ type ServerConfig struct {
 
 type DatabaseConfig struct {
 	URL             string        `mapstructure:"url"`
+	ReplicaURL      string        `mapstructure:"replica_url"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
@@ -367,6 +368,7 @@ func Load(path string) (*Config, error) {
 
 	mustBindEnv(v, "environment", "MOISTELLO_ENVIRONMENT", "NODE_ENV")
 	mustBindEnv(v, "database.url", "MOISTELLO_DATABASE_URL", "DATABASE_URL")
+	mustBindEnv(v, "database.replica_url", "MOISTELLO_DATABASE_REPLICA_URL", "DATABASE_REPLICA_URL")
 	mustBindEnv(v, "stellar.master_secret_key", "MOISTELLO_STELLAR_MASTER_SECRET_KEY", "STELLAR_MASTER_SECRET_KEY")
 	mustBindEnv(v, "stellar.master_public_key", "MOISTELLO_STELLAR_MASTER_PUBLIC_KEY", "STELLAR_MASTER_PUBLIC_KEY")
 	mustBindEnv(v, "security.wallet_pepper", "MOISTELLO_WALLET_PEPPER")

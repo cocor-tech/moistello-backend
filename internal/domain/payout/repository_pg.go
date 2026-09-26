@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"github.com/moistello/backend/pkg/apperrors"
 )
@@ -54,6 +55,9 @@ func (r *pgRepo) Create(ctx context.Context, p *Payout) error {
 		VALUES (:id, :circle_id, :recipient_id, :round_number, :amount, :fee_amount, :txn_hash, :payout_type, :verified_onchain, :verification_status, :created_at)`
 	_, err := r.db.NamedExecContext(ctx, query, p)
 	if err != nil {
+		if isUniqueViolationPg(err) {
+			return apperrors.ErrConflict
+		}
 		return fmt.Errorf("creating payout: %w", err)
 	}
 	return nil
@@ -144,4 +148,11 @@ func (r *pgRepo) ListByCircle(ctx context.Context, circleID uuid.UUID, page, lim
 		return nil, 0, fmt.Errorf("iterating payouts: %w", err)
 	}
 	return payouts, total, nil
+}
+
+func isUniqueViolationPg(err error) bool {
+	if pqErr, ok := err.(*pq.Error); ok {
+		return pqErr.Code == pq.ErrorCode("23505")
+	}
+	return false
 }

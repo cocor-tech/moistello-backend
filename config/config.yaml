@@ -15,6 +15,9 @@ server:
   shutdown_timeout: "30s"
 
 database:
+  # Optional read replica (env MOISTELLO_DATABASE_REPLICA_URL). When set,
+  # whitelisted read-heavy analytics queries use it; otherwise the primary.
+  replica_url: ""
   max_open_conns: 50
   max_idle_conns: 10
   conn_max_lifetime: "30m"
