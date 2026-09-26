@@ -582,3 +582,75 @@ func validateDuration(name string, ok bool) {
 		panic(fmt.Errorf("config: %s must be greater than zero", name))
 	}
 }
+
+// ValidateSecrets performs pre-deploy validation that all required secrets are present.
+// Call this before any sensitive operations to fail fast with clear error messages.
+func (c *Config) ValidateSecrets() error {
+	required := []struct {
+		name  string
+		value string
+	}{
+		{"Auth.JWTPrivateKeyPEM", c.Auth.JWTPrivateKeyPEM},
+		{"Auth.JWTPublicKeyPEM", c.Auth.JWTPublicKeyPEM},
+		{"Auth.AdminAPIKey", c.Auth.AdminAPIKey},
+		{"Security.WalletPepper", c.Security.WalletPepper},
+		{"Security.EncryptionKey", c.Security.EncryptionKey},
+		{"Stellar.MasterSecretKey", c.Stellar.MasterSecretKey},
+		{"Redis.Password", c.Redis.Password},
+		{"Database.Password", c.Database.Password},
+		{"YellowCard.WebhookSecret", c.YellowCard.WebhookSecret},
+	}
+
+	var missing []string
+	for _, req := range required {
+		if strings.TrimSpace(req.value) == "" {
+			missing = append(missing, req.name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"[SECURITY CRITICAL] Missing required secrets — deploy blocked: %v. See docs/ops/SECRETS-RUNBOOK.md",
+			missing,
+		)
+	}
+
+	// Validate format of hex keys
+	if err := validateHexKeyFormat("Security.EncryptionKey", c.Security.EncryptionKey); err != nil {
+		return err
+	}
+	if err := validateHexKeyFormat("Security.WalletPepper", c.Security.WalletPepper); err != nil {
+		return err
+	}
+	if err := validateHexKeyFormat("Auth.AdminAPIKey", c.Auth.AdminAPIKey); err != nil {
+		return err
+	}
+	if err := validateHexKeyFormat("YellowCard.WebhookSecret", c.YellowCard.WebhookSecret); err != nil {
+		return err
+	}
+
+	// Validate JWT keys are PEM format
+	if !strings.HasPrefix(strings.TrimSpace(c.Auth.JWTPrivateKeyPEM), "-----BEGIN") {
+		return fmt.Errorf("[SECURITY CRITICAL] Auth.JWTPrivateKeyPEM must be PEM format (-----BEGIN...)")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(c.Auth.JWTPublicKeyPEM), "-----BEGIN") {
+		return fmt.Errorf("[SECURITY CRITICAL] Auth.JWTPublicKeyPEM must be PEM format (-----BEGIN...)")
+	}
+
+	return nil
+}
+
+// validateHexKeyFormat ensures a secret is 32-byte hex (64 hex chars).
+func validateHexKeyFormat(name, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, "-----BEGIN") && len(trimmed) > 0 {
+		// Only validate hex keys (not PEM keys like JWT keys)
+		if !strings.ContainsAny(strings.ToLower(trimmed), "ghijklmnopqrstuvwxyz") {
+			raw, err := hex.DecodeString(trimmed)
+			if err != nil || len(raw) != 32 {
+				return fmt.Errorf("[SECURITY CRITICAL] %s must be 32-byte hex (got %d chars)", name, len(trimmed))
+			}
+		}
+	}
+	return nil
+}
