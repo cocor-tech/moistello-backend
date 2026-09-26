@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/moistello/backend/internal/domain/payout"
 	"github.com/moistello/backend/internal/domain/reputation"
 	"github.com/moistello/backend/internal/domain/user"
+	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/rabbitmq"
 )
 
@@ -147,19 +149,25 @@ func (p *EventProcessor) handleSorobanInvoke(ctx context.Context, txn *Transacti
 		return nil
 	}
 
+	// Re-scanning a ledger range must be a no-op: events already recorded in
+	// the contract_events log are skipped, and an event is recorded only
+	// after it was applied so a failed one is retried on the next pass.
 	for _, ev := range events {
+		if p.eventRecorded(ctx, &ev) {
+			log.Debug().
+				Str("event_type", ev.EventType).
+				Str("hash", txn.Hash).
+				Msg("contract event already processed — skipping")
+			continue
+		}
 		if err := p.dispatchEvent(ctx, &ev); err != nil {
 			log.Warn().Err(err).
 				Str("event_type", ev.EventType).
 				Str("contract", ev.ContractID).
 				Str("hash", txn.Hash).
 				Msg("dispatching contract event")
+			continue
 		}
-	}
-
-	// Persist every event to the contract_events audit table regardless of
-	// individual dispatch success (idempotent append-only log).
-	for _, ev := range events {
 		if err := p.persistContractEvent(ctx, &ev); err != nil {
 			log.Warn().Err(err).
 				Str("event_type", ev.EventType).
@@ -282,6 +290,10 @@ func (p *EventProcessor) onMemberJoined(ctx context.Context, ev *ContractEvent) 
 		JoinedAt: time.Now().UTC(),
 	}
 	if err := p.circleRepo.CreateMember(ctx, member); err != nil {
+		if errors.Is(err, circle.ErrAlreadyMember) {
+			log.Debug().Str("tx_hash", ev.TxHash).Msg("MemberJoined: already recorded")
+			return nil
+		}
 		return fmt.Errorf("onMemberJoined create member: %w", err)
 	}
 
@@ -338,6 +350,12 @@ func (p *EventProcessor) onContributionReceived(ctx context.Context, ev *Contrac
 		UpdatedAt:   time.Now().UTC(),
 	}
 	if err := p.contribRepo.Create(ctx, contrib); err != nil {
+		if errors.Is(err, apperrors.ErrConflict) {
+			// Already recorded by an earlier pass over this ledger range;
+			// skip the counter update so totals are not counted twice.
+			log.Debug().Str("tx_hash", ev.TxHash).Msg("ContributionReceived: already recorded")
+			return nil
+		}
 		return fmt.Errorf("onContributionReceived create: %w", err)
 	}
 
@@ -413,6 +431,10 @@ func (p *EventProcessor) onPayoutExecuted(ctx context.Context, ev *ContractEvent
 		CreatedAt:   time.Now().UTC(),
 	}
 	if err := p.payoutRepo.Create(ctx, p2); err != nil {
+		if errors.Is(err, apperrors.ErrConflict) {
+			log.Debug().Str("tx_hash", ev.TxHash).Msg("PayoutExecuted: already recorded")
+			return nil
+		}
 		return fmt.Errorf("onPayoutExecuted create payout: %w", err)
 	}
 
@@ -736,6 +758,27 @@ func (p *EventProcessor) onFeeDeposited(ctx context.Context, ev *ContractEvent) 
 		"ledger":    ev.Ledger,
 	})
 	return nil
+}
+
+// eventRecorded reports whether the event is already in the audit log, which
+// means an earlier pass fully applied it. Lookup failures are treated as
+// "not recorded": the unique constraints on the domain tables still keep a
+// replay harmless.
+func (p *EventProcessor) eventRecorded(ctx context.Context, ev *ContractEvent) bool {
+	if p.db == nil {
+		return false
+	}
+	var exists bool
+	err := p.db.GetContext(ctx, &exists, `
+		SELECT EXISTS (
+			SELECT 1 FROM contract_events
+			WHERE tx_hash = $1 AND contract_id = $2 AND event_type = $3
+		)`, ev.TxHash, ev.ContractID, ev.EventType)
+	if err != nil {
+		log.Warn().Err(err).Str("event_type", ev.EventType).Msg("checking contract event log")
+		return false
+	}
+	return exists
 }
 
 // ---------------------------------------------------------------------------

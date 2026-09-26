@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
@@ -19,6 +21,7 @@ import (
 	reputationMocks "github.com/moistello/backend/internal/domain/reputation/mocks"
 	"github.com/moistello/backend/internal/domain/user"
 	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 // ---------------------------------------------------------------------------
@@ -550,4 +553,102 @@ func TestBroadcast_CallsWsBroadcast(t *testing.T) {
 
 	assert.True(t, called)
 	assert.Equal(t, "circle-123", capturedCircleID)
+}
+
+// ---------------------------------------------------------------------------
+// Idempotent reprocessing
+// ---------------------------------------------------------------------------
+
+func TestOnContributionReceived_Reprocessed_IsNoOp(t *testing.T) {
+	cRepo := &circleMocks.Repository{}
+	ctRepo := &contribMocks.Repository{}
+	uRepo := &userMocks.Repository{}
+	p := newTestProcessor(cRepo, ctRepo, nil, nil, uRepo)
+
+	c := testCircle("cid1")
+	u := testUser("GWALLET1")
+
+	cRepo.On("FindByContractID", mock.Anything, "cid1").Return(c, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET1").Return(u, nil)
+	ctRepo.On("Create", mock.Anything, mock.AnythingOfType("*contribution.Contribution")).Return(apperrors.ErrConflict)
+
+	ev := contractEvent(EventContributionReceived, "cid1", map[string]any{
+		"circle_id": "cid1",
+		"member":    "GWALLET1",
+		"amount":    float64(50),
+		"round":     int(1),
+	})
+
+	assert.NoError(t, p.onContributionReceived(context.Background(), ev))
+	assert.Zero(t, c.TotalContributions, "aggregate must not change on replay")
+	cRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestOnPayoutExecuted_Reprocessed_IsNoOp(t *testing.T) {
+	cRepo := &circleMocks.Repository{}
+	pRepo := &payoutMocks.Repository{}
+	uRepo := &userMocks.Repository{}
+	p := newTestProcessor(cRepo, nil, pRepo, nil, uRepo)
+
+	c := testCircle("cid1")
+	c.CurrentRound = 2
+	u := testUser("GWALLET_RECIPIENT")
+
+	cRepo.On("FindByContractID", mock.Anything, "cid1").Return(c, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET_RECIPIENT").Return(u, nil)
+	pRepo.On("Create", mock.Anything, mock.AnythingOfType("*payout.Payout")).Return(apperrors.ErrConflict)
+
+	ev := contractEvent(EventPayoutExecuted, "cid1", map[string]any{
+		"circle_id":   "cid1",
+		"recipient":   "GWALLET_RECIPIENT",
+		"amount":      float64(500),
+		"round":       int(1),
+		"payout_type": "random",
+	})
+
+	assert.NoError(t, p.onPayoutExecuted(context.Background(), ev))
+	assert.Equal(t, 2, c.CurrentRound, "round must not move on replay")
+	cRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestOnMemberJoined_Reprocessed_IsNoOp(t *testing.T) {
+	cRepo := &circleMocks.Repository{}
+	uRepo := &userMocks.Repository{}
+	p := newTestProcessor(cRepo, nil, nil, nil, uRepo)
+
+	c := testCircle("cid1")
+	u := testUser("GWALLET1")
+
+	cRepo.On("FindByContractID", mock.Anything, "cid1").Return(c, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET1").Return(u, nil)
+	cRepo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(circle.ErrAlreadyMember)
+
+	ev := contractEvent(EventMemberJoined, "cid1", map[string]any{
+		"circle_id": "cid1",
+		"member":    "GWALLET1",
+	})
+
+	assert.NoError(t, p.onMemberJoined(context.Background(), ev))
+}
+
+func TestEventRecorded(t *testing.T) {
+	mockDB, sqlMock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+
+	p := &EventProcessor{db: sqlx.NewDb(mockDB, "sqlmock")}
+	ev := contractEvent(EventDefaultRecorded, "cid1", nil)
+
+	sqlMock.ExpectQuery("SELECT EXISTS").
+		WithArgs(ev.TxHash, ev.ContractID, ev.EventType).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	assert.True(t, p.eventRecorded(context.Background(), ev), "event already in the log must be skipped")
+
+	sqlMock.ExpectQuery("SELECT EXISTS").
+		WithArgs(ev.TxHash, ev.ContractID, ev.EventType).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	assert.False(t, p.eventRecorded(context.Background(), ev))
+
+	assert.False(t, (&EventProcessor{}).eventRecorded(context.Background(), ev), "no database means nothing is recorded")
+	assert.NoError(t, sqlMock.ExpectationsWereMet())
 }

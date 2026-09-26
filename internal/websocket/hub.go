@@ -248,7 +248,11 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	h.mu.Unlock()
 
 	log.Info().Int("clients", len(clients)).Msg("draining websocket clients")
+	// Each client gets its own jittered reconnect hint so the fleet does not
+	// stampede back the moment the server returns.
+	spread := reconnectSpread(len(clients))
 	for _, c := range clients {
+		c.reconnectAfter.Store(int64(reconnectDelay(spread)))
 		c.Close()
 	}
 

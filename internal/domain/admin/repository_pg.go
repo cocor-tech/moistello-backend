@@ -6,14 +6,22 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+
+	"github.com/moistello/backend/pkg/postgres"
 )
 
 type pgRepo struct {
-	db *sqlx.DB
+	reader *postgres.Reader
 }
 
 func NewRepository(db *sqlx.DB) Repository {
-	return &pgRepo{db: db}
+	return NewRepositoryWithReader(postgres.NewReader(db, nil))
+}
+
+// NewRepositoryWithReader routes the analytics queries through reader, so a
+// configured read replica takes the load off the primary.
+func NewRepositoryWithReader(reader *postgres.Reader) Repository {
+	return &pgRepo{reader: reader}
 }
 
 func (r *pgRepo) Metrics(ctx context.Context, days int) (*Metrics, error) {
@@ -27,7 +35,7 @@ func (r *pgRepo) Metrics(ctx context.Context, days int) (*Metrics, error) {
 	m := &Metrics{}
 
 	var totalUsers, totalCircles, activeCircles, totalContributions, totalPayouts, activeUsers, newUsers int
-	if err := r.db.QueryRowxContext(ctx, `
+	if err := r.reader.For(postgres.QueryAdminMetrics).QueryRowxContext(ctx, `
 		SELECT
 			(SELECT COUNT(*) FROM users),
 			(SELECT COUNT(*) FROM circles),
@@ -52,7 +60,7 @@ func (r *pgRepo) Metrics(ctx context.Context, days int) (*Metrics, error) {
 	m.NewUsers30d = newUsers
 
 	var contribVolume, payoutVolume, volume30d float64
-	if err := r.db.QueryRowxContext(ctx, `
+	if err := r.reader.For(postgres.QueryAdminMetrics).QueryRowxContext(ctx, `
 		SELECT
 			COALESCE((SELECT SUM(amount) FROM contributions WHERE status = 'confirmed'), 0),
 			COALESCE((SELECT SUM(amount) FROM payouts), 0),
@@ -101,7 +109,7 @@ func (r *pgRepo) DailyVolume(ctx context.Context, days int) ([]DailyVolumePoint,
 		ORDER BY d.day ASC
 	`
 
-	rows, err := r.db.QueryxContext(ctx, query, days)
+	rows, err := r.reader.For(postgres.QueryAdminDailyVolume).QueryxContext(ctx, query, days)
 	if err != nil {
 		return nil, fmt.Errorf("querying daily volume: %w", err)
 	}

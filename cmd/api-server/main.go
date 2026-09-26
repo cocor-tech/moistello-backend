@@ -146,6 +146,9 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
+	// Optional read replica for analytics queries; nil falls back to the primary.
+	replicaDB := postgres.NewReplica(cfg.Database)
+
 	redisClient, err := redis.New(cfg.Redis)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to redis")
@@ -259,7 +262,7 @@ func main() {
 	payoutH := handler.NewPayoutHandler(payoutSvc, payoutRepo)
 	inviteH := handler.NewInviteHandler(inviteSvc)
 	notifH := handler.NewNotificationHandler(notificationSvc, userSvc)
-	adminSvc := admin.NewService(nil, 0)
+	adminSvc := admin.NewService(admin.NewRepositoryWithReader(postgres.NewReader(db, replicaDB)), 0)
 	featureFlagRepo := featureflag.NewRepository(db)
 	featureFlagSvc := featureflag.NewService(featureFlagRepo)
 	featureFlagCache := featureflag.NewCache(featureFlagSvc, featureflag.DefaultReloadInterval)
@@ -440,6 +443,11 @@ func main() {
 				}
 			},
 			func() {
+				if replicaDB != nil {
+					if err := replicaDB.Close(); err != nil {
+						log.Warn().Err(err).Msg("closing postgres replica")
+					}
+				}
 				if err := db.Close(); err != nil {
 					log.Warn().Err(err).Msg("closing postgres")
 				}
