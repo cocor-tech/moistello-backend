@@ -143,6 +143,8 @@ func (p *EventProcessor) handleSorobanInvoke(ctx context.Context, txn *Transacti
 		// retried by the reconciler on the next pass.
 		log.Warn().Err(err).
 			Str("hash", txn.Hash).
+			Int64("ledger", txn.Ledger).
+			Str("payload", payloadSnippet(op.ResultMetaXDR)).
 			Msg("parsing contract events from result_meta_xdr")
 		return nil
 	}
@@ -152,7 +154,10 @@ func (p *EventProcessor) handleSorobanInvoke(ctx context.Context, txn *Transacti
 			log.Warn().Err(err).
 				Str("event_type", ev.EventType).
 				Str("contract", ev.ContractID).
+				Str("event_type_hash", eventTypeHash([]byte(ev.EventType))).
+				Int64("ledger", ev.Ledger).
 				Str("hash", txn.Hash).
+				Str("payload", payloadSnippet(fmt.Sprint(ev.Payload))).
 				Msg("dispatching contract event")
 		}
 	}
