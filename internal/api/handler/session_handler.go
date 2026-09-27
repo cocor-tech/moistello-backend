@@ -222,3 +222,97 @@ func sha256HashForLogout(s string) string {
 	hash := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", hash)
 }
+
+// @Summary List all active sessions for the current user
+// @Description Returns a list of all active sessions with device information (#472).
+// @Tags Authentication
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=object{sessions=array}}
+// @Failure 401 {object} response.Envelope
+// @Router /auth/sessions [get]
+func (h *SessionHandler) ListSessions(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "authentication required")
+		return
+	}
+
+	ctx := c.Request.Context()
+	sessions := []gin.H{}
+
+	if h.redisClient != nil {
+		userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
+		sessionHashes, err := h.redisClient.SMembers(ctx, userSessionsKey).Result()
+		if err == nil {
+			for _, hash := range sessionHashes {
+				sessionKey := fmt.Sprintf("session:%s", hash)
+				sessionData, err := h.redisClient.HGetAll(ctx, sessionKey).Result()
+				if err != nil || len(sessionData) == 0 {
+					continue
+				}
+
+				// Determine if this is the current session
+				currentHash := ""
+				if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+					token := strings.TrimPrefix(authHeader, "Bearer ")
+					currentHash = fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+				}
+
+				sessions = append(sessions, gin.H{
+					"id":           hash,
+					"device":       sessionData["device"],
+					"user_agent":   sessionData["user_agent"],
+					"ip_address":   sessionData["ip_address"],
+					"created_at":   sessionData["created_at"],
+					"last_active":  sessionData["last_active"],
+					"is_current":   hash == currentHash,
+				})
+			}
+		}
+	}
+
+	response.OK(c, gin.H{"sessions": sessions})
+}
+
+// @Summary Revoke a specific device session
+// @Description Revokes a specific device session by its ID (#472).
+// @Tags Authentication
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Session ID"
+// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Failure 401 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /auth/sessions/{id} [delete]
+func (h *SessionHandler) RevokeDeviceSession(c *gin.Context) {
+	sessionID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	ctx := c.Request.Context()
+
+	if sessionID == "" || userID == "" {
+		response.BadRequest(c, "session ID and authentication required")
+		return
+	}
+
+	if h.redisClient != nil {
+		// Verify the session belongs to this user
+		userSessionsKey := fmt.Sprintf("user:sessions:%s", userID)
+		isMember, err := h.redisClient.SIsMember(ctx, userSessionsKey, sessionID).Result()
+		if err != nil || !isMember {
+			response.NotFound(c, "session not found or not owned by user")
+			return
+		}
+
+		// Delete the session
+		sessionKey := fmt.Sprintf("session:%s", sessionID)
+		pipe := h.redisClient.Pipeline()
+		pipe.Del(ctx, sessionKey)
+		pipe.SRem(ctx, userSessionsKey, sessionID)
+		pipe.Exec(ctx)
+
+		response.OK(c, gin.H{"success": true})
+	} else {
+		response.OK(c, gin.H{"success": true})
+	}
+}

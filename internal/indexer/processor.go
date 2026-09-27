@@ -909,7 +909,8 @@ func (p *EventProcessor) onVoteCast(ctx context.Context, ev *ContractEvent) erro
 }
 
 // onDisputeRaised handles DisputeRaised(circle_id, member, evidence_hash).
-// Transitions the circle to "disputed" status, freezing payouts until resolved.
+// Transitions the circle to "disputed" status, freezing payouts until resolved,
+// and persists the dispute to the circle_disputes table (#475).
 func (p *EventProcessor) onDisputeRaised(ctx context.Context, ev *ContractEvent) error {
 	contractID := payloadStr(ev.Payload, "circle_id")
 	member := payloadStr(ev.Payload, "member")
@@ -928,6 +929,34 @@ func (p *EventProcessor) onDisputeRaised(ctx context.Context, ev *ContractEvent)
 	c.Status = "disputed"
 	if err := p.circleRepo.Update(ctx, c); err != nil {
 		return fmt.Errorf("onDisputeRaised update circle status: %w", err)
+	}
+
+	// #475 — Persist the dispute to circle_disputes so the API can query it.
+	// Resolve the raiser's internal user ID from their wallet address.
+	raiserID := ""
+	raiserUUID := ""
+	if member != "" {
+		u, err := p.userRepo.FindByWalletAddress(ctx, member)
+		if err == nil && u != nil {
+			raiserID = u.ID.String()
+			raiserUUID = u.ID.String()
+		} else {
+			log.Warn().Str("wallet", member).Msg("DisputeRaised: raiser user not found, using wallet as identifier")
+		}
+	}
+
+	if p.db != nil && raiserUUID != "" {
+		_, err := p.db.ExecContext(ctx, `
+			INSERT INTO circle_disputes (circle_id, raiser_id, reason, details, status, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, 'open', $5, $5)
+			ON CONFLICT (circle_id, raiser_id, created_at) DO NOTHING`,
+			c.ID.String(), raiserUUID, "Dispute raised via on-chain event",
+			fmt.Sprintf("evidence_hash: %s, tx_hash: %s", evidenceHash, ev.TxHash),
+			time.Now().UTC(),
+		)
+		if err != nil {
+			log.Warn().Err(err).Msg("DisputeRaised: failed to persist dispute record")
+		}
 	}
 
 	log.Warn().
