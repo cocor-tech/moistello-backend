@@ -137,8 +137,14 @@ func TestHub_Broadcast_FullChannel(t *testing.T) {
 	c1.Send <- []byte("block")
 	hub.Broadcast("circle-1", Message{Type: "drop"})
 	time.Sleep(50 * time.Millisecond)
+
+	// A client whose buffer is full is dropped instead of blocking the
+	// publisher, and its connection is closed rather than left dangling.
+	assert.Equal(t, 0, hub.ClientCount(), "a client with a full buffer must be unregistered")
+	// The room went with its only subscriber, so RoomCount cannot drift
+	// upwards over the lifetime of the process (#447).
 	_, rooms := hub.Stats()
-	assert.Equal(t, 1, rooms)
+	assert.Equal(t, 0, rooms, "an emptied room must be removed")
 }
 
 func TestClient_HandleSubscribe(t *testing.T) {

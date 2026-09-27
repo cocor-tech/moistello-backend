@@ -81,8 +81,14 @@ func (h *Hub) Unregister(client *Client) {
 			delete(h.userClients, client.UserID)
 		}
 	}
-	for _, room := range h.rooms {
+	// Drop the client from every room, and forget rooms it emptied. Leaving
+	// empty room entries behind would inflate RoomCount()/Stats() and grow the
+	// map for the lifetime of the process.
+	for circleID, room := range h.rooms {
 		delete(room, client.ID)
+		if len(room) == 0 {
+			delete(h.rooms, circleID)
+		}
 	}
 	h.mu.Unlock()
 	log.Debug().Str("clientID", client.ID).Msg("client unregistered")
@@ -128,12 +134,17 @@ func (h *Hub) JoinRoom(circleID, clientID string) bool {
 	return true
 }
 
-// LeaveRoom unsubscribes a client from a circle's broadcast room.
+// LeaveRoom unsubscribes a client from a circle's broadcast room. The room
+// entry is dropped once its last subscriber leaves, so RoomCount reflects
+// rooms that can actually receive a broadcast.
 func (h *Hub) LeaveRoom(circleID, clientID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if room, ok := h.rooms[circleID]; ok {
 		delete(room, clientID)
+		if len(room) == 0 {
+			delete(h.rooms, circleID)
+		}
 	}
 	log.Debug().Str("circleID", circleID).Str("clientID", clientID).Msg("client left room")
 }
@@ -236,6 +247,10 @@ func (h *Hub) Broadcast(circleID string, msg Message) {
 		metrics.WSSlowClientsDisconnectedTotal.Inc()
 		log.Warn().Str("clientID", client.ID).Str("userID", client.UserID).Msg("disconnecting slow websocket client due to backpressure overflow")
 		h.Unregister(client)
+		// Unregister alone only stops new deliveries; the socket and both
+		// pumps would stay alive with nobody left to serve them. Close it so
+		// the peer learns it was dropped and the connection is reclaimed.
+		client.Disconnect()
 	}
 }
 
@@ -269,6 +284,7 @@ func (h *Hub) BroadcastToUser(userID string, msg Message) {
 			metrics.WSSlowClientsDisconnectedTotal.Inc()
 			log.Warn().Str("clientID", client.ID).Str("userID", client.UserID).Msg("disconnecting slow client on user broadcast backpressure")
 			h.Unregister(client)
+			client.Disconnect()
 		}
 	}
 }

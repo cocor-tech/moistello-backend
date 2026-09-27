@@ -82,6 +82,26 @@ func (c *Client) Close() {
 	})
 }
 
+// Disconnect tears the connection down without attempting a graceful close
+// frame. It is used to evict slow consumers: a client that cannot keep up may
+// have its WritePump blocked inside WriteMessage, so writing a close frame
+// first would block the publisher for up to writeWait and stall every other
+// subscriber. Closing the socket makes that blocked write fail at once and
+// reclaims the connection. The peer sees an abnormal closure and is expected
+// to reconnect; see docs/websocket-delivery.md.
+//
+// Clients built without NewClient (no Conn) are handled safely.
+func (c *Client) Disconnect() {
+	c.closeOnce.Do(func() {
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
+		if c.closing != nil {
+			close(c.closing)
+		}
+	})
+}
+
 // Kick closes the WebSocket connection immediately with a specific close code
 // and reason (e.g., CloseCircleMembershipRevoked).
 func (c *Client) Kick(code int, reason string) {
