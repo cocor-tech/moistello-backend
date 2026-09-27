@@ -30,6 +30,12 @@ func (r *Registry) For(currency string) (Provider, error) {
 	return p, nil
 }
 
+// ProviderInfo represents public metadata about a registered provider and its currency.
+type ProviderInfo struct {
+	Name     string `json:"name"`
+	Currency string `json:"currency"`
+}
+
 // SupportedCurrencies lists every currency with a registered provider.
 func (r *Registry) SupportedCurrencies() []string {
 	currencies := make([]string, 0, len(r.providers))
@@ -38,3 +44,29 @@ func (r *Registry) SupportedCurrencies() []string {
 	}
 	return currencies
 }
+
+// Providers returns details of all registered providers.
+func (r *Registry) Providers() []ProviderInfo {
+	infos := make([]ProviderInfo, 0, len(r.providers))
+	for _, p := range r.providers {
+		infos = append(infos, ProviderInfo{
+			Name:     p.Name(),
+			Currency: p.Currency(),
+		})
+	}
+	return infos
+}
+
+// ActiveProviderNames returns a list of distinct active provider names without secrets.
+func (r *Registry) ActiveProviderNames() []string {
+	names := make([]string, 0, len(r.providers))
+	seen := make(map[string]bool)
+	for _, p := range r.providers {
+		if !seen[p.Name()] {
+			seen[p.Name()] = true
+			names = append(names, p.Name())
+		}
+	}
+	return names
+}
+

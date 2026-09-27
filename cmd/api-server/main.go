@@ -366,6 +366,22 @@ func main() {
 	mmSvc := mobilemoney.NewService(mmRepo, mmRegistry)
 	mobileMoneyH := handler.NewMobileMoneyHandler(mmSvc, walletSvc)
 
+	// Startup provider-presence probe and logging (#412)
+	activeProviders := mmRegistry.ActiveProviderNames()
+	if len(activeProviders) > 0 {
+		log.Info().
+			Strs("active_providers", activeProviders).
+			Strs("supported_currencies", mmRegistry.SupportedCurrencies()).
+			Msg("mobile money providers initialized")
+	} else {
+		isDev := cfg.Environment == "development" || cfg.Environment == "dev" || cfg.Environment == "test"
+		if !isDev {
+			log.Error().Msg("zero mobile money providers configured in non-development environment")
+		} else {
+			log.Warn().Msg("no mobile money providers configured")
+		}
+	}
+
 	// E2EE chat (#188): X3DH key bundles + encrypted message store on top
 	// of the crypto primitives in internal/domain/chat/x3dh.go.
 	chatKeyRepo := chat.NewKeyRepository(db)
@@ -377,24 +393,9 @@ func main() {
 	if reconcileInterval <= 0 {
 		reconcileInterval = 5 * time.Minute
 	}
-	mmReconcileStop := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(reconcileInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				count, err := mmSvc.Reconcile(context.Background())
-				if err != nil {
-					log.Warn().Err(err).Msg("mobile money reconciliation pass failed")
-				} else if count > 0 {
-					log.Info().Int("count", count).Msg("mobile money reconciliation updated pending transactions")
-				}
-			case <-mmReconcileStop:
-				return
-			}
-		}
-	}()
+	// Reconciler with Redis single-flight lock across replicas (#413)
+	mmReconciler := mobilemoney.NewReconciler(redisClient, mmSvc, reconcileInterval, cfg.Auth.CleanupJitter)
+	mmReconciler.Start(context.Background())
 
 	// Savings goals
 	savingsRepo := savings.NewRepository(db)
@@ -436,10 +437,11 @@ func main() {
 		log.Warn().Err(rmqErr).Msg("RabbitMQ unavailable — health checks will report degraded")
 	}
 
-	// Wire RabbitMQ into health handler for /health and /health/ready probes
+	// Wire RabbitMQ and MobileMoney into health handler for /health and /health/ready probes
 	if rmqClient != nil {
 		healthH.WithRabbitMQ(rmqClient)
 	}
+	healthH.WithMobileMoney(mmRegistry)
 
 	// Job queue for background tasks
 	jobQueue := jobqueue.NewJobQueue(db)
@@ -463,7 +465,7 @@ func main() {
 			func(context.Context) { stopPoolMonitor() },
 			func(context.Context) {
 				featureFlagCache.Stop()
-				close(mmReconcileStop)
+				mmReconciler.Stop()
 			},
 			func(context.Context) { sessionCleaner.Stop() },
 		},
