@@ -23,7 +23,7 @@ func NewRepository(db *sqlx.DB) Repository {
 func scanNotification(row interface{ Scan(...interface{}) error }) (*Notification, error) {
 	var n Notification
 	var data json.RawMessage
-	err := row.Scan(&n.ID, &n.UserID, &n.Type, &n.Title, &n.Body, &data, &n.IsRead, &n.Channel, &n.CreatedAt)
+	err := row.Scan(&n.ID, &n.UserID, &n.Type, &n.Title, &n.Body, &data, &n.IsRead, &n.IsArchived, &n.Channel, &n.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, apperrors.ErrNotFound
@@ -35,8 +35,8 @@ func scanNotification(row interface{ Scan(...interface{}) error }) (*Notificatio
 }
 
 func (r *pgRepo) Create(ctx context.Context, n *Notification) error {
-	query := `INSERT INTO notifications (id, user_id, type, title, body, data, is_read, channel, created_at)
-		VALUES (:id, :user_id, :type, :title, :body, :data, :is_read, :channel, :created_at)`
+	query := `INSERT INTO notifications (id, user_id, type, title, body, data, is_read, is_archived, channel, created_at)
+		VALUES (:id, :user_id, :type, :title, :body, :data, :is_read, :is_archived, :channel, :created_at)`
 	_, err := r.db.NamedExecContext(ctx, query, n)
 	if err != nil {
 		return fmt.Errorf("creating notification: %w", err)
@@ -66,7 +66,7 @@ func (r *pgRepo) List(ctx context.Context, userID uuid.UUID, page, limit int, un
 		return nil, 0, fmt.Errorf("counting notifications: %w", err)
 	}
 
-	query := fmt.Sprintf(`SELECT id, user_id, type, title, body, data, is_read, channel, created_at
+	query := fmt.Sprintf(`SELECT id, user_id, type, title, body, data, is_read, is_archived, channel, created_at
 		FROM notifications %s ORDER BY created_at DESC LIMIT $2 OFFSET $3`, conditions)
 	rows, err := r.db.QueryxContext(ctx, query, userID, limit, offset)
 	if err != nil {
@@ -108,4 +108,24 @@ func (r *pgRepo) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 		return fmt.Errorf("marking all notifications read: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) BulkArchive(ctx context.Context, userID uuid.UUID, ids []uuid.UUID, archived bool) ([]uuid.UUID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	query, args, err := sqlx.In(`
+		UPDATE notifications
+		SET is_archived = ?
+		WHERE user_id = ? AND id IN (?)
+		RETURNING id`, archived, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("building bulk archive query: %w", err)
+	}
+	query = r.db.Rebind(query)
+	var updatedIDs []uuid.UUID
+	if err := r.db.SelectContext(ctx, &updatedIDs, query, args...); err != nil {
+		return nil, fmt.Errorf("bulk updating notifications archive status: %w", err)
+	}
+	return updatedIDs, nil
 }

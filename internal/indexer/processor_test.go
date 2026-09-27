@@ -25,6 +25,7 @@ import (
 	reputationMocks "github.com/moistello/backend/internal/domain/reputation/mocks"
 	"github.com/moistello/backend/internal/domain/user"
 	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 // ---------------------------------------------------------------------------
@@ -792,5 +793,92 @@ func TestOnAuctionBid_UserNotFound(t *testing.T) {
 	cRepo.AssertExpectations(t)
 	uRepo.AssertExpectations(t)
 	cRepo.AssertNotCalled(t, "CreateAuctionBid")
+}
+
+func TestOnVoteCast_Success(t *testing.T) {
+	cRepo := &circleMocks.Repository{}
+	uRepo := &userMocks.Repository{}
+	p := newTestProcessor(cRepo, nil, nil, nil, uRepo)
+
+	c := testCircle("cid_vote")
+	voter := testUser("GWALLET_VOTER")
+	recipient := testUser("GWALLET_CANDIDATE")
+
+	cRepo.On("FindByContractID", mock.Anything, "cid_vote").Return(c, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET_VOTER").Return(voter, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET_CANDIDATE").Return(recipient, nil)
+	cRepo.On("CreateVote", mock.Anything, mock.MatchedBy(func(v *circle.CircleVote) bool {
+		return v.CircleID == c.ID && v.VoterID == voter.ID && v.RecipientID == recipient.ID && v.RoundNumber == 3
+	})).Return(nil)
+
+	ev := contractEvent(EventVoteCast, "cid_vote", map[string]any{
+		"circle_id": "cid_vote",
+		"voter":     "GWALLET_VOTER",
+		"vote_for":  "GWALLET_CANDIDATE",
+		"round":     int(3),
+	})
+
+	err := p.onVoteCast(context.Background(), ev)
+	assert.NoError(t, err)
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
+}
+
+func TestOnVoteCast_DuplicateDelivery(t *testing.T) {
+	cRepo := &circleMocks.Repository{}
+	uRepo := &userMocks.Repository{}
+	p := newTestProcessor(cRepo, nil, nil, nil, uRepo)
+
+	c := testCircle("cid_vote")
+	voter := testUser("GWALLET_VOTER")
+	recipient := testUser("GWALLET_CANDIDATE")
+
+	cRepo.On("FindByContractID", mock.Anything, "cid_vote").Return(c, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET_VOTER").Return(voter, nil)
+	uRepo.On("FindByWalletAddress", mock.Anything, "GWALLET_CANDIDATE").Return(recipient, nil)
+	cRepo.On("CreateVote", mock.Anything, mock.AnythingOfType("*circle.CircleVote")).Return(apperrors.ErrConflict)
+
+	ev := contractEvent(EventVoteCast, "cid_vote", map[string]any{
+		"circle_id": "cid_vote",
+		"voter":     "GWALLET_VOTER",
+		"vote_for":  "GWALLET_CANDIDATE",
+		"round":     int(3),
+	})
+
+	// Duplicate delivery must return nil (idempotent, no error)
+	err := p.onVoteCast(context.Background(), ev)
+	assert.NoError(t, err)
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
+}
+
+func TestOnFeeDeposited_Persistence(t *testing.T) {
+	db, mockSql, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+	sqlxDB := sqlx.NewDb(db, "sqlmock")
+
+	p := &EventProcessor{
+		db: sqlxDB,
+	}
+
+	mockSql.ExpectExec("INSERT INTO treasury_fees").
+		WithArgs("circle_123", float64(15.5), "tx_fee_hash", int64(100), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	ev := &ContractEvent{
+		ContractID: "cid_treasury",
+		EventType:  EventFeeDeposited,
+		Ledger:     100,
+		TxHash:     "tx_fee_hash",
+		Payload: map[string]any{
+			"circle_id": "circle_123",
+			"amount":    float64(15.5),
+		},
+	}
+
+	err = p.onFeeDeposited(context.Background(), ev)
+	assert.NoError(t, err)
+	assert.NoError(t, mockSql.ExpectationsWereMet())
 }
 

@@ -110,3 +110,74 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 		},
 	})
 }
+
+type BulkArchiveRequest struct {
+	IDs []string `json:"ids" binding:"required"`
+}
+
+// @Summary Bulk archive notifications
+// @Description Archives multiple notifications by ID for the authenticated user.
+// @Tags Notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body BulkArchiveRequest true "Notification IDs"
+// @Success 200 {object} response.Envelope{data=object{updated=int,ids=array}}
+// @Failure 400 {object} response.Envelope
+// @Failure 401 {object} response.Envelope
+// @Router /notifications/bulk-archive [post]
+func (h *NotificationHandler) BulkArchive(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	var req BulkArchiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	updated, err := h.notificationService.BulkArchive(c.Request.Context(), userID, req.IDs, true)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"updated": len(updated), "ids": updated})
+}
+
+// @Summary Bulk unarchive notifications
+// @Description Unarchives multiple notifications by ID for the authenticated user.
+// @Tags Notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body BulkArchiveRequest true "Notification IDs"
+// @Success 200 {object} response.Envelope{data=object{updated=int,ids=array}}
+// @Failure 400 {object} response.Envelope
+// @Failure 401 {object} response.Envelope
+// @Router /notifications/bulk-unarchive [post]
+func (h *NotificationHandler) BulkUnarchive(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	var req BulkArchiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	updated, err := h.notificationService.BulkArchive(c.Request.Context(), userID, req.IDs, false)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"updated": len(updated), "ids": updated})
+}
+

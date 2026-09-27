@@ -3,6 +3,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ type Service interface {
 	List(ctx context.Context, userID string, page, limit int, unreadOnly bool) ([]Notification, int, error)
 	MarkRead(ctx context.Context, id, userID string) error
 	MarkAllRead(ctx context.Context, userID string) error
+	BulkArchive(ctx context.Context, userID string, ids []string, archived bool) ([]string, error)
 }
 
 type CreateInput struct {
@@ -259,3 +261,34 @@ func (s *notificationService) MarkAllRead(ctx context.Context, userID string) er
 	}
 	return nil
 }
+
+func (s *notificationService) BulkArchive(ctx context.Context, userID string, ids []string, archived bool) ([]string, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("at least one notification ID is required")
+	}
+	if len(ids) > 100 {
+		return nil, errors.New("cannot process more than 100 notifications at once")
+	}
+	parsedIDs := make([]uuid.UUID, 0, len(ids))
+	for _, idStr := range ids {
+		id, err := parseUUID(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid notification id %s: %w", idStr, err)
+		}
+		parsedIDs = append(parsedIDs, id)
+	}
+	updated, err := s.repo.BulkArchive(ctx, uid, parsedIDs, archived)
+	if err != nil {
+		return nil, fmt.Errorf("bulk archiving notifications: %w", err)
+	}
+	res := make([]string, 0, len(updated))
+	for _, u := range updated {
+		res = append(res, u.String())
+	}
+	return res, nil
+}
+

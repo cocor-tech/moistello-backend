@@ -259,3 +259,37 @@ func TestService_MarkAllRead_RepoError(t *testing.T) {
 	assert.Contains(t, err.Error(), "marking all notifications read")
 	repo.AssertExpectations(t)
 }
+
+func TestService_BulkArchive_Success(t *testing.T) {
+	repo := new(notifMocks.Repository)
+	svc := notification.NewService(repo, nil, nil)
+
+	userID := uuid.New()
+	id1 := uuid.New()
+	id2 := uuid.New()
+
+	repo.On("BulkArchive", mock.Anything, userID, []uuid.UUID{id1, id2}, true).Return([]uuid.UUID{id1, id2}, nil)
+
+	updated, err := svc.BulkArchive(context.Background(), userID.String(), []string{id1.String(), id2.String()}, true)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{id1.String(), id2.String()}, updated)
+	repo.AssertExpectations(t)
+}
+
+func TestService_BulkArchive_Validation(t *testing.T) {
+	repo := new(notifMocks.Repository)
+	svc := notification.NewService(repo, nil, nil)
+
+	userID := uuid.New()
+
+	// Empty IDs
+	_, err := svc.BulkArchive(context.Background(), userID.String(), []string{}, true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one notification ID is required")
+
+	// Invalid ID
+	_, err = svc.BulkArchive(context.Background(), userID.String(), []string{"not-a-uuid"}, true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid notification id")
+}
+

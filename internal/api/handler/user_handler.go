@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
+	"github.com/moistello/backend/internal/api/middleware"
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/response"
 )
@@ -28,4 +31,42 @@ func (h *UserHandler) ClaimName(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"success": true, "message": "username claimed successfully"})
+}
+
+// @Summary Update profile
+// @Description Updates profile fields for the authenticated user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body user.UpdateProfileInput true "Profile updates"
+// @Success 200 {object} response.Envelope{data=object{user=object}}
+// @Failure 400 {object} response.Envelope
+// @Failure 401 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /users/me [patch]
+func (h *UserHandler) UpdateProfile(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
+
+	var req user.UpdateProfileInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	u, err := h.userService.UpdateProfile(c.Request.Context(), userID, req)
+	if err != nil {
+		if errors.Is(err, user.ErrUserNotFound) {
+			response.NotFound(c, "user not found")
+			return
+		}
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"user": u})
 }

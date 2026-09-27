@@ -37,7 +37,8 @@ type Notification struct {
 	Title     string              `json:"title" db:"title"`
 	Body      string              `json:"body" db:"body"`
 	Data      json.RawMessage     `json:"data,omitempty" db:"data"`
-	IsRead    bool                `json:"isRead" db:"is_read"`
-	Channel   NotificationChannel `json:"channel" db:"channel"`
-	CreatedAt time.Time           `json:"createdAt" db:"created_at"`
+	IsRead     bool                `json:"isRead" db:"is_read"`
+	IsArchived bool                `json:"isArchived" db:"is_archived"`
+	Channel    NotificationChannel `json:"channel" db:"channel"`
+	CreatedAt  time.Time           `json:"createdAt" db:"created_at"`
 }

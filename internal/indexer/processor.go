@@ -800,27 +800,92 @@ func (p *EventProcessor) onAuctionBid(ctx context.Context, ev *ContractEvent) er
 }
 
 // onVoteCast handles VoteCast(circle_id, voter, vote_for, round).
-// No persistent table exists yet — logs and broadcasts only.
-// TODO: Persist to circle_votes table (follow-up issue).
+// Persists the vote to circle_votes table, idempotent on (circle_id, voter_id, round_number).
 func (p *EventProcessor) onVoteCast(ctx context.Context, ev *ContractEvent) error {
 	contractID := payloadStr(ev.Payload, "circle_id")
+	if contractID == "" {
+		contractID = ev.ContractID
+	}
 	voter := payloadStr(ev.Payload, "voter")
 	voteFor := payloadStr(ev.Payload, "vote_for")
 	round := payloadInt(ev.Payload, "round")
 
-	log.Info().
-		Str("contract_id", contractID).
-		Str("voter", voter).
-		Str("vote_for", voteFor).
-		Int("round", round).
-		Msg("VoteCast: vote recorded")
+	if p.circleRepo == nil || p.userRepo == nil {
+		log.Info().
+			Str("contract_id", contractID).
+			Str("voter", voter).
+			Str("vote_for", voteFor).
+			Int("round", round).
+			Msg("VoteCast: vote recorded")
 
-	p.Broadcast(ctx, contractID, "vote.cast", map[string]any{
-		"contract_id": contractID,
-		"voter":       voter,
-		"vote_for":    voteFor,
-		"round":       round,
-		"tx_hash":     ev.TxHash,
+		p.Broadcast(ctx, contractID, "vote.cast", map[string]any{
+			"contract_id": contractID,
+			"voter":       voter,
+			"vote_for":    voteFor,
+			"round":       round,
+			"tx_hash":     ev.TxHash,
+		})
+		return nil
+	}
+
+	c, err := p.circleRepo.FindByContractID(ctx, contractID)
+	if err != nil {
+		if isNotFound(err) {
+			log.Warn().Str("contract_id", contractID).Msg("VoteCast: circle not found")
+			return nil
+		}
+		return fmt.Errorf("onVoteCast find circle: %w", err)
+	}
+
+	voterUser, err := p.userRepo.FindByWalletAddress(ctx, voter)
+	if err != nil {
+		if isNotFound(err) {
+			log.Warn().Str("wallet", voter).Msg("VoteCast: voter not found")
+			return nil
+		}
+		return fmt.Errorf("onVoteCast find voter: %w", err)
+	}
+
+	recipientUser, err := p.userRepo.FindByWalletAddress(ctx, voteFor)
+	if err != nil {
+		if isNotFound(err) {
+			log.Warn().Str("wallet", voteFor).Msg("VoteCast: recipient not found")
+			return nil
+		}
+		return fmt.Errorf("onVoteCast find recipient: %w", err)
+	}
+
+	vote := &circle.CircleVote{
+		ID:          uuid.New(),
+		CircleID:    c.ID,
+		VoterID:     voterUser.ID,
+		RecipientID: recipientUser.ID,
+		RoundNumber: round,
+		CreatedAt:   time.Now().UTC(),
+	}
+
+	if err := p.circleRepo.CreateVote(ctx, vote); err != nil {
+		if errors.Is(err, apperrors.ErrConflict) {
+			log.Debug().Str("tx_hash", ev.TxHash).Msg("VoteCast: already recorded")
+			return nil
+		}
+		return fmt.Errorf("onVoteCast create vote: %w", err)
+	}
+
+	log.Info().
+		Str("circle_id", c.ID.String()).
+		Str("voter_id", voterUser.ID.String()).
+		Str("recipient_id", recipientUser.ID.String()).
+		Int("round", round).
+		Msg("VoteCast: vote persisted")
+
+	p.Broadcast(ctx, c.ID.String(), "vote.cast", map[string]any{
+		"circle_id":    c.ID.String(),
+		"contract_id":  contractID,
+		"voter_id":     voterUser.ID.String(),
+		"recipient_id": recipientUser.ID.String(),
+		"round":        round,
+		"tx_hash":      ev.TxHash,
 	})
 	return nil
 }
@@ -863,17 +928,38 @@ func (p *EventProcessor) onDisputeRaised(ctx context.Context, ev *ContractEvent)
 }
 
 // onFeeDeposited handles FeeDeposited events from the Treasury contract.
-// No persistent table exists yet — logs and broadcasts only.
-// TODO: Persist to treasury_fees table (follow-up issue).
+// Persists the fee to treasury_fees table, idempotent on (tx_hash, circle_id).
 func (p *EventProcessor) onFeeDeposited(ctx context.Context, ev *ContractEvent) error {
 	circleID := payloadStr(ev.Payload, "circle_id")
 	amount := payloadFloat(ev.Payload, "amount")
 
-	log.Info().
-		Str("circle_id", circleID).
-		Float64("amount", amount).
-		Str("tx_hash", ev.TxHash).
-		Msg("FeeDeposited: protocol fee collected")
+	if p.db != nil {
+		_, err := p.db.ExecContext(ctx, `
+			INSERT INTO treasury_fees (circle_id, amount, tx_hash, ledger, created_at)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (tx_hash, circle_id) DO NOTHING`,
+			circleID, amount, ev.TxHash, ev.Ledger, time.Now().UTC(),
+		)
+		if err != nil {
+			log.Warn().Err(err).
+				Str("circle_id", circleID).
+				Float64("amount", amount).
+				Str("tx_hash", ev.TxHash).
+				Msg("onFeeDeposited: persisting treasury fee")
+		} else {
+			log.Info().
+				Str("circle_id", circleID).
+				Float64("amount", amount).
+				Str("tx_hash", ev.TxHash).
+				Msg("FeeDeposited: protocol fee collected and persisted")
+		}
+	} else {
+		log.Info().
+			Str("circle_id", circleID).
+			Float64("amount", amount).
+			Str("tx_hash", ev.TxHash).
+			Msg("FeeDeposited: protocol fee collected")
+	}
 
 	p.Broadcast(ctx, circleID, "fee.deposited", map[string]any{
 		"circle_id": circleID,
@@ -882,6 +968,30 @@ func (p *EventProcessor) onFeeDeposited(ctx context.Context, ev *ContractEvent) 
 		"ledger":    ev.Ledger,
 	})
 	return nil
+}
+
+// GetTreasuryFeesSummary returns the total fee amount and count of fees deposited.
+func (p *EventProcessor) GetTreasuryFeesSummary(ctx context.Context, circleID string) (float64, int, error) {
+	if p.db == nil {
+		return 0, 0, nil
+	}
+	var total sql.NullFloat64
+	var count int
+	var err error
+	if circleID != "" {
+		err = p.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(amount), 0), COUNT(*)
+			FROM treasury_fees
+			WHERE circle_id = $1`, circleID).Scan(&total, &count)
+	} else {
+		err = p.db.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(amount), 0), COUNT(*)
+			FROM treasury_fees`).Scan(&total, &count)
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	return total.Float64, count, nil
 }
 
 // eventRecorded reports whether the event is already in the audit log, which

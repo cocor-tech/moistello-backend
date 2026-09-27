@@ -32,3 +32,11 @@ func (m *Repository) MarkRead(ctx context.Context, id uuid.UUID, userID uuid.UUI
 func (m *Repository) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 	return m.Called(ctx, userID).Error(0)
 }
+
+func (m *Repository) BulkArchive(ctx context.Context, userID uuid.UUID, ids []uuid.UUID, archived bool) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userID, ids, archived)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
