@@ -2,10 +2,17 @@ package admin
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
 )
+
+// ErrNilRepository is returned by NewService when constructed without a
+// repository. Every metrics call would otherwise nil-panic on the first
+// request instead of failing once, loudly, at startup.
+var ErrNilRepository = errors.New("admin: NewService requires a non-nil Repository")
 
 // DefaultCacheTTL bounds how long expensive aggregate results are served from
 // the in-memory cache before being recomputed.
@@ -26,7 +33,13 @@ type Service struct {
 	cache map[string]cacheEntry
 }
 
-func NewService(repo Repository, ttl time.Duration) *Service {
+// NewService builds the admin metrics service. It returns ErrNilRepository
+// for a nil repo (including a typed nil pointer wrapped in the interface) so
+// callers fail fast at construction rather than panicking per request.
+func NewService(repo Repository, ttl time.Duration) (*Service, error) {
+	if isNilRepository(repo) {
+		return nil, ErrNilRepository
+	}
 	if ttl <= 0 {
 		ttl = DefaultCacheTTL
 	}
@@ -34,7 +47,19 @@ func NewService(repo Repository, ttl time.Duration) *Service {
 		repo:  repo,
 		ttl:   ttl,
 		cache: make(map[string]cacheEntry),
+	}, nil
+}
+
+func isNilRepository(repo Repository) bool {
+	if repo == nil {
+		return true
 	}
+	v := reflect.ValueOf(repo)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Interface, reflect.Chan:
+		return v.IsNil()
+	}
+	return false
 }
 
 // GetMetrics returns the platform aggregate snapshot, cached for the service

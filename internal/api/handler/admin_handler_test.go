@@ -35,7 +35,7 @@ func (f *fakeMetricsRepo) DailyVolume(_ context.Context, _ int) ([]admin.DailyVo
 func TestAdminHandler_GetMetrics_ReturnsRealAggregates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	svc := admin.NewService(&fakeMetricsRepo{metrics: &admin.Metrics{
+	svc, err := admin.NewService(&fakeMetricsRepo{metrics: &admin.Metrics{
 		TotalUsers:         10,
 		TotalCircles:       5,
 		ActiveCircles:      2,
@@ -51,6 +51,7 @@ func TestAdminHandler_GetMetrics_ReturnsRealAggregates(t *testing.T) {
 			{ContributionVolume: 10, PayoutVolume: 5},
 		},
 	}}, 0)
+	require.NoError(t, err)
 
 	h := handler.NewAdminHandler(nil, nil, nil, nil, svc, nil, nil)
 	r := gin.New()

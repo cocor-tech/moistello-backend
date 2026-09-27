@@ -284,7 +284,10 @@ func main() {
 	payoutH := handler.NewPayoutHandler(payoutSvc, payoutRepo)
 	inviteH := handler.NewInviteHandler(inviteSvc)
 	notifH := handler.NewNotificationHandler(notificationSvc, userSvc)
-	adminSvc := admin.NewService(admin.NewRepositoryWithReader(postgres.NewReader(db, replicaDB)), 0)
+	adminSvc, err := admin.NewService(admin.NewRepositoryWithReader(postgres.NewReader(db, replicaDB)), 0)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize admin metrics service")
+	}
 	featureFlagRepo := featureflag.NewRepository(db)
 	featureFlagSvc := featureflag.NewService(featureFlagRepo)
 	featureFlagCache := featureflag.NewCache(featureFlagSvc, featureflag.DefaultReloadInterval)

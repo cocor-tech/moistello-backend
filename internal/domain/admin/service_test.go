@@ -31,7 +31,7 @@ func (f *fakeRepo) DailyVolume(_ context.Context, days int) ([]DailyVolumePoint,
 
 func TestService_GetMetricsCachesAggregate(t *testing.T) {
 	repo := &fakeRepo{metrics: &Metrics{TotalUsers: 42, TotalVolumeUSD: 100.5}}
-	svc := NewService(repo, time.Minute)
+	svc := mustNewService(t, repo, time.Minute)
 
 	m1, err := svc.GetMetrics(context.Background(), 30)
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestService_GetMetricsCachesAggregate(t *testing.T) {
 
 func TestService_CacheExpires(t *testing.T) {
 	repo := &fakeRepo{metrics: &Metrics{TotalUsers: 1}}
-	svc := NewService(repo, 20*time.Millisecond)
+	svc := mustNewService(t, repo, 20*time.Millisecond)
 
 	_, err := svc.GetMetrics(context.Background(), 30)
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestService_CacheExpires(t *testing.T) {
 
 func TestService_DifferentWindowsAreCachedSeparately(t *testing.T) {
 	repo := &fakeRepo{metrics: &Metrics{TotalUsers: 1}}
-	svc := NewService(repo, time.Minute)
+	svc := mustNewService(t, repo, time.Minute)
 
 	_, err := svc.GetMetrics(context.Background(), 7)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestService_DifferentWindowsAreCachedSeparately(t *testing.T) {
 
 func TestService_GetDailyVolumeCaches(t *testing.T) {
 	repo := &fakeRepo{daily: []DailyVolumePoint{{ContributionVolume: 5}}}
-	svc := NewService(repo, time.Minute)
+	svc := mustNewService(t, repo, time.Minute)
 
 	d1, err := svc.GetDailyVolume(context.Background(), 30)
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestService_GetDailyVolumeCaches(t *testing.T) {
 
 func TestService_PropagatesRepositoryErrors(t *testing.T) {
 	repo := &fakeRepo{metricsErr: assert.AnError}
-	svc := NewService(repo, time.Minute)
+	svc := mustNewService(t, repo, time.Minute)
 
 	_, err := svc.GetMetrics(context.Background(), 30)
 	require.ErrorIs(t, err, assert.AnError)
@@ -98,6 +98,28 @@ func TestService_PropagatesRepositoryErrors(t *testing.T) {
 }
 
 func TestNewService_DefaultTTL(t *testing.T) {
-	svc := NewService(&fakeRepo{}, 0)
+	svc := mustNewService(t, &fakeRepo{}, 0)
 	assert.Equal(t, DefaultCacheTTL, svc.ttl)
+}
+
+func mustNewService(t *testing.T, repo Repository, ttl time.Duration) *Service {
+	t.Helper()
+	svc, err := NewService(repo, ttl)
+	require.NoError(t, err)
+	return svc
+}
+
+// Regression guard (#396): a nil repository must be rejected at construction,
+// never reach GetMetrics and panic per request.
+func TestNewService_NilRepositoryReturnsError(t *testing.T) {
+	svc, err := NewService(nil, 0)
+	require.ErrorIs(t, err, ErrNilRepository)
+	assert.Nil(t, svc)
+}
+
+func TestNewService_TypedNilRepositoryReturnsError(t *testing.T) {
+	var repo *fakeRepo // typed nil wrapped in the Repository interface
+	svc, err := NewService(repo, 0)
+	require.ErrorIs(t, err, ErrNilRepository)
+	assert.Nil(t, svc)
 }
