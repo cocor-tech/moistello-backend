@@ -54,6 +54,7 @@ func NewReplica(cfg config.DatabaseConfig) *sqlx.DB {
 	if cfg.ReplicaURL == "" {
 		return nil
 	}
+	ValidatePoolSettings(cfg)
 	db, err := sqlx.Connect("postgres", cfg.ReplicaURL)
 	if err != nil {
 		log.Warn().Err(fmt.Errorf("connecting to postgres replica: %w", err)).Msg("read replica unavailable — analytics queries will use the primary")

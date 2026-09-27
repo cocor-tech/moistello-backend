@@ -285,6 +285,7 @@ func main() {
 	jwtPublicKey := []byte(cfg.Auth.JWTPublicKeyPEM)
 
 	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
+	go wsHub.StartMembershipAuditor(context.Background(), 30*time.Second)
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo)
 	userH := handler.NewUserHandler(userSvc)

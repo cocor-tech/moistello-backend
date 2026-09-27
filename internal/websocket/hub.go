@@ -88,6 +88,13 @@ func (h *Hub) Unregister(client *Client) {
 	log.Debug().Str("clientID", client.ID).Msg("client unregistered")
 }
 
+const (
+	// CloseCircleMembershipRevoked is the distinct WebSocket close code
+	// sent when a user's circle membership is revoked mid-session.
+	CloseCircleMembershipRevoked  = 4403
+	ReasonCircleMembershipRevoked = "circle membership revoked"
+)
+
 // SetSubscriptionAuthorizer sets the authorizer used to check circle membership
 // before allowing a client to join a room.
 func (h *Hub) SetSubscriptionAuthorizer(auth SubscriptionAuthorizer) {
@@ -129,6 +136,66 @@ func (h *Hub) LeaveRoom(circleID, clientID string) {
 		delete(room, clientID)
 	}
 	log.Debug().Str("circleID", circleID).Str("clientID", clientID).Msg("client left room")
+}
+
+// AuditRoomMemberships re-checks circle membership for all clients currently
+// subscribed to circle rooms. If a member has been removed or circle access
+// lapsed, the client is unsubscribed from the room and sent an authorization
+// error message.
+func (h *Hub) AuditRoomMemberships(ctx context.Context) {
+	if h.auth == nil {
+		return
+	}
+
+	type roomSubscription struct {
+		circleID string
+		client   *Client
+	}
+
+	h.mu.RLock()
+	var subs []roomSubscription
+	for circleID, room := range h.rooms {
+		for _, client := range room {
+			subs = append(subs, roomSubscription{
+				circleID: circleID,
+				client:   client,
+			})
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, sub := range subs {
+		allowed, err := h.auth.CanSubscribe(ctx, sub.circleID, sub.client.UserID)
+		if err != nil || !allowed {
+			log.Info().
+				Str("circleID", sub.circleID).
+				Str("clientID", sub.client.ID).
+				Str("userID", sub.client.UserID).
+				Msg("revoking circle room subscription due to lapsed membership")
+
+			h.LeaveRoom(sub.circleID, sub.client.ID)
+			sub.client.sendError("circle membership lapsed; unsubscribed from room")
+		}
+	}
+}
+
+// StartMembershipAuditor periodically audits circle room subscriptions to
+// remove clients whose membership has been revoked mid-session.
+func (h *Hub) StartMembershipAuditor(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.AuditRoomMemberships(ctx)
+		}
+	}
 }
 
 // Broadcast sends a message to all clients currently subscribed to a circle

@@ -89,3 +89,46 @@ func TestMetricsEndpoint_RequiresAdminAPIKey(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w3.Code)
 	assert.Contains(t, w3.Body.String(), "moistello_http_requests_total")
 }
+
+func TestMetricsEndpoint_DualAdminAPIKeys_ZeroDowntimeRotation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	primaryKey := "primary-admin-key-12345"
+	secondaryKey := "secondary-admin-key-67890"
+
+	r := gin.New()
+	r.Use(middleware.AdminAPIKeyMiddleware(primaryKey, secondaryKey))
+	r.GET("/metrics", func(c *gin.Context) {
+		identity, _ := c.Get("adminKeyIdentity")
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "identity": identity})
+	})
+
+	// 1. Primary key succeeds with identity=primary
+	w1 := httptest.NewRecorder()
+	req1, _ := http.NewRequest("GET", "/metrics", nil)
+	req1.Header.Set("X-Admin-API-Key", primaryKey)
+	r.ServeHTTP(w1, req1)
+	assert.Equal(t, http.StatusOK, w1.Code)
+	assert.Contains(t, w1.Body.String(), `"identity":"primary"`)
+
+	// 2. Secondary key succeeds with identity=secondary
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest("GET", "/metrics", nil)
+	req2.Header.Set("X-Admin-API-Key", secondaryKey)
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+	assert.Contains(t, w2.Body.String(), `"identity":"secondary"`)
+
+	// 3. Unknown key is rejected with 401
+	w3 := httptest.NewRecorder()
+	req3, _ := http.NewRequest("GET", "/metrics", nil)
+	req3.Header.Set("X-Admin-API-Key", "unknown-key")
+	r.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusUnauthorized, w3.Code)
+
+	// 4. Missing key is rejected with 401
+	w4 := httptest.NewRecorder()
+	req4, _ := http.NewRequest("GET", "/metrics", nil)
+	r.ServeHTTP(w4, req4)
+	assert.Equal(t, http.StatusUnauthorized, w4.Code)
+}
