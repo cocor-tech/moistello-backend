@@ -15,6 +15,11 @@ type IndexerMetrics struct {
 	DedupSize             prometheus.Gauge
 	CursorLagSeconds      prometheus.Gauge
 	UnknownContractEvents prometheus.Counter
+	// ContractVersionUnknown counts events recorded with an unknown contract
+	// version because the deployed version could not be resolved. A sustained
+	// rate means version resolution is broken, and those rows are permanently
+	// unattributable to a contract version.
+	ContractVersionUnknown prometheus.Counter
 	// Events carries the per-event-type counters. It is nil only in tests that
 	// deliberately build a partial IndexerMetrics.
 	Events *EventCounters
@@ -150,6 +155,10 @@ func NewIndexerMetrics() *IndexerMetrics {
 		UnknownContractEvents: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "moistello_indexer_unknown_contract_events_total",
 			Help: "Total contract events skipped because they came from an unknown contract",
+		}),
+		ContractVersionUnknown: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "moistello_indexer_contract_version_unknown_total",
+			Help: "Total contract events recorded with an unknown contract version because the deployed version could not be resolved",
 		}),
 		Events: NewEventCounters(prometheus.DefaultRegisterer),
 	}

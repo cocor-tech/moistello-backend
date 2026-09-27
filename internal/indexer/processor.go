@@ -41,6 +41,13 @@ type EventProcessor struct {
 	knownContracts map[string]struct{}
 	unknownEvents  prometheus.Counter
 
+	// versions resolves the deployed version of the contract that emitted an
+	// event, so the audit log can attribute an event to the code that produced
+	// it across upgrades. May be nil, in which case every event is recorded
+	// with ContractVersionUnknown.
+	versions       ContractVersionResolver
+	versionUnknown prometheus.Counter
+
 	// events holds the per-event-type counters. May be nil, in which case no
 	// per-type counting happens.
 	events *EventCounters
@@ -72,6 +79,17 @@ func NewEventProcessor(
 // subscribed to the relevant circle room.
 func (p *EventProcessor) SetWebSocketBroadcast(fn func(circleID string, data any)) {
 	p.wsBroadcast = fn
+}
+
+// SetContractVersionResolver sets how the deployed version of an emitting
+// contract is determined when an event is recorded to the audit log.
+//
+// Passing nil disables version resolution, and every event is then recorded
+// with ContractVersionUnknown. Callers are expected to pass a caching
+// resolver: this is called once per event, and an uncached resolver would issue
+// a ledger read for every event.
+func (p *EventProcessor) SetContractVersionResolver(r ContractVersionResolver) {
+	p.versions = r
 }
 
 // SetKnownContracts sets the contract IDs whose events are dispatched to
@@ -869,13 +887,41 @@ func (p *EventProcessor) persistContractEvent(ctx context.Context, ev *ContractE
 		return fmt.Errorf("marshaling event payload: %w", err)
 	}
 
+	version := p.contractVersion(ctx, ev.ContractID)
+
 	_, err = p.db.ExecContext(ctx, `
-		INSERT INTO contract_events (tx_hash, ledger, contract_id, event_type, payload, processed_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO contract_events (tx_hash, ledger, contract_id, event_type, contract_version, payload, processed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT DO NOTHING`,
-		ev.TxHash, ev.Ledger, ev.ContractID, ev.EventType, payloadJSON, time.Now().UTC(),
+		ev.TxHash, ev.Ledger, ev.ContractID, ev.EventType, version, payloadJSON, time.Now().UTC(),
 	)
 	return err
+}
+
+// contractVersion reports the deployed version to record for an event emitted by
+// contractID.
+//
+// Resolution is best-effort and never fails the write: an event that cannot be
+// attributed to a contract version is still worth recording, because losing the
+// audit row loses more than the version does. Failures are counted and logged so
+// a persistently unresolved version is visible, and the row is written as
+// ContractVersionUnknown rather than being dropped or left blank.
+func (p *EventProcessor) contractVersion(ctx context.Context, contractID string) string {
+	if p.versions == nil {
+		return ContractVersionUnknown
+	}
+
+	version, err := p.versions.ResolveContractVersion(ctx, contractID)
+	if err != nil || version == "" {
+		if p.versionUnknown != nil {
+			p.versionUnknown.Inc()
+		}
+		log.Warn().Err(err).
+			Str("contract", contractID).
+			Msg("resolving contract version; recording event as unknown version")
+		return ContractVersionUnknown
+	}
+	return version
 }
 
 // ---------------------------------------------------------------------------

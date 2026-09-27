@@ -24,6 +24,7 @@ import (
 	"github.com/moistello/backend/pkg/postgres"
 	"github.com/moistello/backend/pkg/rabbitmq"
 	"github.com/moistello/backend/pkg/redis"
+	"github.com/moistello/backend/pkg/stellar/soroban"
 )
 
 func main() {
@@ -77,6 +78,18 @@ func main() {
 		db, rmqClient,
 		circleRepo, contribRepo, payoutRepo, reputationRepo, userRepo,
 	)
+
+	// Record which contract version emitted each event. Contract IDs survive an
+	// upgrade, so without this an event cannot be tied back to the code that
+	// produced it. The resolver is cached because it is consulted once per
+	// event, and a Soroban ledger read per event would be a read per event for
+	// a value that only changes on upgrade.
+	processor.SetContractVersionResolver(indexer.NewCachingContractVersionResolver(
+		indexer.SorobanContractVersions{
+			Ledger: soroban.NewLedgerClient(cfg.Stellar.SorobanRPCURL),
+		},
+		indexer.DefaultContractVersionTTL,
+	))
 
 	// Wire WebSocket broadcast via Redis so API server instances
 	// relay indexer events to connected clients in real time.
