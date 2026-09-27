@@ -17,6 +17,7 @@ import (
 type Service interface {
 	Generate(ctx context.Context, input GenerateInput) (*Invite, error)
 	Validate(ctx context.Context, code string) (*Invite, error)
+	Accept(ctx context.Context, code string, userID string) (*Invite, error)
 	List(ctx context.Context, circleID string) ([]Invite, error)
 	Revoke(ctx context.Context, id, userID string) error
 }
@@ -108,6 +109,36 @@ func (s *inviteService) Validate(ctx context.Context, code string) (*Invite, err
 	if inv.ExpiresAt.Valid && time.Now().UTC().After(inv.ExpiresAt.Time) {
 		return nil, apperrors.ErrInvalidInvite
 	}
+
+	return inv, nil
+}
+
+func (s *inviteService) Accept(ctx context.Context, code string, userID string) (*Invite, error) {
+	inv, err := s.Validate(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	_ = uid // Used for audit logging in production
+
+	// Increment use count atomically
+	if err := s.repo.IncrementUse(ctx, code); err != nil {
+		return nil, fmt.Errorf("accepting invite: %w", err)
+	}
+
+	inv.UseCount++
+
+	log := logger.Ctx(ctx)
+	log.Info().
+		Str("inviteID", inv.ID.String()).
+		Str("circleID", inv.CircleID.String()).
+		Str("userID", userID).
+		Int("useCount", inv.UseCount).
+		Msg("invite accepted")
 
 	return inv, nil
 }
