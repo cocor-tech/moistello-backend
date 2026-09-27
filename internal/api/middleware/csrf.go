@@ -89,6 +89,25 @@ func CSRFTokenValidator(redisClient *redis.Client) gin.HandlerFunc {
 	}
 }
 
+// CSRFTokenValidatorIfAuthenticated enforces CSRFTokenValidator only when the
+// request carries an Authorization header, for optional-auth groups (#399).
+//
+// CSRF tokens here are bound to the bearer session (csrf:<sha256(token)>), so
+// an anonymous request has no session to validate against and passes through.
+// But once a caller is authenticated, a state-changing request mutates that
+// user's data and must be CSRF-checked exactly like the `authenticated` group,
+// otherwise optional-auth routes are a side door around CSRF enforcement.
+func CSRFTokenValidatorIfAuthenticated(redisClient *redis.Client) gin.HandlerFunc {
+	validate := CSRFTokenValidator(redisClient)
+	return func(c *gin.Context) {
+		if c.GetHeader("Authorization") == "" {
+			c.Next()
+			return
+		}
+		validate(c)
+	}
+}
+
 // compareTokens performs a constant-time comparison of two tokens to prevent
 // timing attacks. Uses crypto/subtle to avoid leaking length or content
 // information via timing side-channels.

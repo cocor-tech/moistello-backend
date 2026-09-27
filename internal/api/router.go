@@ -69,6 +69,20 @@ func NewRouter(
 ) *gin.Engine {
 	r := gin.New()
 
+	// CSRF boundary (#399). CSRF tokens are bound to the bearer session, so they
+	// are enforced wherever a request is authenticated:
+	//   - wsRoute, authenticated (and admin, nested in it): always enforced.
+	//   - optional: enforced when an Authorization header is present
+	//     (CSRFTokenValidatorIfAuthenticated); anonymous callers have no session.
+	// Exempt by design (no user session to protect / not browser-initiated):
+	//   - /webhooks/incoming/:id, /webhooks/yellowcard: server-to-server,
+	//     verified by the webhook handlers themselves.
+	//   - /v1/auth/{register,register/verify,refresh,nonce,verify}: they create
+	//     or exchange the session, so no CSRF token can exist yet.
+	//   - /v1/claim-name: anonymous, not user-bound (allocates the next name).
+	// TestRouter_CSRFCoverage enforces this: any new state-changing route must be
+	// CSRF-enforced or explicitly added to its exemption list.
+
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.TracingMiddleware(cfg.Tracing.ServiceName))
 	r.Use(middleware.LoggingMiddleware())
@@ -116,6 +130,12 @@ func NewRouter(
 		}
 
 		// User & Profile routes (authenticated)
+		// Public — claim a unique anonymous name (before auth). Registered on the
+		// bare api group (no auth, so no CSRF session); see the CSRF boundary
+		// note above. Kept out of the authenticated block below so it can't be
+		// mistaken for an authenticated route.
+		api.POST("/claim-name", userHandler.ClaimName)
+
 		authenticated := api.Group("")
 		authenticated.Use(middleware.AuthMiddleware(jwtPublicKey))
 		authenticated.Use(middleware.TokenBlocklistMiddleware(redisClient))
@@ -131,9 +151,6 @@ func NewRouter(
 			authenticated.DELETE("/sessions/:id", authHandler.RevokeSessionByID)
 
 			authenticated.POST("/users/username/claim", userHandler.ClaimName)
-
-			// Public — claim a unique anonymous name (before auth)
-			api.POST("/claim-name", userHandler.ClaimName)
 
 			// Passkey credential store/retrieval
 			authenticated.POST("/credential", passkeyCredentialHandler.StoreCredential)
@@ -290,6 +307,9 @@ func NewRouter(
 
 		optional := api.Group("")
 		optional.Use(middleware.OptionalAuthMiddleware(jwtPublicKey))
+		// Authenticated callers on optional-auth routes (e.g. POST /consent
+		// writing a signed-in user's consent) must pass CSRF too (#399).
+		optional.Use(middleware.CSRFTokenValidatorIfAuthenticated(redisClient))
 		{
 			optional.GET("/circles", circleHandler.ListCircles)
 
