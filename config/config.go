@@ -169,11 +169,17 @@ type MobileMoneyConfig struct {
 }
 
 type AuthConfig struct {
-	JWTPrivateKeyPath string        `mapstructure:"jwt_private_key_path"`
-	JWTPublicKeyPath  string        `mapstructure:"jwt_public_key_path"`
-	JWTPrivateKeyPEM  string        `mapstructure:"jwt_private_key_pem"`
-	JWTPublicKeyPEM   string        `mapstructure:"jwt_public_key_pem"`
-	AccessTokenTTL    time.Duration `mapstructure:"access_token_ttl"`
+	JWTPrivateKeyPath         string        `mapstructure:"jwt_private_key_path"`
+	JWTPublicKeyPath          string        `mapstructure:"jwt_public_key_path"`
+	JWTPrivateKeyPEM          string        `mapstructure:"jwt_private_key_pem"`
+	JWTPublicKeyPEM           string        `mapstructure:"jwt_public_key_pem"`
+	JWTCurrentKID             string        `mapstructure:"jwt_current_kid"`
+	JWTPreviousPrivateKeyPath string        `mapstructure:"jwt_previous_private_key_path"`
+	JWTPreviousPublicKeyPath  string        `mapstructure:"jwt_previous_public_key_path"`
+	JWTPreviousPrivateKeyPEM  string        `mapstructure:"jwt_previous_private_key_pem"`
+	JWTPreviousPublicKeyPEM   string        `mapstructure:"jwt_previous_public_key_pem"`
+	JWTPreviousKID            string        `mapstructure:"jwt_previous_kid"`
+	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
 	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
 	AdminAPIKey       string        `mapstructure:"admin_api_key"`
@@ -394,6 +400,10 @@ func Load(path string) (*Config, error) {
 	mustBindEnv(v, "security.encryption_key", "ENCRYPTION_KEY")
 	mustBindEnv(v, "auth.jwt_private_key_pem", "JWT_PRIVATE_KEY")
 	mustBindEnv(v, "auth.jwt_public_key_pem", "JWT_PUBLIC_KEY")
+	mustBindEnv(v, "auth.jwt_current_kid", "JWT_CURRENT_KID")
+	mustBindEnv(v, "auth.jwt_previous_private_key_pem", "JWT_PREVIOUS_PRIVATE_KEY", "JWT_PREVIOUS_PRIVATE_KEY_PEM")
+	mustBindEnv(v, "auth.jwt_previous_public_key_pem", "JWT_PREVIOUS_PUBLIC_KEY", "JWT_PREVIOUS_PUBLIC_KEY_PEM")
+	mustBindEnv(v, "auth.jwt_previous_kid", "JWT_PREVIOUS_KID")
 	mustBindEnv(v, "brevo.api_key", "MOISTELLO_BREVO_API_KEY", "MOISTELLO_NOTIFICATION_EMAIL_APIKEY", "MOISTELLO_EMAIL_API_KEY")
 	mustBindEnv(v, "brevo.from_email", "MOISTELLO_BREVO_FROM_EMAIL", "MOISTELLO_NOTIFICATION_EMAIL_FROM_ADDRESS")
 	mustBindEnv(v, "brevo.from_name", "MOISTELLO_BREVO_FROM_NAME", "MOISTELLO_NOTIFICATION_EMAIL_FROM_NAME")
@@ -486,6 +496,16 @@ func Load(path string) (*Config, error) {
 
 	cfg.Auth.JWTPrivateKeyPEM = loadRequiredText(cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPrivateKeyPath, "auth.jwt_private_key_pem", "auth.jwt_private_key_path")
 	cfg.Auth.JWTPublicKeyPEM = loadRequiredText(cfg.Auth.JWTPublicKeyPEM, cfg.Auth.JWTPublicKeyPath, "auth.jwt_public_key_pem", "auth.jwt_public_key_path")
+	if cfg.Auth.JWTPreviousPrivateKeyPEM == "" && cfg.Auth.JWTPreviousPrivateKeyPath != "" {
+		if content, err := os.ReadFile(cfg.Auth.JWTPreviousPrivateKeyPath); err == nil {
+			cfg.Auth.JWTPreviousPrivateKeyPEM = string(content)
+		}
+	}
+	if cfg.Auth.JWTPreviousPublicKeyPEM == "" && cfg.Auth.JWTPreviousPublicKeyPath != "" {
+		if content, err := os.ReadFile(cfg.Auth.JWTPreviousPublicKeyPath); err == nil {
+			cfg.Auth.JWTPreviousPublicKeyPEM = string(content)
+		}
+	}
 
 	validateHexKey(cfg.Security.EncryptionKey)
 	validateDuration("security.argon2_time", cfg.Security.Argon2Time > 0)

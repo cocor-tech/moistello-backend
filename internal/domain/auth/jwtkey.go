@@ -4,14 +4,95 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	domainJWT "github.com/moistello/backend/internal/domain/auth/jwt"
 )
 
 const minRSABits = 2048
+
+// KeyPair represents a parsed JWT signing and verifying key with an associated key ID (kid).
+type KeyPair = domainJWT.Key
+
+// ParseKeyPair parses PEM-encoded private and public keys along with an optional key ID (kid).
+// If kid is empty, a deterministic key ID based on SHA-256 fingerprint of the public key is generated.
+func ParseKeyPair(privPEMBytes, pubPEMBytes []byte, kid string) (*domainJWT.Key, error) {
+	privPEMBytes = []byte(strings.TrimSpace(string(privPEMBytes)))
+	pubPEMBytes = []byte(strings.TrimSpace(string(pubPEMBytes)))
+
+	if len(pubPEMBytes) == 0 {
+		return nil, fmt.Errorf("public key PEM bytes cannot be empty")
+	}
+
+	var signingKey any
+	var signingMethod jwt.SigningMethod
+	var err error
+	if len(privPEMBytes) > 0 {
+		signingKey, signingMethod, err = ParsePrivateSigningKey(privPEMBytes)
+		if err != nil {
+			return nil, fmt.Errorf("parsing private signing key: %w", err)
+		}
+	}
+
+	verifyingKey, verifyingMethod, err := ParsePublicVerifyingKey(pubPEMBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing public verifying key: %w", err)
+	}
+
+	if signingMethod != nil && signingMethod.Alg() != verifyingMethod.Alg() {
+		return nil, fmt.Errorf("JWT key pair algorithm mismatch: private=%s public=%s", signingMethod.Alg(), verifyingMethod.Alg())
+	}
+
+	if kid == "" {
+		hash := sha256.Sum256(pubPEMBytes)
+		kid = hex.EncodeToString(hash[:8])
+	}
+
+	return &domainJWT.Key{
+		ID:            kid,
+		SigningKey:    signingKey,
+		SigningMethod: signingMethod,
+		VerifyingKey:  verifyingKey,
+		VerifyingAlg:  verifyingMethod.Alg(),
+	}, nil
+}
+
+// ParsePublicVerifyingKeys parses one or more PEM-encoded public keys (or multiple concatenated PEM blocks).
+func ParsePublicVerifyingKeys(pemBytesList ...[]byte) ([]*domainJWT.Key, error) {
+	var keys []*domainJWT.Key
+	for _, pemBytes := range pemBytesList {
+		rest := []byte(strings.TrimSpace(string(pemBytes)))
+		for len(rest) > 0 {
+			block, nextRest := pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			blockBytes := pem.EncodeToMemory(block)
+			vk, method, err := ParsePublicVerifyingKey(blockBytes)
+			if err != nil {
+				return nil, fmt.Errorf("parsing public key block: %w", err)
+			}
+			hash := sha256.Sum256(blockBytes)
+			kid := hex.EncodeToString(hash[:8])
+			keys = append(keys, &domainJWT.Key{
+				ID:           kid,
+				VerifyingKey: vk,
+				VerifyingAlg: method.Alg(),
+			})
+			rest = nextRest
+		}
+	}
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no valid public key PEM blocks found")
+	}
+	return keys, nil
+}
 
 // ParsePrivateSigningKey parses a PEM-encoded RSA or ECDSA private key and
 // returns the key together with the matching allowed signing method.

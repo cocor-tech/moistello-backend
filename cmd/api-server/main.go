@@ -205,7 +205,14 @@ func main() {
 	contribSvc := contribution.NewService(contribRepo, wsBroadcaster, contribution.NewTransactor(db), horizonClient, cfg.Stellar.MasterPublicKey, circleSvc)
 	payoutSvc := payout.NewService(payoutRepo, horizonClient, &payoutWalletAdapter{repo: userRepo}, circleSvc)
 	reputationSvc := reputation.NewService(reputationRepo)
-	authSvc, err := auth.NewService(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPublicKeyPEM)
+	authSvc, err := auth.NewServiceWithKeyConfig(redisClient, cfg.Auth.NonceTTL, cfg.Auth.AccessTokenTTL, cfg.Auth.RefreshTokenTTL, auth.KeyConfig{
+		CurrentPrivateKeyPEM:  cfg.Auth.JWTPrivateKeyPEM,
+		CurrentPublicKeyPEM:   cfg.Auth.JWTPublicKeyPEM,
+		CurrentKID:            cfg.Auth.JWTCurrentKID,
+		PreviousPrivateKeyPEM: cfg.Auth.JWTPreviousPrivateKeyPEM,
+		PreviousPublicKeyPEM:  cfg.Auth.JWTPreviousPublicKeyPEM,
+		PreviousKID:           cfg.Auth.JWTPreviousKID,
+	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize auth service")
 	}

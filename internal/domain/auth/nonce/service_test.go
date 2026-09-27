@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/stellar/go/strkey"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestNonceReplayAttackMatrix(t *testing.T) {
-	redisClient := setupRedis()
+	redisClient, mr := setupRedis(t)
 	defer redisClient.Close()
 
 	svc := NewService(redisClient, 5*time.Minute)
@@ -184,8 +185,8 @@ func TestNonceReplayAttackMatrix(t *testing.T) {
 		nonce, err := shortTTLSvc.Generate(ctx, walletAddress)
 		require.NoError(t, err)
 
-		// Wait for nonce to expire
-		time.Sleep(150 * time.Millisecond)
+		// Wait for nonce to expire (exceeding 30s clock skew tolerance)
+		mr.FastForward(35 * time.Second)
 
 		// Sign the nonce
 		message := sha256.Sum256([]byte(nonce.Nonce))
@@ -201,7 +202,7 @@ func TestNonceReplayAttackMatrix(t *testing.T) {
 }
 
 func TestNonceBasicFlow(t *testing.T) {
-	redisClient := setupRedis()
+	redisClient, mr := setupRedis(t)
 	defer redisClient.Close()
 
 	svc := NewService(redisClient, 5*time.Minute)
@@ -258,8 +259,8 @@ func TestNonceBasicFlow(t *testing.T) {
 		nonce, err := shortTTLSvc.Generate(ctx, walletAddress)
 		require.NoError(t, err)
 
-		// Wait for expiry
-		time.Sleep(100 * time.Millisecond)
+		// Wait for expiry (exceeding 30s clock skew tolerance)
+		mr.FastForward(35 * time.Second)
 
 		// Sign the expired nonce
 		message := sha256.Sum256([]byte(nonce.Nonce))
@@ -287,8 +288,9 @@ func TestNonceBasicFlow(t *testing.T) {
 	})
 }
 
-func setupRedis() *redis.Client {
+func setupRedis(t *testing.T) (*redis.Client, *miniredis.Miniredis) {
+	mr := miniredis.RunT(t)
 	return redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
+		Addr: mr.Addr(),
+	}), mr
 }

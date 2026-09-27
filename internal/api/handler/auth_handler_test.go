@@ -18,6 +18,7 @@ import (
 
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/auth"
+	domainJWT "github.com/moistello/backend/internal/domain/auth/jwt"
 	"github.com/moistello/backend/internal/domain/user"
 	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
 )
@@ -95,6 +96,17 @@ func (m *mockAuthService) RefreshToken(ctx context.Context, refreshToken string)
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*auth.TokenPair), args.Error(1)
+}
+
+func (m *mockAuthService) RotateSigningKey(newPrivateKeyPEM, newPublicKeyPEM string, newKID string) error {
+	return m.Called(newPrivateKeyPEM, newPublicKeyPEM, newKID).Error(0)
+}
+
+func (m *mockAuthService) JWTService() domainJWT.Service {
+	if args := m.Called(); args.Get(0) != nil {
+		return args.Get(0).(domainJWT.Service)
+	}
+	return nil
 }
 
 func TestAuthHandler_Nonce(t *testing.T) {

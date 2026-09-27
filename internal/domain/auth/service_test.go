@@ -296,3 +296,44 @@ func TestCreateSession_RollbackOnFailure(t *testing.T) {
 	assert.Nil(t, tp)
 	assert.Contains(t, err.Error(), "storing session and CSRF in redis")
 }
+
+func TestAuthService_RotateSigningKey(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+
+	privPEM1, pubPEM1 := generateTestRSAKeys(t)
+	privPEM2, pubPEM2 := generateTestRSAKeys(t)
+
+	svc, err := auth.NewServiceWithKeyConfig(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, auth.KeyConfig{
+		CurrentPrivateKeyPEM: privPEM1,
+		CurrentPublicKeyPEM:  pubPEM1,
+		CurrentKID:           "key-v1",
+	})
+	require.NoError(t, err)
+
+	userID := uuid.New()
+	tok1, err := svc.GenerateJWT(userID, "0x111", "user")
+	require.NoError(t, err)
+
+	claims1, err := svc.ValidateJWT(tok1)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), claims1.UserID)
+
+	// Rotate key
+	err = svc.RotateSigningKey(privPEM2, pubPEM2, "key-v2")
+	require.NoError(t, err)
+
+	// tok2 generated under new key
+	tok2, err := svc.GenerateJWT(userID, "0x222", "admin")
+	require.NoError(t, err)
+
+	claims2, err := svc.ValidateJWT(tok2)
+	require.NoError(t, err)
+	assert.Equal(t, "admin", claims2.Role)
+
+	// tok1 (signed with previous key) still validates in previous key window
+	claims1AfterRotate, err := svc.ValidateJWT(tok1)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), claims1AfterRotate.UserID)
+}

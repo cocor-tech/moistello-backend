@@ -15,6 +15,15 @@ import (
 	"github.com/moistello/backend/internal/domain/auth/session"
 )
 
+type KeyConfig struct {
+	CurrentPrivateKeyPEM  string
+	CurrentPublicKeyPEM   string
+	CurrentKID            string
+	PreviousPrivateKeyPEM string
+	PreviousPublicKeyPEM  string
+	PreviousKID           string
+}
+
 type Service interface {
 	GenerateNonce(ctx context.Context, walletAddress string) (*Nonce, error)
 	VerifySignature(ctx context.Context, walletAddress, signature string) (bool, error)
@@ -27,6 +36,8 @@ type Service interface {
 	ListSessions(ctx context.Context, userID string, currentTokenHash string) ([]SessionInfo, error)
 	RevokeSession(ctx context.Context, userID, sessionHash string) error
 	RevokeAllSessions(ctx context.Context, userID, currentHash string) error
+	RotateSigningKey(newPrivateKeyPEM, newPublicKeyPEM string, newKID string) error
+	JWTService() jwt.Service
 }
 
 type authService struct {
@@ -37,26 +48,37 @@ type authService struct {
 }
 
 func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, jwtPrivateKeyPEM, jwtPublicKeyPEM string) (Service, error) {
-	privateKeyPEM := []byte(strings.TrimSpace(jwtPrivateKeyPEM))
-	publicKeyPEM := []byte(strings.TrimSpace(jwtPublicKeyPEM))
+	return NewServiceWithKeyConfig(redisClient, nonceTTL, accessTTL, refreshTTL, KeyConfig{
+		CurrentPrivateKeyPEM: jwtPrivateKeyPEM,
+		CurrentPublicKeyPEM:  jwtPublicKeyPEM,
+	})
+}
+
+func NewServiceWithKeyConfig(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.Duration, keyCfg KeyConfig) (Service, error) {
+	privateKeyPEM := []byte(strings.TrimSpace(keyCfg.CurrentPrivateKeyPEM))
+	publicKeyPEM := []byte(strings.TrimSpace(keyCfg.CurrentPublicKeyPEM))
 	if len(privateKeyPEM) == 0 || len(publicKeyPEM) == 0 {
 		return nil, fmt.Errorf("[SECURITY CRITICAL] JWT keys must be loaded into config before auth service startup")
 	}
 
-	signingKey, signingMethod, err := ParsePrivateSigningKey(privateKeyPEM)
+	currentKey, err := ParseKeyPair(privateKeyPEM, publicKeyPEM, keyCfg.CurrentKID)
 	if err != nil {
-		return nil, fmt.Errorf("parsing JWT private key: %w", err)
+		return nil, fmt.Errorf("parsing current JWT key pair: %w", err)
 	}
-	verifyingKey, verifyingMethod, err := ParsePublicVerifyingKey(publicKeyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("parsing JWT public key: %w", err)
-	}
-	if signingMethod.Alg() != verifyingMethod.Alg() {
-		return nil, fmt.Errorf("JWT key pair algorithm mismatch: private=%s public=%s", signingMethod.Alg(), verifyingMethod.Alg())
+
+	var previousKey *jwt.Key
+	if strings.TrimSpace(keyCfg.PreviousPublicKeyPEM) != "" {
+		prevPrivBytes := []byte(strings.TrimSpace(keyCfg.PreviousPrivateKeyPEM))
+		prevPubBytes := []byte(strings.TrimSpace(keyCfg.PreviousPublicKeyPEM))
+		prevKeyParsed, err := ParseKeyPair(prevPrivBytes, prevPubBytes, keyCfg.PreviousKID)
+		if err != nil {
+			return nil, fmt.Errorf("parsing previous JWT key pair: %w", err)
+		}
+		previousKey = prevKeyParsed
 	}
 
 	nonceSvc := nonce.NewService(redisClient, nonceTTL)
-	jwtSvc := jwt.NewService(signingKey, signingMethod, verifyingKey, verifyingMethod.Alg())
+	jwtSvc := jwt.NewServiceWithKeys(currentKey, previousKey)
 	sessionSvc := session.NewService(redisClient, refreshTTL, jwtSvc)
 
 	return &authService{
@@ -65,6 +87,19 @@ func NewService(redisClient *redis.Client, nonceTTL, accessTTL, refreshTTL time.
 		jwtService:     jwtSvc,
 		accessTTL:      accessTTL,
 	}, nil
+}
+
+func (s *authService) RotateSigningKey(newPrivateKeyPEM, newPublicKeyPEM string, newKID string) error {
+	newKey, err := ParseKeyPair([]byte(newPrivateKeyPEM), []byte(newPublicKeyPEM), newKID)
+	if err != nil {
+		return fmt.Errorf("parsing new JWT key pair for rotation: %w", err)
+	}
+	s.jwtService.RotateKey(newKey)
+	return nil
+}
+
+func (s *authService) JWTService() jwt.Service {
+	return s.jwtService
 }
 
 func (s *authService) GenerateNonce(ctx context.Context, walletAddress string) (*Nonce, error) {

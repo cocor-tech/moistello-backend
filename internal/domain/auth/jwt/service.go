@@ -2,15 +2,29 @@ package jwt
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
+type Key struct {
+	ID            string
+	SigningKey    any
+	SigningMethod jwt.SigningMethod
+	VerifyingKey  any
+	VerifyingAlg  string
+}
+
 type Service interface {
 	GenerateToken(ctx context.Context, userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error)
 	ValidateToken(ctx context.Context, tokenString string) (*Claims, error)
+	RotateKey(newKey *Key)
+	SetPreviousKey(prevKey *Key)
+	CurrentKey() *Key
+	PreviousKey() *Key
 }
 
 type Claims struct {
@@ -22,22 +36,65 @@ type Claims struct {
 }
 
 type service struct {
-	signingKey    any
-	signingMethod jwt.SigningMethod
-	verifyingKey  any
-	verifyingAlg  string
+	mu          sync.RWMutex
+	currentKey  *Key
+	previousKey *Key
 }
 
 func NewService(signingKey any, signingMethod jwt.SigningMethod, verifyingKey any, verifyingAlg string) Service {
+	curKey := &Key{
+		ID:            "v1",
+		SigningKey:    signingKey,
+		SigningMethod: signingMethod,
+		VerifyingKey:  verifyingKey,
+		VerifyingAlg:  verifyingAlg,
+	}
 	return &service{
-		signingKey:    signingKey,
-		signingMethod: signingMethod,
-		verifyingKey:  verifyingKey,
-		verifyingAlg:  verifyingAlg,
+		currentKey: curKey,
 	}
 }
 
+func NewServiceWithKeys(currentKey *Key, previousKey *Key) Service {
+	return &service{
+		currentKey:  currentKey,
+		previousKey: previousKey,
+	}
+}
+
+func (s *service) RotateKey(newKey *Key) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.previousKey = s.currentKey
+	s.currentKey = newKey
+}
+
+func (s *service) SetPreviousKey(prevKey *Key) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.previousKey = prevKey
+}
+
+func (s *service) CurrentKey() *Key {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentKey
+}
+
+func (s *service) PreviousKey() *Key {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.previousKey
+}
+
 func (s *service) GenerateToken(ctx context.Context, userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error) {
+	s.mu.RLock()
+	curKey := s.currentKey
+	s.mu.RUnlock()
+
+	if curKey == nil || curKey.SigningKey == nil {
+		return "", fmt.Errorf("no private signing key configured")
+	}
+
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"sub":    userID.String(),
@@ -47,8 +104,11 @@ func (s *service) GenerateToken(ctx context.Context, userID uuid.UUID, walletAdd
 		"exp":    now.Add(ttl).Unix(),
 	}
 
-	token := jwt.NewWithClaims(s.signingMethod, claims)
-	signed, err := token.SignedString(s.signingKey)
+	token := jwt.NewWithClaims(curKey.SigningMethod, claims)
+	if curKey.ID != "" {
+		token.Header["kid"] = curKey.ID
+	}
+	signed, err := token.SignedString(curKey.SigningKey)
 	if err != nil {
 		return "", err
 	}
@@ -56,17 +116,69 @@ func (s *service) GenerateToken(ctx context.Context, userID uuid.UUID, walletAdd
 }
 
 func (s *service) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if token.Method.Alg() != s.verifyingAlg {
-			return nil, ErrInvalidSigningMethod
-		}
-		return s.verifyingKey, nil
-	}, jwt.WithValidMethods([]string{s.verifyingAlg}))
-	if err != nil {
+	s.mu.RLock()
+	curKey := s.currentKey
+	prevKey := s.previousKey
+	s.mu.RUnlock()
+
+	if curKey == nil {
 		return nil, ErrInvalidToken
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+	tokenHeaderKID := extractKID(tokenString)
+
+	var keysToTry []*Key
+	if tokenHeaderKID != "" && prevKey != nil && tokenHeaderKID == prevKey.ID {
+		keysToTry = append(keysToTry, prevKey)
+		if curKey != nil {
+			keysToTry = append(keysToTry, curKey)
+		}
+	} else {
+		if curKey != nil {
+			keysToTry = append(keysToTry, curKey)
+		}
+		if prevKey != nil {
+			keysToTry = append(keysToTry, prevKey)
+		}
+	}
+
+	for _, k := range keysToTry {
+		claims, err := parseAndValidateWithKey(tokenString, k)
+		if err == nil && claims != nil {
+			return claims, nil
+		}
+	}
+
+	return nil, ErrInvalidToken
+}
+
+func extractKID(tokenString string) string {
+	parser := jwt.NewParser()
+	token, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+	if err == nil && token != nil {
+		if kid, ok := token.Header["kid"].(string); ok {
+			return kid
+		}
+	}
+	return ""
+}
+
+func parseAndValidateWithKey(tokenString string, k *Key) (*Claims, error) {
+	if k == nil || k.VerifyingKey == nil {
+		return nil, ErrInvalidToken
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if token.Method.Alg() != k.VerifyingAlg {
+			return nil, ErrInvalidSigningMethod
+		}
+		return k.VerifyingKey, nil
+	}, jwt.WithValidMethods([]string{k.VerifyingAlg}))
+	if err != nil || !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
 		userID, _ := claims["sub"].(string)
 		wallet, _ := claims["wallet"].(string)
 		role, _ := claims["role"].(string)

@@ -529,3 +529,56 @@ func TestAdminAPIKeyMiddleware_KeyNotConfigured(t *testing.T) {
 	assert.Equal(t, 403, w.Code)
 	assert.Contains(t, w.Body.String(), "admin API key not configured")
 }
+
+func TestAuthMiddleware_KeyRotationWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	keys1 := newRSATestKeys(t)
+	keys2 := newRSATestKeys(t)
+
+	claims1 := &middleware.Claims{
+		UserID: "user-key1",
+		Role:   "user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token1 := jwt.NewWithClaims(jwt.SigningMethodRS256, claims1)
+	token1.Header["kid"] = "key-1"
+	tokenStr1, err := token1.SignedString(keys1.privateKey)
+	require.NoError(t, err)
+
+	claims2 := &middleware.Claims{
+		UserID: "user-key2",
+		Role:   "admin",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token2 := jwt.NewWithClaims(jwt.SigningMethodRS256, claims2)
+	token2.Header["kid"] = "key-2"
+	tokenStr2, err := token2.SignedString(keys2.privateKey)
+	require.NoError(t, err)
+
+	r := gin.New()
+	r.Use(middleware.AuthMiddleware(keys2.publicKeyPEM, keys1.publicKeyPEM))
+	r.GET("/test", func(c *gin.Context) {
+		c.JSON(200, gin.H{"userID": middleware.GetUserID(c)})
+	})
+
+	w2 := httptest.NewRecorder()
+	req2, _ := http.NewRequest("GET", "/test", nil)
+	req2.Header.Set("Authorization", "Bearer "+tokenStr2)
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, 200, w2.Code)
+	assert.Contains(t, w2.Body.String(), "user-key2")
+
+	w1 := httptest.NewRecorder()
+	req1, _ := http.NewRequest("GET", "/test", nil)
+	req1.Header.Set("Authorization", "Bearer "+tokenStr1)
+	r.ServeHTTP(w1, req1)
+	assert.Equal(t, 200, w1.Code)
+	assert.Contains(t, w1.Body.String(), "user-key1")
+}

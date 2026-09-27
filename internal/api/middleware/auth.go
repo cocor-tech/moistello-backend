@@ -21,8 +21,8 @@ type Claims struct {
 	Role   string `json:"role"`
 }
 
-func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
-	publicKey, method, err := auth.ParsePublicVerifyingKey(publicKeyPEM)
+func AuthMiddleware(publicKeyPEM []byte, previousPublicKeyPEM ...[]byte) gin.HandlerFunc {
+	keys, err := parseVerifyingKeys(publicKeyPEM, previousPublicKeyPEM...)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to parse JWT public key")
 	}
@@ -40,21 +40,10 @@ func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 			response.Unauthorized(c, "invalid authorization format")
 			return
 		}
-		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) {
-			if t.Method.Alg() != method.Alg() {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-			}
-			return publicKey, nil
-		}, jwt.WithValidMethods([]string{method.Alg()}))
-		if err != nil || !token.Valid {
+		claims, valid := validateTokenWithKeys(parts[1], keys)
+		if !valid || claims == nil {
 			c.Abort()
 			response.Unauthorized(c, "invalid or expired token")
-			return
-		}
-		claims, ok := token.Claims.(*Claims)
-		if !ok {
-			c.Abort()
-			response.Unauthorized(c, "invalid token claims")
 			return
 		}
 		c.Set("userID", claims.UserID)
@@ -66,8 +55,8 @@ func AuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 	}
 }
 
-func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
-	publicKey, method, err := auth.ParsePublicVerifyingKey(publicKeyPEM)
+func OptionalAuthMiddleware(publicKeyPEM []byte, previousPublicKeyPEM ...[]byte) gin.HandlerFunc {
+	keys, err := parseVerifyingKeys(publicKeyPEM, previousPublicKeyPEM...)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to parse JWT public key")
 	}
@@ -83,18 +72,8 @@ func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (any, error) {
-			if t.Method.Alg() != method.Alg() {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-			}
-			return publicKey, nil
-		}, jwt.WithValidMethods([]string{method.Alg()}))
-		if err != nil || !token.Valid {
-			c.Next()
-			return
-		}
-		claims, ok := token.Claims.(*Claims)
-		if !ok {
+		claims, valid := validateTokenWithKeys(parts[1], keys)
+		if !valid || claims == nil {
 			c.Next()
 			return
 		}
@@ -104,6 +83,100 @@ func OptionalAuthMiddleware(publicKeyPEM []byte) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), logger.UserIDKey, claims.UserID))
 		c.Next()
 	}
+}
+
+type verifyingKeyInfo struct {
+	key          any
+	verifyingAlg string
+	kid          string
+}
+
+func parseVerifyingKeys(publicKeyPEM []byte, previousPublicKeyPEM ...[]byte) ([]verifyingKeyInfo, error) {
+	allPEMs := append([][]byte{publicKeyPEM}, previousPublicKeyPEM...)
+	var keys []verifyingKeyInfo
+
+	for _, pemBytes := range allPEMs {
+		if len(pemBytes) == 0 {
+			continue
+		}
+		parsedKeys, err := auth.ParsePublicVerifyingKeys(pemBytes)
+		if err != nil {
+			vk, method, parseErr := auth.ParsePublicVerifyingKey(pemBytes)
+			if parseErr != nil {
+				return nil, err
+			}
+			keys = append(keys, verifyingKeyInfo{
+				key:          vk,
+				verifyingAlg: method.Alg(),
+				kid:          "",
+			})
+			continue
+		}
+		for _, k := range parsedKeys {
+			keys = append(keys, verifyingKeyInfo{
+				key:          k.VerifyingKey,
+				verifyingAlg: k.VerifyingAlg,
+				kid:          k.ID,
+			})
+		}
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no valid public keys provided")
+	}
+	return keys, nil
+}
+
+func validateTokenWithKeys(tokenStr string, keys []verifyingKeyInfo) (*Claims, bool) {
+	parser := jwt.NewParser()
+	var tokenKID string
+	if unverifiedToken, _, err := parser.ParseUnverified(tokenStr, &Claims{}); err == nil && unverifiedToken != nil {
+		if kid, ok := unverifiedToken.Header["kid"].(string); ok {
+			tokenKID = kid
+		}
+	}
+
+	orderedKeys := make([]verifyingKeyInfo, 0, len(keys))
+	if tokenKID != "" {
+		for _, k := range keys {
+			if k.kid != "" && k.kid == tokenKID {
+				orderedKeys = append(orderedKeys, k)
+			}
+		}
+	}
+	for _, k := range keys {
+		alreadyAdded := false
+		for _, ok := range orderedKeys {
+			if ok.key == k.key {
+				alreadyAdded = true
+				break
+			}
+		}
+		if !alreadyAdded {
+			orderedKeys = append(orderedKeys, k)
+		}
+	}
+
+	for _, kInfo := range orderedKeys {
+		algName := kInfo.verifyingAlg
+		if algName == "" {
+			algName = "RS256"
+		}
+		token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
+			if t.Method.Alg() != algName {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return kInfo.key, nil
+		}, jwt.WithValidMethods([]string{algName}))
+
+		if err == nil && token != nil && token.Valid {
+			if claims, ok := token.Claims.(*Claims); ok {
+				return claims, true
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func AdminMiddleware() gin.HandlerFunc {
