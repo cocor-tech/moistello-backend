@@ -9,6 +9,10 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/moistello/backend/pkg/tracing"
 )
 
 // ContractEvent represents a Soroban contract event.
@@ -54,7 +58,9 @@ type eventsResponse struct {
 }
 
 // GetEvents fetches contract events matching the filter.
-func (c *EventsClient) GetEvents(ctx context.Context, filter EventFilter) (*eventsResponse, error) {
+func (c *EventsClient) GetEvents(ctx context.Context, filter EventFilter) (result *eventsResponse, err error) {
+	start := time.Now()
+
 	filterJSON, err := json.Marshal(filter)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling filter: %w", err)
@@ -66,6 +72,17 @@ func (c *EventsClient) GetEvents(ctx context.Context, filter EventFilter) (*even
 		"method": "getEvents",
 		"params": %s
 	}`, string(filterJSON))
+
+	// The span records the shape of the request, never the filter values: a
+	// filter carries contract IDs and ledger numbers, and this keeps the span
+	// free of anything caller-supplied.
+	ctx, span := tracing.StartStellarSpan(ctx, "getEvents")
+	span.SetAttributes(
+		attribute.String("rpc.method", "getEvents"),
+		attribute.Int("rpc.contract_count", len(filter.ContractIDs)),
+		attribute.Int64("rpc.start_ledger", filter.StartLedger),
+	)
+	defer func() { tracing.EndSpan(span, err, start) }()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.rpcURL, bytes.NewBufferString(body))
 	if err != nil {

@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/moistello/backend/config"
@@ -142,11 +143,41 @@ func StartStellarSpan(ctx context.Context, operation string) (context.Context, t
 }
 
 // StartHTTPSpan begins a child span for an external HTTP call.
+//
+// The URL is scrubbed through SafeURL before it becomes an attribute, because a
+// full URL routinely carries credentials in its query string (API keys, tokens,
+// signed URLs) and a span is exported to a collector that is not subject to the
+// same access controls as the application.
 func StartHTTPSpan(ctx context.Context, operation, method, url string) (context.Context, trace.Span) {
 	return StartSpan(ctx, "http."+operation,
 		attribute.String("http.method", method),
-		attribute.String("http.url", url),
+		attribute.String("http.url", SafeURL(url)),
 	)
+}
+
+// SafeURL reduces a URL to the parts that are safe to export: scheme, host and
+// path. Userinfo, query and fragment are dropped, since those are where bearer
+// tokens, API keys, signed parameters and email addresses end up.
+//
+// A value that does not parse is reduced to its scheme and host if it looks like
+// a URL, and otherwise passed through as-is, because dropping an attribute
+// entirely would be worse than recording an opaque unparseable value.
+func SafeURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return raw
+	}
+
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
 }
 
 // WithDBSpan runs fn inside a database child span tagged with the operation and

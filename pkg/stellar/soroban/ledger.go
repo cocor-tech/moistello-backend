@@ -15,6 +15,9 @@ import (
 
 	"github.com/stellar/go/strkey"
 	"github.com/stellar/go/xdr"
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/moistello/backend/pkg/tracing"
 )
 
 // contractIDSize is the byte length of a Soroban contract ID, which is a
@@ -53,7 +56,9 @@ func NewLedgerClient(rpcURL string) *LedgerClient {
 // which is the most recent one, so a caller correlating this with a historical
 // event should treat it as the version the contract runs now rather than a
 // guaranteed historical guarantee.
-func (c *LedgerClient) GetContractWasmHash(ctx context.Context, contractID string) (string, error) {
+func (c *LedgerClient) GetContractWasmHash(ctx context.Context, contractID string) (version string, err error) {
+	start := time.Now()
+
 	addr, err := parseContractAddress(contractID)
 	if err != nil {
 		return "", err
@@ -63,6 +68,13 @@ func (c *LedgerClient) GetContractWasmHash(ctx context.Context, contractID strin
 	if err != nil {
 		return "", fmt.Errorf("marshaling contract instance key: %w", err)
 	}
+
+	// The span records the operation only. The requested ledger key identifies a
+	// contract, and the response a hash, so neither is user data; the RPC URL is
+	// deliberately not recorded at all.
+	ctx, span := tracing.StartStellarSpan(ctx, "getLedgerEntries")
+	span.SetAttributes(attribute.String("rpc.method", "getLedgerEntries"))
+	defer func() { tracing.EndSpan(span, err, start) }()
 
 	body := fmt.Sprintf(`{
 		"jsonrpc": "2.0",

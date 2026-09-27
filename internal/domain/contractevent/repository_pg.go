@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/moistello/backend/pkg/tracing"
 )
 
 type pgRepo struct {
@@ -33,9 +36,16 @@ func (r *pgRepo) List(ctx context.Context, filter ListFilter, page, limit int) (
 
 	where, args := filter.buildWhere()
 
+	// The filter is summarised by which fields are set, not by their values: a
+	// span attribute carrying a raw filter value would put caller-supplied data
+	// into the exported trace.
+	spanCtx, span := tracing.StartDBSpan(ctx, "SELECT", "contract_events")
+	span.SetAttributes(filterAttributes(filter)...)
+
 	var total int
 	countQuery := `SELECT COUNT(*) FROM contract_events` + where
-	if err := r.db.GetContext(ctx, &total, countQuery, args...); err != nil {
+	if err := r.db.GetContext(spanCtx, &total, countQuery, args...); err != nil {
+		tracing.EndSpan(span, err, time.Now())
 		return nil, 0, fmt.Errorf("counting contract events: %w", err)
 	}
 
@@ -49,9 +59,12 @@ func (r *pgRepo) List(ctx context.Context, filter ListFilter, page, limit int) (
 		` OFFSET $` + fmt.Sprint(len(args)+2)
 
 	var events []ContractEvent
-	if err := r.db.SelectContext(ctx, &events, query, pageArgs...); err != nil {
+	start := time.Now()
+	if err := r.db.SelectContext(spanCtx, &events, query, pageArgs...); err != nil {
+		tracing.EndSpan(span, err, start)
 		return nil, 0, fmt.Errorf("listing contract events: %w", err)
 	}
+	tracing.EndSpan(span, nil, start)
 	return events, total, nil
 }
 
@@ -101,4 +114,21 @@ func (f ListFilter) buildWhere() (string, []any) {
 		return "", nil
 	}
 	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// filterAttributes describes which filters are active, without their values, so
+// a span says "filtered by contract version" without ever carrying one.
+func filterAttributes(f ListFilter) []attribute.KeyValue {
+	var attrs []attribute.KeyValue
+	add := func(name string, active bool) {
+		if active {
+			attrs = append(attrs, attribute.Bool("db.filter."+name, true))
+		}
+	}
+	add("tx_hash", f.TxHash != "")
+	add("contract_id", f.ContractID != "")
+	add("event_type", f.EventType != "")
+	add("contract_version", f.ContractVersion != "")
+	add("ledger_range", f.FromLedger != nil || f.ToLedger != nil)
+	return attrs
 }
