@@ -56,6 +56,13 @@ type ServerConfig struct {
 	// ShutdownTimeout bounds how long in-flight requests may take to finish
 	// after SIGTERM before their connections are closed forcibly.
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+	// MaxBodyBytes caps request bodies on every write route (#445). Zero falls
+	// back to middleware.DefaultMaxBodyBytes (4 MB).
+	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
+	// MaxBodyBytesRoutes raises or lowers the cap for individual routes, keyed
+	// by the Gin route pattern (e.g. "/v1/wallets/withdraw"). Use it for
+	// endpoints that legitimately accept larger payloads than the default.
+	MaxBodyBytesRoutes map[string]int64 `mapstructure:"max_body_bytes_routes"`
 }
 
 type DatabaseConfig struct {
@@ -180,10 +187,10 @@ type AuthConfig struct {
 	JWTPreviousPublicKeyPEM   string        `mapstructure:"jwt_previous_public_key_pem"`
 	JWTPreviousKID            string        `mapstructure:"jwt_previous_kid"`
 	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
-	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
-	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
-	AdminAPIKey          string        `mapstructure:"admin_api_key"`
-	AdminAPIKeySecondary string        `mapstructure:"admin_api_key_secondary"`
+	RefreshTokenTTL           time.Duration `mapstructure:"refresh_token_ttl"`
+	NonceTTL                  time.Duration `mapstructure:"nonce_ttl"`
+	AdminAPIKey               string        `mapstructure:"admin_api_key"`
+	AdminAPIKeySecondary      string        `mapstructure:"admin_api_key_secondary"`
 	// CleanupInterval is how often the scheduled session cleanup job runs
 	// (#374). It is the only thing that reclaims expired session state; no
 	// request path sweeps.
@@ -424,6 +431,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.http_redirect_port", 80)
 	v.SetDefault("server.shutdown_delay", "0s")
 	v.SetDefault("server.shutdown_timeout", "30s")
+	v.SetDefault("server.max_body_bytes", 4*1024*1024)
+	v.SetDefault("server.max_body_bytes_routes", map[string]int64{})
 	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
 	// must be set explicitly. An empty URL will cause a clear startup failure rather than
 	// silently connecting with plaintext credentials and SSL disabled.

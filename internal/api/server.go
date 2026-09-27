@@ -16,10 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// maxBodyBytes is the hard limit on request body size (4 MB).
-// This prevents memory exhaustion from oversized request bodies (#49).
-const maxBodyBytes = 4 * 1024 * 1024 // 4 MB
-
 // defaultShutdownTimeout bounds the drain when server.shutdown_timeout is unset.
 const defaultShutdownTimeout = 30 * time.Second
 
@@ -55,20 +51,19 @@ type Server struct {
 	serveErr   chan error
 }
 
-// NewServer wraps router with the request body cap and prepares the
-// listeners described by cfg. Nothing is bound until Start is called.
+// NewServer prepares the listeners described by cfg. Nothing is bound until
+// Start is called.
+//
+// The request body cap lives in the router (middleware.BodyLimit) rather than
+// here: it has to be able to raise the limit for individual routes, which a
+// blanket wrapper around the whole handler cannot do (#445).
 func NewServer(router http.Handler, cfg config.ServerConfig, hooks ShutdownHooks) *Server {
-	limitedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-		router.ServeHTTP(w, r)
-	})
-
 	s := &Server{
 		cfg:   cfg,
 		hooks: hooks,
 		srv: &http.Server{
 			Addr:           fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-			Handler:        limitedHandler,
+			Handler:        router,
 			ReadTimeout:    cfg.ReadTimeout,
 			WriteTimeout:   cfg.WriteTimeout,
 			MaxHeaderBytes: cfg.MaxHeaderBytes,

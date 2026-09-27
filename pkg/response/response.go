@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 // Envelope represents both the legacy Moistello API response wrapper and
@@ -97,6 +99,8 @@ func statusTitle(status int) string {
 		return "Unprocessable Entity"
 	case http.StatusTooManyRequests:
 		return "Too Many Requests"
+	case http.StatusRequestEntityTooLarge:
+		return "Request Entity Too Large"
 	case http.StatusInternalServerError:
 		return "Internal Server Error"
 	case http.StatusBadGateway:
@@ -224,4 +228,13 @@ func NonceExpired(c *gin.Context, message string) {
 
 func RateLimitExceeded(c *gin.Context, message string) {
 	Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", message, nil)
+}
+
+// RequestEntityTooLarge responds with 413 Request Entity Too Large, reporting
+// the cap the request actually violated so the client knows whether to shrink
+// the payload or split it across calls (#445).
+func RequestEntityTooLarge(c *gin.Context, limit int64) {
+	Error(c, http.StatusRequestEntityTooLarge, "REQUEST_BODY_TOO_LARGE",
+		fmt.Sprintf("%s (limit %d bytes)", apperrors.ErrRequestEntityTooLarge, limit),
+		gin.H{"limitBytes": limit})
 }

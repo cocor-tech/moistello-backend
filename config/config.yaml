@@ -6,6 +6,15 @@ server:
   read_timeout: "10s"
   write_timeout: "30s"
   max_header_bytes: 1048576
+  # Maximum request body accepted on write routes (POST/PUT/PATCH/DELETE).
+  # Anything larger is refused with 413 and the typed REQUEST_BODY_TOO_LARGE
+  # error before the request reaches a handler.
+  max_body_bytes: 4194304
+  # Per-route overrides, keyed by the route pattern. Use these for endpoints
+  # that legitimately accept larger payloads than the default, for example:
+  #   max_body_bytes_routes:
+  #     "/v1/wallets/withdraw": 1048576
+  max_body_bytes_routes: {}
   # Time to keep serving after readiness flips to not-ready, so load
   # balancers stop routing here before the listener closes. Set it to your
   # platform's endpoint propagation time (a few seconds on Kubernetes).

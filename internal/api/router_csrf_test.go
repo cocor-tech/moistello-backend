@@ -45,7 +45,10 @@ var mutatingMethods = map[string]bool{
 // newCSRFTestRouter builds the real router with nil handlers (only method
 // values are taken at registration), a fresh ECDSA JWT key and miniredis, and
 // returns it with a valid bearer token for an authenticated caller.
-func newCSRFTestRouter(t *testing.T) (*gin.Engine, string) {
+//
+// Optional mutators adjust the config before the router is built, so other
+// route-table tests can reuse this harness (e.g. #445 sets a small body cap).
+func newCSRFTestRouter(t *testing.T, mutate ...func(*config.Config)) (*gin.Engine, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -77,6 +80,9 @@ func newCSRFTestRouter(t *testing.T) (*gin.Engine, string) {
 	cfg.RateLimit.Authenticated = 1_000_000
 	cfg.RateLimit.Auth = 1_000_000
 	cfg.CORS.AllowedOrigins = []string{"https://app.example"}
+	for _, m := range mutate {
+		m(cfg)
+	}
 
 	// Zero-value handlers: routes only take method values at registration, and
 	// the requests under test are stopped by middleware before any handler runs.
