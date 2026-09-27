@@ -728,22 +728,68 @@ func (p *EventProcessor) onCircleCompleted(ctx context.Context, ev *ContractEven
 }
 
 // onAuctionBid handles AuctionBid(circle_id, bidder, discount_bips, round).
-// No persistent table exists yet — logs and broadcasts only.
-// TODO: Persist to auction_bids table (follow-up issue).
+// Persists the bid to circle_auction_bids table and broadcasts the event.
 func (p *EventProcessor) onAuctionBid(ctx context.Context, ev *ContractEvent) error {
 	contractID := payloadStr(ev.Payload, "circle_id")
+	if contractID == "" {
+		contractID = ev.ContractID
+	}
 	bidder := payloadStr(ev.Payload, "bidder")
 	discountBips := payloadInt(ev.Payload, "discount_bips")
 	round := payloadInt(ev.Payload, "round")
 
+	if p.circleRepo == nil || p.userRepo == nil {
+		p.Broadcast(ctx, contractID, "auction.bid", map[string]any{
+			"contract_id":   contractID,
+			"bidder":        bidder,
+			"discount_bips": discountBips,
+			"round":         round,
+			"tx_hash":       ev.TxHash,
+		})
+		return nil
+	}
+
+	c, err := p.circleRepo.FindByContractID(ctx, contractID)
+	if err != nil {
+		if isNotFound(err) {
+			log.Warn().Str("contract_id", contractID).Msg("AuctionBid: circle not found")
+			return nil
+		}
+		return fmt.Errorf("onAuctionBid find circle: %w", err)
+	}
+
+	u, err := p.userRepo.FindByWalletAddress(ctx, bidder)
+	if err != nil {
+		if isNotFound(err) {
+			log.Warn().Str("wallet", bidder).Msg("AuctionBid: user not found")
+			return nil
+		}
+		return fmt.Errorf("onAuctionBid find user: %w", err)
+	}
+
+	bid := &circle.CircleAuctionBid{
+		ID:          uuid.New(),
+		CircleID:    c.ID,
+		BidderID:    u.ID,
+		RoundNumber: round,
+		BidAmount:   float64(discountBips),
+		CreatedAt:   time.Now().UTC(),
+	}
+
+	if err := p.circleRepo.CreateAuctionBid(ctx, bid); err != nil {
+		return fmt.Errorf("onAuctionBid create auction bid: %w", err)
+	}
+
 	log.Info().
-		Str("contract_id", contractID).
-		Str("bidder", bidder).
+		Str("circle_id", c.ID.String()).
+		Str("bidder_id", u.ID.String()).
 		Int("discount_bips", discountBips).
 		Int("round", round).
-		Msg("AuctionBid: bid received")
+		Msg("AuctionBid: bid persisted")
 
-	p.Broadcast(ctx, contractID, "auction.bid", map[string]any{
+	p.Broadcast(ctx, c.ID.String(), "auction.bid", map[string]any{
+		"circle_id":     c.ID.String(),
+		"bidder_id":     u.ID.String(),
 		"contract_id":   contractID,
 		"bidder":        bidder,
 		"discount_bips": discountBips,

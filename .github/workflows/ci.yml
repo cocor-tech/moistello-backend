@@ -98,6 +98,11 @@ jobs:
           go build -o bin/moistello-api ./cmd/api-server
           go build -o bin/moistello-indexer ./cmd/indexer
           go build -o bin/moistello-migrate ./cmd/migrate
+          go build -o bin/config-validate ./cmd/config-validate
+      - name: Verify Config Validate Subcommand
+        run: |
+          ./bin/config-validate -json || true
+          ./bin/moistello-api config-validate || true
 
   docker-build:
     name: Docker Build

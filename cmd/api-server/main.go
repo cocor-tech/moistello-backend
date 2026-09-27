@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -127,6 +129,20 @@ func (a *userLookupAdapter) FindRecipient(ctx context.Context, userID string) (n
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "config-validate" || os.Args[1] == "--config-validate" || (os.Args[1] == "config" && len(os.Args) > 2 && os.Args[2] == "validate")) {
+		cfg, err := config.Load("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Configuration load failed:\n%v\n", err)
+			os.Exit(1)
+		}
+		if err := cfg.ValidateOffline(); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Configuration offline validation failed:\n%v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ Configuration is valid (environment=%s, offline preflight passed)\n", cfg.Environment)
+		os.Exit(0)
+	}
+
 	cfg, err := config.Load("")
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load configuration")

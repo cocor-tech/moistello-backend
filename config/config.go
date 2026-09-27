@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"strings"
@@ -411,6 +412,8 @@ func Load(path string) (*Config, error) {
 	mustBindEnv(v, "yellow_card.api_key", "YELLOW_CARD_API_KEY")
 	mustBindEnv(v, "yellow_card.api_secret", "YELLOW_CARD_API_SECRET")
 	mustBindEnv(v, "yellow_card.webhook_secret", "YELLOW_CARD_WEBHOOK_SECRET")
+	mustBindEnv(v, "redis.url", "MOISTELLO_REDIS_URL", "REDIS_URL")
+	mustBindEnv(v, "redis.password", "MOISTELLO_REDIS_PASSWORD", "REDIS_PASSWORD")
 	mustBindEnv(v, "auth.admin_api_key", "MOISTELLO_AUTH_ADMIN_API_KEY", "ADMIN_API_KEY")
 	mustBindEnv(v, "auth.admin_api_key_secondary", "MOISTELLO_AUTH_ADMIN_API_KEY_SECONDARY", "ADMIN_API_KEY_SECONDARY")
 	v.SetDefault("auth.admin_api_key", "")
@@ -483,24 +486,27 @@ func Load(path string) (*Config, error) {
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			panic(fmt.Errorf("config: reading config file: %w", err))
+			return nil, fmt.Errorf("config: reading config file: %w", err)
 		}
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		panic(fmt.Errorf("config: unmarshaling config: %w", err))
+		return nil, fmt.Errorf("config: unmarshaling config: %w", err)
 	}
 
 	cfg.Environment = strings.TrimSpace(v.GetString("environment"))
-	cfg.Database.URL = requireString("database.url", cfg.Database.URL, "set MOISTELLO_DATABASE_URL or DATABASE_URL")
-	cfg.Stellar.MasterSecretKey = requireString("stellar.master_secret_key", cfg.Stellar.MasterSecretKey, "set MOISTELLO_STELLAR_MASTER_SECRET_KEY or STELLAR_MASTER_SECRET_KEY")
-	cfg.Stellar.MasterPublicKey = requireString("stellar.master_public_key", cfg.Stellar.MasterPublicKey, "set MOISTELLO_STELLAR_MASTER_PUBLIC_KEY or STELLAR_MASTER_PUBLIC_KEY")
-	cfg.Security.WalletPepper = requireString("security.wallet_pepper", cfg.Security.WalletPepper, "set MOISTELLO_WALLET_PEPPER")
-	cfg.Security.EncryptionKey = requireString("security.encryption_key", cfg.Security.EncryptionKey, "set ENCRYPTION_KEY")
 
-	cfg.Auth.JWTPrivateKeyPEM = loadRequiredText(cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPrivateKeyPath, "auth.jwt_private_key_pem", "auth.jwt_private_key_path")
-	cfg.Auth.JWTPublicKeyPEM = loadRequiredText(cfg.Auth.JWTPublicKeyPEM, cfg.Auth.JWTPublicKeyPath, "auth.jwt_public_key_pem", "auth.jwt_public_key_path")
+	var errs []string
+
+	cfg.Database.URL = collectRequiredString(&errs, "database.url", cfg.Database.URL, "set MOISTELLO_DATABASE_URL or DATABASE_URL")
+	cfg.Stellar.MasterSecretKey = collectRequiredString(&errs, "stellar.master_secret_key", cfg.Stellar.MasterSecretKey, "set MOISTELLO_STELLAR_MASTER_SECRET_KEY or STELLAR_MASTER_SECRET_KEY")
+	cfg.Stellar.MasterPublicKey = collectRequiredString(&errs, "stellar.master_public_key", cfg.Stellar.MasterPublicKey, "set MOISTELLO_STELLAR_MASTER_PUBLIC_KEY or STELLAR_MASTER_PUBLIC_KEY")
+	cfg.Security.WalletPepper = collectRequiredString(&errs, "security.wallet_pepper", cfg.Security.WalletPepper, "set MOISTELLO_WALLET_PEPPER")
+	cfg.Security.EncryptionKey = collectRequiredString(&errs, "security.encryption_key", cfg.Security.EncryptionKey, "set ENCRYPTION_KEY")
+
+	cfg.Auth.JWTPrivateKeyPEM = collectRequiredText(&errs, cfg.Auth.JWTPrivateKeyPEM, cfg.Auth.JWTPrivateKeyPath, "auth.jwt_private_key_pem", "auth.jwt_private_key_path")
+	cfg.Auth.JWTPublicKeyPEM = collectRequiredText(&errs, cfg.Auth.JWTPublicKeyPEM, cfg.Auth.JWTPublicKeyPath, "auth.jwt_public_key_pem", "auth.jwt_public_key_path")
 	if cfg.Auth.JWTPreviousPrivateKeyPEM == "" && cfg.Auth.JWTPreviousPrivateKeyPath != "" {
 		if content, err := os.ReadFile(cfg.Auth.JWTPreviousPrivateKeyPath); err == nil {
 			cfg.Auth.JWTPreviousPrivateKeyPEM = string(content)
@@ -512,16 +518,34 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	validateHexKey(cfg.Security.EncryptionKey)
-	validateDuration("security.argon2_time", cfg.Security.Argon2Time > 0)
-	validateDuration("security.argon2_memory", cfg.Security.Argon2Memory > 0)
-	validateDuration("security.argon2_threads", cfg.Security.Argon2Threads > 0)
-
-	if cfg.Environment != "development" && strings.Contains(cfg.Database.URL, "sslmode=disable") {
-		panic(fmt.Errorf("database.url must not use sslmode=disable outside development; use sslmode=require or stronger"))
+	if cfg.Security.EncryptionKey != "" {
+		raw, err := hex.DecodeString(strings.TrimSpace(cfg.Security.EncryptionKey))
+		if err != nil || len(raw) != 32 {
+			errs = append(errs, "config: security.encryption_key must be a 32-byte hex string")
+		}
 	}
 
-	validateMainnetConfig(&cfg)
+	if cfg.Security.Argon2Time <= 0 {
+		errs = append(errs, "config: security.argon2_time must be greater than zero")
+	}
+	if cfg.Security.Argon2Memory <= 0 {
+		errs = append(errs, "config: security.argon2_memory must be greater than zero")
+	}
+	if cfg.Security.Argon2Threads <= 0 {
+		errs = append(errs, "config: security.argon2_threads must be greater than zero")
+	}
+
+	if cfg.Environment != "development" && strings.Contains(cfg.Database.URL, "sslmode=disable") {
+		errs = append(errs, "database.url must not use sslmode=disable outside development; use sslmode=require or stronger")
+	}
+
+	if mainnetIssues := checkMainnetIssues(&cfg); len(mainnetIssues) > 0 {
+		errs = append(errs, fmt.Sprintf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", mainnetIssues))
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("config errors:\n - %s", strings.Join(errs, "\n - "))
+	}
 
 	cfg.Hot = NewHotReloader(&cfg)
 
@@ -588,6 +612,30 @@ func setDefault(v *viper.Viper, key string, value any) {
 	v.SetDefault(key, value)
 }
 
+func collectRequiredString(errs *[]string, field, value, hint string) string {
+	val := strings.TrimSpace(value)
+	if val == "" {
+		*errs = append(*errs, fmt.Sprintf("config: %s is required (%s)", field, hint))
+	}
+	return val
+}
+
+func collectRequiredText(errs *[]string, current, path, field, pathField string) string {
+	if strings.TrimSpace(current) != "" {
+		return strings.TrimSpace(current)
+	}
+	if strings.TrimSpace(path) == "" {
+		*errs = append(*errs, fmt.Sprintf("config: %s is required (set it directly or configure %s)", field, pathField))
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		*errs = append(*errs, fmt.Sprintf("config: reading %s from %q: %v", field, path, err))
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 func requireString(field, value, hint string) string {
 	if strings.TrimSpace(value) == "" {
 		panic(fmt.Errorf("config: %s is required (%s)", field, hint))
@@ -622,7 +670,7 @@ func validateDuration(name string, ok bool) {
 	}
 }
 
-func validateMainnetConfig(cfg *Config) {
+func checkMainnetIssues(cfg *Config) []string {
 	const (
 		testnetNetwork    = "testnet"
 		testnetHorizon    = "https://horizon-testnet.stellar.org"
@@ -648,9 +696,14 @@ func validateMainnetConfig(cfg *Config) {
 		if cfg.Stellar.USDCIssuer == testnetUSDCIssuer {
 			issues = append(issues, "usdc_issuer still set to testnet")
 		}
-		if len(issues) > 0 {
-			panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
-		}
+		return issues
+	}
+	return nil
+}
+
+func validateMainnetConfig(cfg *Config) {
+	if issues := checkMainnetIssues(cfg); len(issues) > 0 {
+		panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
 	}
 }
 
@@ -716,6 +769,56 @@ func (c *Config) ValidateSecrets() error {
 	return nil
 }
 
+// ValidateOffline performs offline preflight validation:
+// 1. Checks all required secrets presence and format via ValidateSecrets
+// 2. Verifies that JWT private and public key PEMs can be decoded and parsed
+// 3. Verifies previous JWT keys if configured
+// Does NOT open any network connections.
+func (c *Config) ValidateOffline() error {
+	var errs []string
+
+	if err := c.ValidateSecrets(); err != nil {
+		errs = append(errs, err.Error())
+	}
+
+	if err := validatePEMKey("Auth.JWTPrivateKeyPEM", c.Auth.JWTPrivateKeyPEM); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if err := validatePEMKey("Auth.JWTPublicKeyPEM", c.Auth.JWTPublicKeyPEM); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if c.Auth.JWTPreviousPrivateKeyPEM != "" {
+		if err := validatePEMKey("Auth.JWTPreviousPrivateKeyPEM", c.Auth.JWTPreviousPrivateKeyPEM); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if c.Auth.JWTPreviousPublicKeyPEM != "" {
+		if err := validatePEMKey("Auth.JWTPreviousPublicKeyPEM", c.Auth.JWTPreviousPublicKeyPEM); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("offline validation errors:\n - %s", strings.Join(errs, "\n - "))
+	}
+	return nil
+}
+
+func validatePEMKey(name, pemStr string) error {
+	trimmed := strings.TrimSpace(pemStr)
+	if trimmed == "" {
+		return fmt.Errorf("%s is empty", name)
+	}
+	block, _ := pem.Decode([]byte(trimmed))
+	if block == nil {
+		return fmt.Errorf("%s: failed to decode PEM block", name)
+	}
+	if len(block.Bytes) == 0 {
+		return fmt.Errorf("%s: PEM block bytes are empty", name)
+	}
+	return nil
+}
+
 // validateHexKeyFormat ensures a secret is 32-byte hex (64 hex chars).
 func validateHexKeyFormat(name, value string) error {
 	trimmed := strings.TrimSpace(value)
@@ -729,5 +832,4 @@ func validateHexKeyFormat(name, value string) error {
 		}
 	}
 	return nil
-
 }

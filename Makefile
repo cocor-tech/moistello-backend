@@ -16,6 +16,15 @@ help:
 build:
 	go build -o bin/moistello-api ./cmd/api-server
 
+build-all:
+	go build -o bin/moistello-api ./cmd/api-server
+	go build -o bin/moistello-indexer ./cmd/indexer
+	go build -o bin/moistello-migrate ./cmd/migrate
+	go build -o bin/config-validate ./cmd/config-validate
+
+config-validate:
+	go run ./cmd/config-validate
+
 run:
 	go run ./cmd/api-server
 

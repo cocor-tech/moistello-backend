@@ -100,6 +100,11 @@ if [ "${ENVIRONMENT:-}" != "production" ]; then
   echo "   For production deploys, set ENVIRONMENT=production"
 fi
 
+if command -v go >/dev/null 2>&1; then
+  echo "⚙️  Running offline config preflight check..."
+  go run ./cmd/config-validate
+fi
+
 echo ""
 echo "✅ All required secrets present and valid"
 echo "   → Ready to deploy"
