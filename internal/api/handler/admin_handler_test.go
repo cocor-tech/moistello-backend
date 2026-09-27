@@ -32,6 +32,42 @@ func (f *fakeMetricsRepo) DailyVolume(_ context.Context, _ int) ([]admin.DailyVo
 	return f.metrics.DailyVolume, nil
 }
 
+type failingMetricsRepo struct{}
+
+func (failingMetricsRepo) Metrics(_ context.Context, _ int) (*admin.Metrics, error) {
+	return nil, assert.AnError
+}
+
+func (failingMetricsRepo) DailyVolume(_ context.Context, _ int) ([]admin.DailyVolumePoint, error) {
+	return nil, assert.AnError
+}
+
+// Regression guard (#396): GET /admin/metrics must answer with the standard
+// error envelope when the repository fails, never panic the request.
+func TestAdminHandler_GetMetrics_RepoErrorReturnsErrorEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc, err := admin.NewService(failingMetricsRepo{}, 0)
+	require.NoError(t, err)
+
+	h := handler.NewAdminHandler(nil, nil, nil, nil, svc, nil, nil)
+	r := gin.New()
+	r.GET("/admin/metrics", h.GetMetrics)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/admin/metrics", nil)
+	require.NotPanics(t, func() { r.ServeHTTP(w, req) })
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	var body struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.False(t, body.Success)
+	assert.Equal(t, "INTERNAL_ERROR", body.Code)
+}
+
 func TestAdminHandler_GetMetrics_ReturnsRealAggregates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
