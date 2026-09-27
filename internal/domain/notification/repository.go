@@ -12,4 +12,5 @@ type Repository interface {
 	MarkRead(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
 	MarkAllRead(ctx context.Context, userID uuid.UUID) error
 	BulkArchive(ctx context.Context, userID uuid.UUID, ids []uuid.UUID, archived bool) ([]uuid.UUID, error)
+	Search(ctx context.Context, userID uuid.UUID, filter SearchFilter, page, limit int) ([]Notification, int, error)
 }

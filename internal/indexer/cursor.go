@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,14 +43,37 @@ func (c *CursorTracker) GetCurrent(ctx context.Context) (*Cursor, error) {
 	return &cursor, nil
 }
 
+// ErrCursorMissing is returned when the cursor row does not exist, so a
+// checkpoint would otherwise be silently dropped.
+var ErrCursorMissing = errors.New("indexer cursor row is missing")
+
 // Update writes the new cursor position after successful processing.
-// It is parallel-safe: it only advances the cursor if lastLedger > current last_ledger.
+// It is parallel-safe and monotonic: it only advances the cursor if
+// lastLedger > current last_ledger; an older or equal ledger is a no-op.
+// It fails loudly if no cursor row exists, so progress is never lost silently.
 func (c *CursorTracker) Update(ctx context.Context, lastLedger int64) error {
-	_, err := c.db.ExecContext(ctx,
+	if lastLedger < 0 {
+		return fmt.Errorf("updating cursor: invalid ledger %d", lastLedger)
+	}
+	res, err := c.db.ExecContext(ctx,
 		"UPDATE indexer_cursor SET last_ledger = $1, last_processed_at = $2 WHERE chain = 'stellar' AND last_ledger < $1",
 		lastLedger, time.Now())
 	if err != nil {
 		return fmt.Errorf("updating cursor: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n > 0 {
+		return nil
+	}
+
+	// Nothing updated: either the cursor is already at/after lastLedger
+	// (fine) or the row is missing (not fine).
+	var current int64
+	err = c.db.GetContext(ctx, &current, "SELECT last_ledger FROM indexer_cursor WHERE chain = 'stellar'")
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrCursorMissing
+	}
+	if err != nil {
+		return fmt.Errorf("verifying cursor: %w", err)
 	}
 	return nil
 }

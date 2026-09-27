@@ -25,6 +25,14 @@ func (m *Repository) List(ctx context.Context, userID uuid.UUID, page, limit int
 	return args.Get(0).([]notification.Notification), args.Int(1), args.Error(2)
 }
 
+func (m *Repository) Search(ctx context.Context, userID uuid.UUID, filter notification.SearchFilter, page, limit int) ([]notification.Notification, int, error) {
+	args := m.Called(ctx, userID, filter, page, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]notification.Notification), args.Int(1), args.Error(2)
+}
+
 func (m *Repository) MarkRead(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
 	return m.Called(ctx, id, userID).Error(0)
 }

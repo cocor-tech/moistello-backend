@@ -280,6 +280,7 @@ func NewRouter(
 			authenticated.GET("/users/me/communities", communityHandler.GetMyCommunities)
 
 			authenticated.GET("/notifications", notificationHandler.ListNotifications)
+			authenticated.GET("/notifications/search", notificationHandler.SearchNotifications)
 			authenticated.PATCH("/notifications/:id/read", notificationHandler.MarkRead)
 			authenticated.PATCH("/notifications/read-all", notificationHandler.MarkAllRead)
 			authenticated.POST("/notifications/bulk-archive", notificationHandler.BulkArchive)

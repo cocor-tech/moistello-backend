@@ -23,6 +23,7 @@ type Publisher interface {
 type Service interface {
 	Create(ctx context.Context, input CreateInput) (*Notification, error)
 	List(ctx context.Context, userID string, page, limit int, unreadOnly bool) ([]Notification, int, error)
+	Search(ctx context.Context, userID string, filter SearchFilter, page, limit int) ([]Notification, int, error)
 	MarkRead(ctx context.Context, id, userID string) error
 	MarkAllRead(ctx context.Context, userID string) error
 	BulkArchive(ctx context.Context, userID string, ids []string, archived bool) ([]string, error)

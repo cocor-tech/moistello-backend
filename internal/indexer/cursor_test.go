@@ -79,3 +79,44 @@ func TestCursor_Lag(t *testing.T) {
 	stale := &Cursor{LastProcessedAt: now.Add(-10 * time.Minute)}
 	assert.InDelta(t, 10*time.Minute, stale.Lag(now), float64(time.Millisecond))
 }
+
+func TestCursorTracker_Update_StaleLedgerIsNoop(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	tracker := NewCursorTracker(sqlx.NewDb(mockDB, "sqlmock"))
+
+	mock.ExpectExec("UPDATE indexer_cursor SET last_ledger").
+		WithArgs(int64(900), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT last_ledger FROM indexer_cursor").
+		WillReturnRows(sqlmock.NewRows([]string{"last_ledger"}).AddRow(int64(1000)))
+
+	require.NoError(t, tracker.Update(context.Background(), 900))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCursorTracker_Update_MissingRow(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	tracker := NewCursorTracker(sqlx.NewDb(mockDB, "sqlmock"))
+
+	mock.ExpectExec("UPDATE indexer_cursor SET last_ledger").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT last_ledger FROM indexer_cursor").
+		WillReturnRows(sqlmock.NewRows([]string{"last_ledger"}))
+
+	assert.ErrorIs(t, tracker.Update(context.Background(), 1001), ErrCursorMissing)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCursorTracker_Update_RejectsNegativeLedger(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	tracker := NewCursorTracker(sqlx.NewDb(mockDB, "sqlmock"))
+
+	assert.Error(t, tracker.Update(context.Background(), -1))
+	require.NoError(t, mock.ExpectationsWereMet())
+}

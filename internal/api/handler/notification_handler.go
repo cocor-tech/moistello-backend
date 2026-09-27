@@ -7,6 +7,7 @@ import (
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
+	"strings"
 )
 
 type NotificationHandler struct {
@@ -36,6 +37,41 @@ func (h *NotificationHandler) ListNotifications(c *gin.Context) {
 	notifications, total, err := h.notificationService.List(c.Request.Context(), userID, page, limit, unreadOnly)
 	if err != nil {
 		response.InternalError(c, "failed to list notifications")
+		return
+	}
+	response.OKWithMeta(c, gin.H{"notifications": notifications}, response.NewPaginationMeta(page, limit, total))
+}
+
+// @Summary Search notifications
+// @Description Returns paginated notifications filtered by free text, type, read and archive state.
+// @Tags Notifications
+// @Produce json
+// @Security BearerAuth
+// @Param q query string false "Case-insensitive text match on title or body"
+// @Param type query string false "Notification type, e.g. contribution.due"
+// @Param unread query bool false "Only unread notifications"
+// @Param archived query bool false "Include archived notifications"
+// @Param page query int false "Page number" default(1)
+// @Param limit query int false "Items per page" default(20)
+// @Success 200 {object} response.Envelope{data=object{notifications=array},meta=response.PaginationMeta}
+// @Failure 400 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Router /notifications/search [get]
+func (h *NotificationHandler) SearchNotifications(c *gin.Context) {
+	filter := notification.SearchFilter{
+		Query:           strings.TrimSpace(c.Query("q")),
+		Type:            notification.NotificationType(c.Query("type")),
+		UnreadOnly:      c.Query("unread") == "true",
+		IncludeArchived: c.Query("archived") == "true",
+	}
+	if len(filter.Query) > notification.MaxSearchQueryLength {
+		response.BadRequest(c, "search query is too long")
+		return
+	}
+	page, limit, _ := pagination.Parse(c)
+	notifications, total, err := h.notificationService.Search(c.Request.Context(), middleware.GetUserID(c), filter, page, limit)
+	if err != nil {
+		response.InternalError(c, "failed to search notifications")
 		return
 	}
 	response.OKWithMeta(c, gin.H{"notifications": notifications}, response.NewPaginationMeta(page, limit, total))
@@ -180,4 +216,3 @@ func (h *NotificationHandler) BulkUnarchive(c *gin.Context) {
 
 	response.OK(c, gin.H{"updated": len(updated), "ids": updated})
 }
-

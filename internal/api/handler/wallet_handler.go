@@ -66,8 +66,18 @@ func (h *WalletHandler) Withdraw(c *gin.Context) {
 		Amount      float64 `json:"amount" binding:"required,gt=0"`
 		PasskeySeed string  `json:"passkeySeed"`
 		Memo        string  `json:"memo"`
+		Label       string  `json:"label"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := wallet.ValidateMemo(req.Memo); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	label, err := wallet.NormalizeLabel(req.Label)
+	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -78,7 +88,7 @@ func (h *WalletHandler) Withdraw(c *gin.Context) {
 		response.InternalError(c, "withdrawal failed: "+err.Error())
 		return
 	}
-	response.OK(c, gin.H{"txHash": txHash})
+	response.OK(c, gin.H{"txHash": txHash, "memo": req.Memo, "label": label})
 }
 
 // GetBalance returns the XLM and USDC balance for the user's primary wallet

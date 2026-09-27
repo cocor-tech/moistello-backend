@@ -155,6 +155,18 @@ func (s *service) Record(ctx context.Context, input RecordInput) (*Contribution,
 		}
 	}
 
+	// Reject contributions to completed or cancelled circles before any
+	// on-chain verification or DB write happens.
+	if s.circleService != nil {
+		cir, err := s.circleService.Get(ctx, input.CircleID)
+		if err != nil {
+			return nil, fmt.Errorf("getting circle: %w", err)
+		}
+		if cir.Status == circle.CircleStatusCompleted || cir.Status == circle.CircleStatusCancelled {
+			return nil, apperrors.ErrCircleEnded
+		}
+	}
+
 	// Idempotency: if this txnHash was already recorded, return existing row.
 	if input.TxnHash != "" {
 		existing, err := s.repo.FindByTxnHash(ctx, input.TxnHash)

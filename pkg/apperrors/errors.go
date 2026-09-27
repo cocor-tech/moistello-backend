@@ -21,6 +21,7 @@ var (
 	ErrMaxStrikes               = errors.New("maximum strikes reached")
 	ErrDuplicateFile            = errors.New("file with this name already exists")
 	ErrLateContributionRejected = errors.New("contributions rejected: payout scheduling has already begun for this round")
+	ErrCircleEnded              = errors.New("contributions rejected: circle has ended")
 	ErrRequestEntityTooLarge    = errors.New("request body exceeds the maximum allowed size for this endpoint")
 )
 
