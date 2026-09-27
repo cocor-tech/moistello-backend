@@ -3,28 +3,20 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/moistello/backend/config"
-	"github.com/moistello/backend/internal/api"
-	"github.com/moistello/backend/internal/api/handler"
 )
 
 // OpenAPISpec represents a minimal OpenAPI 3.x spec structure for testing.
 type OpenAPISpec struct {
-	OpenAPI string                  `json:"openapi"`
-	Info    map[string]interface{}  `json:"info"`
-	Paths   map[string]PathItem     `json:"paths"`
+	OpenAPI string                   `json:"openapi"`
+	Info    map[string]interface{}   `json:"info"`
+	Paths   map[string]PathItem      `json:"paths"`
 	Tags    []map[string]interface{} `json:"tags"`
 }
 

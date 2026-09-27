@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/moistello/backend/internal/domain/auth"
 	"github.com/moistello/backend/pkg/logger"
+	"github.com/moistello/backend/pkg/metrics"
 	"github.com/moistello/backend/pkg/response"
 	"github.com/rs/zerolog/log"
 )
