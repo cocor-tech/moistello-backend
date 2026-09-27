@@ -59,10 +59,7 @@ func (w *bodyCapture) WriteString(s string) (int, error) {
 // AuthMiddleware so the user ID is available on the context.
 func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-		if key == "" {
-			key = strings.TrimSpace(c.GetHeader("X-Idempotency-Key"))
-		}
+		key := IdempotencyKeyHeader(c)
 
 		if key == "" {
 			c.Next()
@@ -73,7 +70,10 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		if scope == "" {
 			scope = "anon"
 		}
-		redisKey := fmt.Sprintf("idempotency:%s:%s", scope, key)
+		// Scope per user (#198) *and* per route (#393): the same client key
+		// reused on a different endpoint must not replay that endpoint's
+		// cached response.
+		redisKey := fmt.Sprintf("idempotency:%s:%s %s:%s", scope, c.Request.Method, c.FullPath(), key)
 		ctx := c.Request.Context()
 
 		// Atomic SET NX: only the first request with this key claims it.
@@ -141,4 +141,33 @@ func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, r
 	c.Data(record.StatusCode, contentType, record.Body)
 	c.Abort()
 	return true
+}
+
+// IdempotencyKeyHeader returns the request's idempotency key (Idempotency-Key,
+// falling back to X-Idempotency-Key), trimmed; "" if neither is set.
+func IdempotencyKeyHeader(c *gin.Context) string {
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" {
+		key = strings.TrimSpace(c.GetHeader("X-Idempotency-Key"))
+	}
+	return key
+}
+
+// RequireIdempotencyKey rejects a request that carries no idempotency key
+// with 400 (#393). IdempotencyMiddleware on its own is opt-in — a request
+// without a key passes straight through — so a client retry of a
+// money-moving call (withdraw, deposit, contribute, swap, vote, bid…) with no
+// key would execute twice. Mount this on those routes, after
+// IdempotencyMiddleware, to make the key mandatory.
+func RequireIdempotencyKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if IdempotencyKeyHeader(c) == "" {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "Idempotency-Key header is required for this request",
+			})
+			return
+		}
+		c.Next()
+	}
 }
