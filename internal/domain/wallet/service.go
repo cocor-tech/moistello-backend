@@ -69,7 +69,8 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 	copy(rawSeed[:], passkeySeed[:32])
 	kp, err := keypair.FromRawSeed(rawSeed)
 	if err != nil {
-		logger.Ctx(ctx).Error().Err(err).Str("userID", userID).Msg("failed to derive keypair")
+		l := logger.Ctx(ctx) // value receiver; bind before calling pointer methods
+		l.Error().Err(err).Str("userID", userID).Msg("failed to derive keypair")
 		return nil, err
 	}
 

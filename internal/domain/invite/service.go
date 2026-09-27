@@ -82,11 +82,14 @@ func (s *inviteService) Generate(ctx context.Context, input GenerateInput) (*Inv
 		inv.ExpiresAt = sql.NullTime{Time: now.Add(time.Duration(input.TTLHours) * time.Hour), Valid: true}
 	}
 
+	// logger.Ctx returns a zerolog.Logger value; Error/Info have pointer
+	// receivers, so bind it to an addressable variable first.
+	log := logger.Ctx(ctx)
 	if err := s.repo.Create(ctx, inv); err != nil {
-		logger.Ctx(ctx).Error().Err(err).Str("circleID", input.CircleID).Msg("failed to create invite")
+		log.Error().Err(err).Str("circleID", input.CircleID).Msg("failed to create invite")
 		return nil, fmt.Errorf("generating invite: %w", err)
 	}
-	logger.Ctx(ctx).Info().Str("inviteID", inv.ID.String()).Str("circleID", input.CircleID).Msg("invite created")
+	log.Info().Str("inviteID", inv.ID.String()).Str("circleID", input.CircleID).Msg("invite created")
 	return inv, nil
 }
 

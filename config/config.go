@@ -585,7 +585,6 @@ func validateDuration(name string, ok bool) {
 	}
 }
 
-
 func validateMainnetConfig(cfg *Config) {
 	const (
 		testnetNetwork    = "testnet"
@@ -616,6 +615,7 @@ func validateMainnetConfig(cfg *Config) {
 			panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
 		}
 	}
+}
 
 // ValidateSecrets performs pre-deploy validation that all required secrets are present.
 // Call this before any sensitive operations to fail fast with clear error messages.
@@ -631,7 +631,7 @@ func (c *Config) ValidateSecrets() error {
 		{"Security.EncryptionKey", c.Security.EncryptionKey},
 		{"Stellar.MasterSecretKey", c.Stellar.MasterSecretKey},
 		{"Redis.Password", c.Redis.Password},
-		{"Database.Password", c.Database.Password},
+		{"Database.URL", c.Database.URL}, // credentials live in the DSN; there is no separate password field
 		{"YellowCard.WebhookSecret", c.YellowCard.WebhookSecret},
 	}
 
