@@ -82,6 +82,22 @@ func (c *Client) Close() {
 	})
 }
 
+// Kick closes the WebSocket connection immediately with a specific close code
+// and reason (e.g., CloseCircleMembershipRevoked).
+func (c *Client) Kick(code int, reason string) {
+	c.closeOnce.Do(func() {
+		if c.Conn != nil {
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.Conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(code, reason))
+			_ = c.Conn.Close()
+		}
+		if c.closing != nil {
+			close(c.closing)
+		}
+	})
+}
+
 // ReadPump pumps messages from the WebSocket connection to the hub.
 //
 // The application runs ReadPump in a per-connection goroutine. It ensures

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -19,10 +20,17 @@ type rabbitChecker interface {
 	IsAlive() bool
 }
 
+// mobileMoneyChecker is satisfied by *mobilemoney.Registry.
+type mobileMoneyChecker interface {
+	ActiveProviderNames() []string
+	SupportedCurrencies() []string
+}
+
 type HealthHandler struct {
 	db            *sql.DB
 	redis         *redis.Client
 	rabbit        rabbitChecker
+	mm            mobileMoneyChecker
 	sorobanRPCURL string
 	horizonURL    string
 	checkTimeout  time.Duration
@@ -56,6 +64,12 @@ func NewHealthHandler(db *sql.DB, rds *redis.Client, sorobanRPCURL, horizonURL s
 // Call this after NewHealthHandler when the RabbitMQ client is available.
 func (h *HealthHandler) WithRabbitMQ(r rabbitChecker) *HealthHandler {
 	h.rabbit = r
+	return h
+}
+
+// WithMobileMoney attaches a mobile-money provider registry checker to the health handler.
+func (h *HealthHandler) WithMobileMoney(m mobileMoneyChecker) *HealthHandler {
+	h.mm = m
 	return h
 }
 
@@ -136,6 +150,11 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	if rabbitmqStatus.Status != "healthy" {
 		allHealthy = false
 		hasFailure = true
+	}
+
+	// 6. Mobile Money provider presence
+	if h.mm != nil {
+		deps["mobile_money"] = h.checkMobileMoney()
 	}
 
 	overallStatus := "ok"
@@ -395,3 +414,22 @@ func (h *HealthHandler) IndexerLag(c *gin.Context) {
 		"processingRate": 10.0,
 	})
 }
+
+func (h *HealthHandler) checkMobileMoney() DependencyStatus {
+	if h.mm == nil {
+		return DependencyStatus{Status: "healthy", Message: "not configured"}
+	}
+	providers := h.mm.ActiveProviderNames()
+	currencies := h.mm.SupportedCurrencies()
+	if len(providers) == 0 {
+		return DependencyStatus{
+			Status:  "healthy",
+			Message: "0 active providers (no mobile money configured)",
+		}
+	}
+	return DependencyStatus{
+		Status:  "healthy",
+		Message: fmt.Sprintf("%d active provider(s): %s (supported currencies: %s)", len(providers), strings.Join(providers, ", "), strings.Join(currencies, ", ")),
+	}
+}
+

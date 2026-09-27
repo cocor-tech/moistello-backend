@@ -31,6 +31,11 @@ var (
 		Help: "Current number of active WebSocket connections",
 	})
 
+	AdminKeyRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "moistello_admin_key_requests_total",
+		Help: "Total admin API key authenticated requests by key identity (primary/secondary)",
+	}, []string{"identity"})
+
 	DBPoolUtilization = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "moistello_db_pool_utilization",
 		Help: "Database connection pool stats and utilization",

@@ -1,10 +1,15 @@
 package response
 
 import (
-	"github.com/gin-gonic/gin"
+	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
+// Envelope represents both the legacy Moistello API response wrapper and
+// RFC 9457 Problem Details object for error responses.
 type Envelope struct {
 	Success   bool   `json:"success"`
 	Code      string `json:"code,omitempty"`
@@ -13,6 +18,13 @@ type Envelope struct {
 	RequestId string `json:"requestId,omitempty"`
 	Data      any    `json:"data,omitempty"`
 	Meta      any    `json:"meta,omitempty"`
+
+	// RFC 9457 Problem Details fields
+	Type     string `json:"type,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Status   int    `json:"status,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+	Instance string `json:"instance,omitempty"`
 }
 
 type PaginationMeta struct {
@@ -40,6 +52,9 @@ func NewPaginationMeta(page, limit, total int) PaginationMeta {
 }
 
 func getRequestID(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
 	if rid := c.GetHeader("X-Request-ID"); rid != "" {
 		return rid
 	}
@@ -59,6 +74,51 @@ func getRequestID(c *gin.Context) string {
 	return ""
 }
 
+func getInstanceURI(c *gin.Context) string {
+	if c != nil && c.Request != nil && c.Request.URL != nil {
+		return c.Request.URL.Path
+	}
+	return ""
+}
+
+func statusTitle(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "Bad Request"
+	case http.StatusUnauthorized:
+		return "Unauthorized"
+	case http.StatusForbidden:
+		return "Forbidden"
+	case http.StatusNotFound:
+		return "Not Found"
+	case http.StatusConflict:
+		return "Conflict"
+	case http.StatusUnprocessableEntity:
+		return "Unprocessable Entity"
+	case http.StatusTooManyRequests:
+		return "Too Many Requests"
+	case http.StatusInternalServerError:
+		return "Internal Server Error"
+	case http.StatusBadGateway:
+		return "Bad Gateway"
+	case http.StatusServiceUnavailable:
+		return "Service Unavailable"
+	default:
+		if txt := http.StatusText(status); txt != "" {
+			return txt
+		}
+		return "Error"
+	}
+}
+
+func problemTypeURI(code string) string {
+	if code == "" {
+		return "about:blank"
+	}
+	slug := strings.ToLower(strings.ReplaceAll(code, "_", "-"))
+	return fmt.Sprintf("https://moistello.com/probs/%s", slug)
+}
+
 func OK(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, Envelope{
 		Success:   true,
@@ -76,13 +136,23 @@ func OKWithMeta(c *gin.Context, data any, meta any) {
 	})
 }
 
+// Error writes an RFC 9457 compliant problem details error response while
+// maintaining backward compatibility with legacy Envelope fields.
 func Error(c *gin.Context, status int, code, message string, details any) {
+	if code == "" {
+		code = "ERROR"
+	}
 	c.JSON(status, Envelope{
 		Success:   false,
 		Code:      code,
 		Message:   message,
 		Details:   details,
 		RequestId: getRequestID(c),
+		Status:    status,
+		Title:     statusTitle(status),
+		Detail:    message,
+		Type:      problemTypeURI(code),
+		Instance:  getInstanceURI(c),
 	})
 }
 
@@ -136,4 +206,22 @@ func Created(c *gin.Context, data any) {
 // ValidationErrors responds with a 422 Unprocessable Entity error envelope.
 func ValidationErrors(c *gin.Context, message string) {
 	Error(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", message, nil)
+}
+
+// Specific 4xx RFC 9457 helper constructors
+
+func InvalidCredentials(c *gin.Context, message string) {
+	Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", message, nil)
+}
+
+func TokenExpired(c *gin.Context, message string) {
+	Error(c, http.StatusUnauthorized, "TOKEN_EXPIRED", message, nil)
+}
+
+func NonceExpired(c *gin.Context, message string) {
+	Error(c, http.StatusUnauthorized, "NONCE_EXPIRED", message, nil)
+}
+
+func RateLimitExceeded(c *gin.Context, message string) {
+	Error(c, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", message, nil)
 }

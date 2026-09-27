@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"math"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -158,8 +159,136 @@ func (h *CircleHandler) CancelCircle(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
+// RecipientDistribution describes the calculated payout amounts for one recipient.
+type RecipientDistribution struct {
+	RecipientID string  `json:"recipientId"`
+	GrossAmount float64 `json:"grossAmount"`
+	FeeAmount   float64 `json:"feeAmount"`
+	NetAmount   float64 `json:"netAmount"`
+}
+
+// PayoutPreviewResponse is the dry-run breakdown of an upcoming payout round.
+type PayoutPreviewResponse struct {
+	CircleID           string                  `json:"circleId"`
+	RoundNumber        int                     `json:"roundNumber"`
+	Currency           string                  `json:"currency"`
+	TotalGrossAmount   float64                 `json:"totalGrossAmount"`
+	TotalNetAmount     float64                 `json:"totalNetAmount"`
+	ProtocolFee        float64                 `json:"protocolFee"`
+	StellarFeeEstimate float64                 `json:"stellarFeeEstimate"`
+	Recipients         []RecipientDistribution `json:"recipients"`
+	DryRun             bool                    `json:"dryRun"`
+}
+
+func (h *CircleHandler) buildPayoutPreview(cir *circle.Circle, reqAmount *float64, reqFee *float64, recipientID string, roundNumber int) PayoutPreviewResponse {
+	round := roundNumber
+	if round < 1 {
+		round = cir.CurrentRound
+		if round < 1 {
+			round = 1
+		}
+	}
+
+	recipient := recipientID
+	if recipient == "" {
+		recipient = cir.OrganizerID.String()
+	}
+
+	gross := 0.0
+	if reqAmount != nil && *reqAmount > 0 {
+		gross = *reqAmount
+	} else if cir.ContributionAmount > 0 {
+		members := cir.MemberCount
+		if members < 1 {
+			members = cir.MaxMembers
+			if members < 1 {
+				members = 1
+			}
+		}
+		gross = cir.ContributionAmount * float64(members)
+	}
+
+	protocolFee := 0.0
+	if reqFee != nil && *reqFee >= 0 {
+		protocolFee = *reqFee
+	} else {
+		// 1% default protocol fee
+		protocolFee = math.Round(gross*0.01*100) / 100
+	}
+
+	net := gross - protocolFee
+	if net < 0 {
+		net = 0
+	}
+
+	// 100 stroops (0.00001 XLM) base fee per Stellar payment operation
+	stellarFeeEstimate := 0.00001
+
+	return PayoutPreviewResponse{
+		CircleID:           cir.ID.String(),
+		RoundNumber:        round,
+		Currency:           string(cir.Currency),
+		TotalGrossAmount:   gross,
+		TotalNetAmount:     net,
+		ProtocolFee:        protocolFee,
+		StellarFeeEstimate: stellarFeeEstimate,
+		Recipients: []RecipientDistribution{
+			{
+				RecipientID: recipient,
+				GrossAmount: gross,
+				FeeAmount:   protocolFee,
+				NetAmount:   net,
+			},
+		},
+		DryRun: true,
+	}
+}
+
+// @Summary Dry-run preview of circle payout distribution
+// @Description Calculates and returns the computed payout distribution for an active circle without executing money movement.
+// @Tags Circles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Circle ID"
+// @Param body body object{recipientId=string,roundNumber=int,amount=number,feeAmount=number} false "Optional overrides for preview"
+// @Success 200 {object} response.Envelope{data=object{preview=PayoutPreviewResponse}}
+// @Failure 400 {object} response.Envelope
+// @Failure 403 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Router /circles/{id}/payout/preview [post]
+func (h *CircleHandler) PreviewPayout(c *gin.Context) {
+	circleID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	cir, err := h.circleService.Get(c.Request.Context(), circleID)
+	if err != nil {
+		response.NotFound(c, "circle not found")
+		return
+	}
+	if cir.OrganizerID.String() != userID {
+		response.Forbidden(c, "only the organizer can preview or trigger a payout")
+		return
+	}
+	if cir.Status != circle.CircleStatusActive {
+		response.BadRequest(c, "circle is not active")
+		return
+	}
+
+	var req struct {
+		RecipientID string   `json:"recipientId"`
+		RoundNumber int      `json:"roundNumber"`
+		Amount      *float64 `json:"amount"`
+		FeeAmount   *float64 `json:"feeAmount"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	preview := h.buildPayoutPreview(cir, req.Amount, req.FeeAmount, req.RecipientID, req.RoundNumber)
+	response.OK(c, gin.H{"preview": preview})
+}
+
 // TriggerPayout records the payout for an active circle. Payout submission to
 // Stellar remains upstream of this endpoint; txnHash is the on-chain receipt.
+// If ?dry_run=true or body.dryRun=true is provided, returns the distribution preview without executing.
 func (h *CircleHandler) TriggerPayout(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -174,6 +303,19 @@ func (h *CircleHandler) TriggerPayout(c *gin.Context) {
 	}
 	if cir.Status != circle.CircleStatusActive {
 		response.BadRequest(c, "circle is not active")
+		return
+	}
+
+	if c.Query("dry_run") == "true" || c.Query("dryRun") == "true" {
+		var previewReq struct {
+			RecipientID string   `json:"recipientId"`
+			RoundNumber int      `json:"roundNumber"`
+			Amount      *float64 `json:"amount"`
+			FeeAmount   *float64 `json:"feeAmount"`
+		}
+		_ = c.ShouldBindJSON(&previewReq)
+		preview := h.buildPayoutPreview(cir, previewReq.Amount, previewReq.FeeAmount, previewReq.RecipientID, previewReq.RoundNumber)
+		response.OK(c, gin.H{"preview": preview})
 		return
 	}
 

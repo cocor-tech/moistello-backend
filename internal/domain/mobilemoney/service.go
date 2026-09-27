@@ -22,6 +22,8 @@ type Service interface {
 	// schedule (see cmd/api-server main.go) as a safety net for missed or
 	// delayed provider callbacks/webhooks.
 	Reconcile(ctx context.Context) (int, error)
+	ListProviders(ctx context.Context) []ProviderInfo
+	GetSupportedCurrencies(ctx context.Context) []string
 }
 
 // reconcileMinAge is how long a pending transaction must have existed
@@ -36,6 +38,20 @@ type service struct {
 
 func NewService(repo Repository, registry *Registry) Service {
 	return &service{repo: repo, registry: registry}
+}
+
+func (s *service) ListProviders(ctx context.Context) []ProviderInfo {
+	if s.registry == nil {
+		return []ProviderInfo{}
+	}
+	return s.registry.Providers()
+}
+
+func (s *service) GetSupportedCurrencies(ctx context.Context) []string {
+	if s.registry == nil {
+		return []string{}
+	}
+	return s.registry.SupportedCurrencies()
 }
 
 func (s *service) InitiateOnramp(ctx context.Context, userID string, req OnrampRequest, idempotencyKey string) (*Transaction, error) {

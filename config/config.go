@@ -182,7 +182,8 @@ type AuthConfig struct {
 	AccessTokenTTL            time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL   time.Duration `mapstructure:"refresh_token_ttl"`
 	NonceTTL          time.Duration `mapstructure:"nonce_ttl"`
-	AdminAPIKey       string        `mapstructure:"admin_api_key"`
+	AdminAPIKey          string        `mapstructure:"admin_api_key"`
+	AdminAPIKeySecondary string        `mapstructure:"admin_api_key_secondary"`
 	// CleanupInterval is how often the scheduled session cleanup job runs
 	// (#374). It is the only thing that reclaims expired session state; no
 	// request path sweeps.
@@ -410,6 +411,10 @@ func Load(path string) (*Config, error) {
 	mustBindEnv(v, "yellow_card.api_key", "YELLOW_CARD_API_KEY")
 	mustBindEnv(v, "yellow_card.api_secret", "YELLOW_CARD_API_SECRET")
 	mustBindEnv(v, "yellow_card.webhook_secret", "YELLOW_CARD_WEBHOOK_SECRET")
+	mustBindEnv(v, "auth.admin_api_key", "MOISTELLO_AUTH_ADMIN_API_KEY", "ADMIN_API_KEY")
+	mustBindEnv(v, "auth.admin_api_key_secondary", "MOISTELLO_AUTH_ADMIN_API_KEY_SECONDARY", "ADMIN_API_KEY_SECONDARY")
+	v.SetDefault("auth.admin_api_key", "")
+	v.SetDefault("auth.admin_api_key_secondary", "")
 	v.SetDefault("server.port", 1100)
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.read_timeout", "10s")
@@ -690,6 +695,11 @@ func (c *Config) ValidateSecrets() error {
 	}
 	if err := validateHexKeyFormat("Auth.AdminAPIKey", c.Auth.AdminAPIKey); err != nil {
 		return err
+	}
+	if c.Auth.AdminAPIKeySecondary != "" {
+		if err := validateHexKeyFormat("Auth.AdminAPIKeySecondary", c.Auth.AdminAPIKeySecondary); err != nil {
+			return err
+		}
 	}
 	if err := validateHexKeyFormat("YellowCard.WebhookSecret", c.YellowCard.WebhookSecret); err != nil {
 		return err

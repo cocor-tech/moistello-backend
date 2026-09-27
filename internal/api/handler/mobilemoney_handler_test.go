@@ -24,6 +24,7 @@ func setupMobileMoneyRouter(svc mobilemoney.Service, walletSvc wallet.Service) *
 	r.Use(func(c *gin.Context) { c.Set("userID", "user-1"); c.Next() })
 	r.POST("/v1/wallet/mobile-money/onramp", h.InitiateOnramp)
 	r.POST("/v1/wallet/mobile-money/offramp", h.InitiateOfframp)
+	r.GET("/v1/wallet/mobile-money/providers", h.ListProviders)
 	r.GET("/v1/wallet/mobile-money/:id", h.GetTransaction)
 	return r
 }
@@ -43,6 +44,15 @@ func (f *fakeMMService) GetTransaction(ctx context.Context, id string) (*mobilem
 	return f.getFn(ctx, id)
 }
 func (f *fakeMMService) Reconcile(ctx context.Context) (int, error) { return 0, nil }
+func (f *fakeMMService) ListProviders(ctx context.Context) []mobilemoney.ProviderInfo {
+	return []mobilemoney.ProviderInfo{
+		{Name: "mpesa", Currency: "KES"},
+		{Name: "mtn", Currency: "UGX"},
+	}
+}
+func (f *fakeMMService) GetSupportedCurrencies(ctx context.Context) []string {
+	return []string{"KES", "UGX"}
+}
 
 func TestMobileMoneyHandler_InitiateOnramp_RequiresIdempotencyKey(t *testing.T) {
 	mockWallet := &mockDepositWalletService{wallets: []wallet.Wallet{{PublicKey: "GABC"}}}
@@ -129,3 +139,24 @@ func TestMobileMoneyHandler_GetTransaction_NotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+func TestMobileMoneyHandler_ListProviders(t *testing.T) {
+	mockWallet := &mockDepositWalletService{}
+	svc := &fakeMMService{}
+	r := setupMobileMoneyRouter(svc, mockWallet)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/wallet/mobile-money/providers", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	data, ok := resp["data"].(map[string]any)
+	assert.True(t, ok)
+	providers, ok := data["providers"].([]any)
+	assert.True(t, ok)
+	assert.Len(t, providers, 2)
+}
+

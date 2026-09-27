@@ -21,9 +21,22 @@ Moistello exports Prometheus business metrics for monitoring contributions, payo
 
 Alerts are also logged at warn level with the offending pool numbers.
 
+## Indexer Metrics & Lag Endpoint
+
+The indexer lag endpoint (`/internal/indexer/lag`) exposes current ledger lag, queue depth, and event processing rate.
+
+- `moistello_indexer_ledger_lag`: Gauge representing the difference in ledgers from head.
+- `moistello_indexer_queue_depth`: Gauge of pending unprocessed events in queue.
+- `moistello_indexer_processing_rate`: Gauge of events processed per second.
+
+For recovery procedures during an extended indexer outage, refer to the [Indexer Extended-Outage Recovery Runbook](ops/INDEXER-OUTAGE-RECOVERY.md).
+
 ## Useful Prometheus Queries
 
 - Contribution Rate (per sec):
   `rate(moistello_contributions_total[5m])`
 - Payout Volume (sum by currency):
   `sum(rate(moistello_payout_volume_total[1h])) by (currency)`
+- Indexer Lag:
+  `moistello_indexer_ledger_lag`
+

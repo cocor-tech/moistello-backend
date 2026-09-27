@@ -89,9 +89,8 @@ func NewRouter(
 	r.Use(middleware.CORSMiddleware(cfg.CORS))
 	r.Use(middleware.PrometheusMiddleware())
 
-	// Prometheus metrics endpoint — protected by admin API key, un-rate-limited
-	metricsKey := cfg.Auth.AdminAPIKey
-	r.GET("/metrics", middleware.AdminAPIKeyMiddleware(metricsKey), gin.WrapH(promhttp.Handler()))
+	// Prometheus metrics endpoint — protected by admin API key (primary + secondary for zero-downtime rotation), un-rate-limited
+	r.GET("/metrics", middleware.AdminAPIKeyMiddleware(cfg.Auth.AdminAPIKey, cfg.Auth.AdminAPIKeySecondary), gin.WrapH(promhttp.Handler()))
 
 	r.Use(middleware.RateLimitMiddleware(redisClient, cfg.RateLimit, liveLimitOptions(cfg)...))
 
@@ -192,6 +191,7 @@ func NewRouter(
 			authenticated.POST("/wallet/deposit", requireIdem, perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), depositHandler.InitiateDeposit)
 			authenticated.POST("/wallet/withdraw", requireIdem, perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), depositHandler.InitiateWithdraw)
 			authenticated.GET("/wallet/transactions/:yellowCardId", depositHandler.GetTransactionStatus)
+			authenticated.GET("/wallet/mobile-money/providers", mobileMoneyHandler.ListProviders)
 			authenticated.POST("/wallet/mobile-money/onramp", requireIdem, perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), mobileMoneyHandler.InitiateOnramp)
 			authenticated.POST("/wallet/mobile-money/offramp", requireIdem, perResource(redisClient, "wallet-transfer", cfg.RateLimit.WalletTransferLimit, cfg.RateLimit.WalletTransferWindowSeconds), mobileMoneyHandler.InitiateOfframp)
 			authenticated.GET("/wallet/mobile-money/:id", mobileMoneyHandler.GetTransaction)
@@ -209,6 +209,7 @@ func NewRouter(
 			authenticated.PATCH("/circles/:id", circleHandler.UpdateCircle)
 			authenticated.POST("/circles/:id/start", circleHandler.StartCircle)
 			authenticated.POST("/circles/:id/payout", requireIdem, circleHandler.TriggerPayout)
+			authenticated.POST("/circles/:id/payout/preview", circleHandler.PreviewPayout)
 			authenticated.POST("/circles/:id/close", circleHandler.CloseCircle)
 			authenticated.DELETE("/circles/:id", circleHandler.CancelCircle)
 			authenticated.POST("/circles/:id/join", circleHandler.JoinCircle)

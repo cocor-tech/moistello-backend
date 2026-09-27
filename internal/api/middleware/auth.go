@@ -227,23 +227,54 @@ func GetRole(c *gin.Context) string {
 }
 
 // AdminAPIKeyMiddleware validates the X-Admin-API-Key header against the
-// configured admin API key. Used to protect internal endpoints like /metrics.
-func AdminAPIKeyMiddleware(apiKey string) gin.HandlerFunc {
+// configured primary and secondary admin API keys for zero-downtime key rotation.
+// Used to protect internal endpoints like /metrics.
+func AdminAPIKeyMiddleware(keys ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if apiKey == "" {
+		var primary, secondary string
+		if len(keys) > 0 {
+			primary = keys[0]
+		}
+		if len(keys) > 1 {
+			secondary = keys[1]
+		}
+
+		if primary == "" && secondary == "" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"error":   "admin API key not configured",
 			})
 			return
 		}
-		if c.GetHeader("X-Admin-API-Key") != apiKey {
+
+		headerKey := c.GetHeader("X-Admin-API-Key")
+		if headerKey == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"error":   "invalid admin API key",
 			})
 			return
 		}
-		c.Next()
+
+		if primary != "" && headerKey == primary {
+			c.Set("adminKeyIdentity", "primary")
+			metrics.AdminKeyRequestsTotal.WithLabelValues("primary").Inc()
+			log.Debug().Str("identity", "primary").Str("path", c.Request.URL.Path).Msg("authenticated with primary admin API key")
+			c.Next()
+			return
+		}
+
+		if secondary != "" && headerKey == secondary {
+			c.Set("adminKeyIdentity", "secondary")
+			metrics.AdminKeyRequestsTotal.WithLabelValues("secondary").Inc()
+			log.Debug().Str("identity", "secondary").Str("path", c.Request.URL.Path).Msg("authenticated with secondary admin API key")
+			c.Next()
+			return
+		}
+
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "invalid admin API key",
+		})
 	}
 }

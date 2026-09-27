@@ -271,6 +271,7 @@ func TestCircleLifecycleEndpoints(t *testing.T) {
 	router.POST("/circles/:id/start", h.StartCircle)
 	router.POST("/circles/:id/contribute", h.Contribute)
 	router.POST("/circles/:id/payout", h.TriggerPayout)
+	router.POST("/circles/:id/payout/preview", h.PreviewPayout)
 	router.POST("/circles/:id/close", h.CloseCircle)
 
 	code, response := lifecycleRequest(t, router, http.MethodPost, "/circles", organizer.String(), map[string]any{
@@ -298,6 +299,28 @@ func TestCircleLifecycleEndpoints(t *testing.T) {
 	contributionData := response["data"].(map[string]any)["contribution"].(map[string]any)
 	assert.Equal(t, "pending", contributionData["status"])
 	assert.Equal(t, circle.CircleStatusActive, store.circle.Status)
+
+	// Test 1: Dedicated Preview endpoint
+	code, response = lifecycleRequest(t, router, http.MethodPost, "/circles/"+circleID+"/payout/preview", organizer.String(), map[string]any{
+		"recipientId": member.String(), "roundNumber": 1, "amount": 100,
+	})
+	require.Equal(t, http.StatusOK, code)
+	previewData := response["data"].(map[string]any)["preview"].(map[string]any)
+	assert.Equal(t, true, previewData["dryRun"])
+	assert.Equal(t, float64(100), previewData["totalGrossAmount"])
+	assert.Equal(t, float64(1), previewData["protocolFee"])
+	assert.Equal(t, float64(99), previewData["totalNetAmount"])
+	assert.Equal(t, float64(0.00001), previewData["stellarFeeEstimate"])
+	require.Len(t, store.payouts, 0, "preview must not record any payout")
+
+	// Test 2: TriggerPayout with ?dry_run=true
+	code, response = lifecycleRequest(t, router, http.MethodPost, "/circles/"+circleID+"/payout?dry_run=true", organizer.String(), map[string]any{
+		"recipientId": member.String(), "roundNumber": 1, "amount": 100,
+	})
+	require.Equal(t, http.StatusOK, code)
+	previewData2 := response["data"].(map[string]any)["preview"].(map[string]any)
+	assert.Equal(t, true, previewData2["dryRun"])
+	require.Len(t, store.payouts, 0, "dry_run must not record any payout")
 
 	code, response = lifecycleRequest(t, router, http.MethodPost, "/circles/"+circleID+"/payout", organizer.String(), map[string]any{
 		"recipientId": member.String(), "roundNumber": 1, "amount": 100,

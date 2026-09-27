@@ -150,3 +150,19 @@ func (h *MobileMoneyHandler) GetTransaction(c *gin.Context) {
 
 	response.OK(c, gin.H{"transaction": txn})
 }
+
+// @Summary List supported mobile-money providers and currencies
+// @Description Returns active mobile-money providers and their supported fiat currencies for on-ramp/off-ramp options.
+// @Tags Wallet
+// @Produce json
+// @Success 200 {object} response.Envelope{data=object{providers=array,supportedCurrencies=array}}
+// @Router /wallet/mobile-money/providers [get]
+func (h *MobileMoneyHandler) ListProviders(c *gin.Context) {
+	providers := h.svc.ListProviders(c.Request.Context())
+	currencies := h.svc.GetSupportedCurrencies(c.Request.Context())
+	response.OK(c, gin.H{
+		"providers":           providers,
+		"supportedCurrencies": currencies,
+	})
+}
+
