@@ -128,10 +128,17 @@ func (r *pgRepo) List(ctx context.Context, filter CircleFilter) ([]Circle, error
 	query := `SELECT id, contract_id, community_id, name, description, circle_type, payout_type,
 		contribution_amount, currency, frequency, max_members, min_moi_score,
 		collateral_percent, late_fee_percent, grace_period_hours, max_strikes,
-		(SELECT COUNT(*) FROM circle_members WHERE circle_id = circles.id AND status = 'active') as member_count,
+		COALESCE(member_counts.member_count, 0) as member_count,
 		requires_invite,
 		start_date, end_date, status, current_round, total_contributions,
-		organizer_id, created_at, updated_at FROM circles WHERE deleted_at IS NULL`
+		organizer_id, created_at, updated_at FROM circles
+		LEFT JOIN (
+			SELECT circle_id, COUNT(*) AS member_count
+			FROM circle_members
+			WHERE status = 'active'
+			GROUP BY circle_id
+		) member_counts ON member_counts.circle_id = circles.id
+		WHERE deleted_at IS NULL`
 
 	var args []interface{}
 	var whereClauses []string

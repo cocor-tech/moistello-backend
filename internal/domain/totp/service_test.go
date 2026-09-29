@@ -13,6 +13,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAccountLockoutExpiryAndReset(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	svc := NewServiceWithClock(func() time.Time { return now })
+	secret, _, err := svc.GenerateSecret("locked-account")
+	require.NoError(t, err)
+	for i := 0; i < maxFailures-1; i++ {
+		assert.ErrorIs(t, svc.ValidateAccountCode("user-1", secret, "000000"), ErrInvalidCode)
+	}
+	err = svc.ValidateAccountCode("user-1", secret, "000000")
+	var locked *LockoutError
+	require.ErrorAs(t, err, &locked)
+	assert.Equal(t, initialLockout, locked.RetryAfter)
+	require.ErrorAs(t, svc.CheckAccount("user-1"), &locked)
+
+	now = now.Add(initialLockout)
+	assert.NoError(t, svc.CheckAccount("user-1"))
+	err = svc.ValidateAccountCode("user-1", secret, "000000")
+	require.ErrorAs(t, err, &locked)
+	assert.Equal(t, 2*initialLockout, locked.RetryAfter)
+
+	now = now.Add(2 * initialLockout)
+	code, err := totp.GenerateCode(secret, now)
+	require.NoError(t, err)
+	require.NoError(t, svc.ValidateAccountCode("user-1", secret, code))
+	for i := 0; i < maxFailures-1; i++ {
+		assert.ErrorIs(t, svc.ValidateAccountCode("user-1", secret, "000000"), ErrInvalidCode)
+	}
+	assert.NoError(t, svc.CheckAccount("user-1"))
+}
+
 func TestGenerateSecret_ProducesStandardProvisioningURI(t *testing.T) {
 	svc := NewService()
 	secret, uri, err := svc.GenerateSecret("jane@example.com")

@@ -86,6 +86,7 @@ indexer:
   batch_size: 50
   start_ledger: 0
   max_cursor_lag: "2m"
+  stall_threshold: "5m"
 
 notification:
   email:

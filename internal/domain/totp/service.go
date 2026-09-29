@@ -6,14 +6,17 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image/png"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -31,10 +34,83 @@ const (
 
 // Service handles TOTP (Time-based One-Time Password) operations
 // using the standard TOTP algorithm (RFC 6238).
-type Service struct{}
+type attemptState struct {
+	failures    int
+	lockedUntil time.Time
+}
 
-func NewService() *Service {
-	return &Service{}
+var ErrInvalidCode = errors.New("invalid second-factor code")
+
+type LockoutError struct{ RetryAfter time.Duration }
+
+func (e *LockoutError) Error() string { return "two-factor authentication temporarily locked" }
+
+const maxFailures = 5
+const initialLockout = 30 * time.Second
+
+type Service struct {
+	mu       sync.Mutex
+	attempts map[string]attemptState
+	now      func() time.Time
+}
+
+func NewService() *Service { return NewServiceWithClock(time.Now) }
+
+func NewServiceWithClock(now func() time.Time) *Service {
+	return &Service{attempts: make(map[string]attemptState), now: now}
+}
+
+func (s *Service) CheckAccount(accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.attempts[accountID]
+	now := s.now()
+	if state.lockedUntil.After(now) {
+		return &LockoutError{RetryAfter: state.lockedUntil.Sub(now)}
+	}
+	if !state.lockedUntil.IsZero() {
+		state.lockedUntil = time.Time{}
+		s.attempts[accountID] = state
+		log.Info().Str("security_event", "totp_account_unlocked").Str("user_id", accountID).Msg("TOTP lockout expired")
+	}
+	return nil
+}
+
+func (s *Service) RecordFailure(accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.attempts[accountID]
+	state.failures++
+	if state.failures >= maxFailures {
+		exponent := state.failures - maxFailures
+		if exponent > 6 {
+			exponent = 6
+		}
+		delay := initialLockout * time.Duration(1<<exponent)
+		state.lockedUntil = s.now().Add(delay)
+		s.attempts[accountID] = state
+		log.Warn().Str("security_event", "totp_account_locked").Str("user_id", accountID).Int("failures", state.failures).Dur("retry_after", delay).Msg("TOTP account locked")
+		return &LockoutError{RetryAfter: delay}
+	}
+	s.attempts[accountID] = state
+	return ErrInvalidCode
+}
+
+func (s *Service) ResetAccount(accountID string) {
+	s.mu.Lock()
+	delete(s.attempts, accountID)
+	s.mu.Unlock()
+}
+
+func (s *Service) ValidateAccountCode(accountID, secret, code string) error {
+	if err := s.CheckAccount(accountID); err != nil {
+		return err
+	}
+	if !s.ValidateCodeAt(secret, code, s.now().UTC()) {
+		return s.RecordFailure(accountID)
+	}
+	s.ResetAccount(accountID)
+	return nil
 }
 
 // GenerateSecret creates a new TOTP secret and returns it along with

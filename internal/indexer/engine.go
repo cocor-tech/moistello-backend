@@ -33,6 +33,7 @@ type Engine struct {
 	wg          sync.WaitGroup
 	stopCh      chan struct{}
 	metrics     *IndexerMetrics
+	watchdog    *StallWatchdog
 }
 
 // NewEngine creates a new Engine with the given dependencies.
@@ -68,6 +69,7 @@ func NewEngine(
 		deadLetters: NewDeadLetterStore(db),
 		stopCh:      make(chan struct{}),
 		metrics:     metrics,
+		watchdog:    NewStallWatchdog(cfg.StallThreshold, nil),
 	}
 }
 
@@ -90,6 +92,8 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	e.wg.Add(1)
 	go e.runPollLoop(ctx)
+	e.wg.Add(1)
+	go func() { defer e.wg.Done(); e.watchdog.Run(ctx, e.stopCh) }()
 
 	return nil
 }
@@ -216,6 +220,7 @@ func (e *Engine) poll(ctx context.Context) error {
 			return fmt.Errorf("updating cursor: %w", err)
 		}
 		e.metrics.LastLedger.Set(float64(lastLedger))
+		e.watchdog.Processed()
 	}
 
 	e.metrics.EventsProcessed.Add(float64(processed))

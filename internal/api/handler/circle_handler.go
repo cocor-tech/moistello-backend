@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -32,6 +36,108 @@ func NewCircleHandler(circleSvc circle.Service, inviteSvc invite.Service, contri
 		contribService: contribSvc,
 		payoutService:  payoutSvc,
 	}
+}
+
+// ExportCircle streams a portable JSON snapshot in bounded pages.
+func (h *CircleHandler) ExportCircle(c *gin.Context) {
+	ctx := c.Request.Context()
+	circleID, userID := c.Param("id"), middleware.GetUserID(c)
+	cir, err := h.circleService.Get(ctx, circleID)
+	if err != nil {
+		response.NotFound(c, "circle not found")
+		return
+	}
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		response.Forbidden(c, "circle membership required")
+		return
+	}
+	organizer := cir.OrganizerID == uid
+	if !organizer {
+		member, memberErr := h.circleService.IsMember(ctx, circleID, userID)
+		if memberErr != nil || !member {
+			response.Forbidden(c, "circle membership required")
+			return
+		}
+	}
+	members, err := h.circleService.GetMembers(ctx, circleID)
+	if err != nil {
+		response.InternalError(c, "failed to export circle")
+		return
+	}
+	enc := json.NewEncoder(c.Writer)
+	c.Header("Content-Type", "application/json")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"circle-%s-export.json\"", cir.ID))
+	c.Status(http.StatusOK)
+	write := func(s string) bool { _, e := c.Writer.WriteString(s); return e == nil }
+	if !write("{\"version\":1,\"exportedAt\":") || enc.Encode(time.Now().UTC()) != nil || !write(",\"circle\":") || enc.Encode(cir) != nil || !write(fmt.Sprintf(",\"scope\":%q,\"rounds\":{\"current\":%d,\"total\":%d},\"members\":[", map[bool]string{true: "circle", false: "member"}[organizer], cir.CurrentRound, cir.CurrentRound)) {
+		return
+	}
+	first := true
+	for _, record := range members {
+		if !organizer && record.UserID != uid {
+			continue
+		}
+		if !first && !write(",") {
+			return
+		}
+		first = false
+		if enc.Encode(record) != nil {
+			return
+		}
+	}
+	if !write("],\"contributions\":[") {
+		return
+	}
+	first = true
+	const pageSize = 500
+	for page := 1; ; page++ {
+		records, total, e := h.contribService.GetCircleHistory(ctx, circleID, page, pageSize)
+		if e != nil {
+			return
+		}
+		for _, record := range records {
+			if !organizer && record.UserID != uid {
+				continue
+			}
+			if !first && !write(",") {
+				return
+			}
+			first = false
+			if enc.Encode(record) != nil {
+				return
+			}
+		}
+		if page*pageSize >= total || len(records) == 0 {
+			break
+		}
+	}
+	if !write("],\"payouts\":[") {
+		return
+	}
+	first = true
+	for page := 1; ; page++ {
+		records, total, e := h.payoutService.GetCircleHistory(ctx, circleID, page, pageSize)
+		if e != nil {
+			return
+		}
+		for _, record := range records {
+			if !organizer && record.RecipientID != uid {
+				continue
+			}
+			if !first && !write(",") {
+				return
+			}
+			first = false
+			if enc.Encode(record) != nil {
+				return
+			}
+		}
+		if page*pageSize >= total || len(records) == 0 {
+			break
+		}
+	}
+	write("]}")
 }
 
 // @Summary List circles

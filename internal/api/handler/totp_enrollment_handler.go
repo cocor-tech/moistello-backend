@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
@@ -116,8 +118,8 @@ func (h *TOTPEnrollmentHandler) EnableTOTP(c *gin.Context) {
 		response.BadRequest(c, "no pending enrollment; call /auth/totp/enroll first")
 		return
 	}
-	if !h.totp.ValidateCode(u.TOTPSecret.String, req.Code) {
-		response.ErrorWithCode(c, http.StatusBadRequest, "invalid_totp_code", "invalid TOTP code")
+	if err := h.totp.ValidateAccountCode(u.ID.String(), u.TOTPSecret.String, req.Code); err != nil {
+		h.writeTOTPFailure(c, "invalid_totp_code", err)
 		return
 	}
 
@@ -215,8 +217,8 @@ func (h *TOTPEnrollmentHandler) RegenerateTOTPRecoveryCodes(c *gin.Context) {
 		response.BadRequest(c, "TOTP is not enabled")
 		return
 	}
-	if !h.totp.ValidateCode(u.TOTPSecret.String, req.Code) {
-		response.ErrorWithCode(c, http.StatusBadRequest, "invalid_totp_code", "invalid TOTP code")
+	if err := h.totp.ValidateAccountCode(u.ID.String(), u.TOTPSecret.String, req.Code); err != nil {
+		h.writeTOTPFailure(c, "invalid_totp_code", err)
 		return
 	}
 	codes, err := h.totp.GenerateBackupCodes()
@@ -250,19 +252,38 @@ func (h *TOTPEnrollmentHandler) challenge(c *gin.Context) (u *user.User, method 
 		return nil, "", false
 	}
 	if req.Code != "" {
-		if h.totp.ValidateCode(u.TOTPSecret.String, req.Code) {
-			return u, "totp", true
+		if err := h.totp.ValidateAccountCode(u.ID.String(), u.TOTPSecret.String, req.Code); err != nil {
+			h.writeTOTPFailure(c, "invalid_totp_code", err)
+			return nil, "", false
 		}
-		response.ErrorWithCode(c, http.StatusBadRequest, "invalid_totp_code", "invalid TOTP code")
+		return u, "totp", true
+	}
+	if err := h.totp.CheckAccount(u.ID.String()); err != nil {
+		h.writeTOTPFailure(c, "invalid_recovery_code", err)
 		return nil, "", false
 	}
 	remaining, valid := h.totp.ValidateBackupCode(req.RecoveryCode, []string(u.BackupCodes))
 	if !valid {
-		response.ErrorWithCode(c, http.StatusBadRequest, "invalid_recovery_code", "invalid or already used recovery code")
+		h.writeTOTPFailure(c, "invalid_recovery_code", h.totp.RecordFailure(u.ID.String()))
 		return nil, "", false
 	}
+	h.totp.ResetAccount(u.ID.String())
 	u.BackupCodes = pq.StringArray(remaining)
 	return u, "recovery", true
+}
+
+func (h *TOTPEnrollmentHandler) writeTOTPFailure(c *gin.Context, code string, err error) {
+	if lockout, ok := err.(*totp.LockoutError); ok {
+		seconds := int((lockout.RetryAfter + time.Second - 1) / time.Second)
+		c.Header("Retry-After", strconv.Itoa(seconds))
+		response.ErrorWithCode(c, http.StatusTooManyRequests, "totp_account_locked", lockout.Error())
+		return
+	}
+	message := "invalid TOTP code"
+	if code == "invalid_recovery_code" {
+		message = "invalid or already used recovery code"
+	}
+	response.ErrorWithCode(c, http.StatusBadRequest, code, message)
 }
 
 func (h *TOTPEnrollmentHandler) currentUser(c *gin.Context) (*user.User, bool) {

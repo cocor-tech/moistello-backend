@@ -215,6 +215,7 @@ func NewRouter(
 			// Circles
 			authenticated.POST("/circles", circleHandler.CreateCircle)
 			authenticated.GET("/circles/:id", circleHandler.GetCircle)
+			authenticated.GET("/circles/:id/export", circleHandler.ExportCircle)
 			authenticated.PATCH("/circles/:id", circleHandler.UpdateCircle)
 			authenticated.POST("/circles/:id/start", circleHandler.StartCircle)
 			authenticated.POST("/circles/:id/payout", requireIdem, circleHandler.TriggerPayout)

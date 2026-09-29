@@ -23,7 +23,9 @@ import (
 
 type stubCircleService struct {
 	circle.Service
-	circle *circle.Circle
+	circle   *circle.Circle
+	members  []circle.CircleMember
+	isMember bool
 }
 
 func (s *stubCircleService) Get(_ context.Context, id string) (*circle.Circle, error) {
@@ -52,6 +54,57 @@ type stubPayoutService struct {
 
 func (s *stubPayoutService) GetCircleHistory(_ context.Context, _ string, page, limit int) ([]payout.Payout, int, error) {
 	return s.payouts, s.total, nil
+}
+
+func TestCircleHandler_ExportScopesMemberRecords(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	circleID, memberID, otherID := uuid.New(), uuid.New(), uuid.New()
+	circleSvc := &stubCircleService{
+		circle:   &circle.Circle{ID: circleID, OrganizerID: otherID, CurrentRound: 2, MaxMembers: 3},
+		members:  []circle.CircleMember{{CircleID: circleID, UserID: memberID}, {CircleID: circleID, UserID: otherID}},
+		isMember: true,
+	}
+	h := handler.NewCircleHandler(circleSvc, nil,
+		&stubContribService{contribs: []contribution.Contribution{{ID: uuid.New(), UserID: memberID}, {ID: uuid.New(), UserID: otherID}}, total: 2},
+		&stubPayoutService{payouts: []payout.Payout{{ID: uuid.New(), RecipientID: memberID}, {ID: uuid.New(), RecipientID: otherID}}, total: 2},
+	)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("userID", memberID.String()); c.Next() })
+	r.GET("/circles/:id/export", h.ExportCircle)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/circles/"+circleID.String()+"/export", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var export struct {
+		Scope         string
+		Members       []circle.CircleMember
+		Contributions []contribution.Contribution
+		Payouts       []payout.Payout
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &export))
+	assert.Equal(t, "member", export.Scope)
+	require.Len(t, export.Members, 1)
+	require.Len(t, export.Contributions, 1)
+	require.Len(t, export.Payouts, 1)
+	assert.Equal(t, memberID, export.Members[0].UserID)
+	assert.Equal(t, memberID, export.Contributions[0].UserID)
+	assert.Equal(t, memberID, export.Payouts[0].RecipientID)
+}
+
+func TestCircleHandler_ExportRejectsNonMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	circleID, organizerID, callerID := uuid.New(), uuid.New(), uuid.New()
+	h := handler.NewCircleHandler(&stubCircleService{
+		circle:   &circle.Circle{ID: circleID, OrganizerID: organizerID},
+		isMember: false,
+	}, nil, nil, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set("userID", callerID.String()); c.Next() })
+	r.GET("/circles/:id/export", h.ExportCircle)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/circles/"+circleID.String()+"/export", nil)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestCircleHandler_GetPayouts_AcceptsClientPagination(t *testing.T) {
@@ -139,7 +192,14 @@ func TestCircleHandler_GetRounds_AcceptsClientPaginationAndReturnsMeta(t *testin
 	assert.True(t, body.Meta.HasMore)
 }
 
+func (s *stubCircleService) IsMember(_ context.Context, _, _ string) (bool, error) {
+	return s.isMember, nil
+}
+
 func (s *stubCircleService) GetMembers(_ context.Context, _ string) ([]circle.CircleMember, error) {
+	if s.members != nil {
+		return s.members, nil
+	}
 	members := make([]circle.CircleMember, 250)
 	for i := 0; i < 250; i++ {
 		members[i] = circle.CircleMember{
