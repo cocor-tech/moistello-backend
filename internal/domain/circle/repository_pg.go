@@ -3,8 +3,10 @@ package circle
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -578,3 +580,263 @@ func (r *pgRepo) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID,
 	}
 	return &snapshot, nil
 }
+
+type rawContrib struct {
+	ID                 uuid.UUID      `db:"id"`
+	CircleID           uuid.UUID      `db:"circle_id"`
+	UserID             uuid.UUID      `db:"user_id"`
+	RoundNumber        int            `db:"round_number"`
+	Amount             float64        `db:"amount"`
+	TxnHash            sql.NullString `db:"txn_hash"`
+	Status             string         `db:"status"`
+	OnTime             bool           `db:"on_time"`
+	VerifiedOnchain    bool           `db:"verified_onchain"`
+	VerificationStatus string         `db:"verification_status"`
+	CreatedAt          time.Time      `db:"created_at"`
+	UpdatedAt          time.Time      `db:"updated_at"`
+}
+
+type rawPayout struct {
+	ID                 uuid.UUID      `db:"id"`
+	CircleID           uuid.UUID      `db:"circle_id"`
+	RecipientID        uuid.UUID      `db:"recipient_id"`
+	RoundNumber        int            `db:"round_number"`
+	Amount             float64        `db:"amount"`
+	FeeAmount          float64        `db:"fee_amount"`
+	TxnHash            sql.NullString `db:"txn_hash"`
+	PayoutType         string         `db:"payout_type"`
+	VerifiedOnchain    bool           `db:"verified_onchain"`
+	VerificationStatus string         `db:"verification_status"`
+	CreatedAt          time.Time      `db:"created_at"`
+	UpdatedAt          time.Time      `db:"updated_at"`
+}
+
+func (r *pgRepo) GetCircleSnapshot(ctx context.Context, circleID, userID uuid.UUID) (*CircleSnapshot, error) {
+	var tx *sqlx.Tx
+	var exec dbExecutor = r.db
+
+	if db, ok := r.db.(*sqlx.DB); ok {
+		var err error
+		tx, err = db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+		if err != nil {
+			tx, err = db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+			if err != nil {
+				return nil, fmt.Errorf("beginning snapshot transaction: %w", err)
+			}
+		}
+		defer func() {
+			if tx != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		exec = tx
+	}
+
+	repo := &pgRepo{db: exec}
+	cir, err := repo.FindByID(ctx, circleID)
+	if err != nil {
+		return nil, err
+	}
+
+	members, err := repo.GetMembers(ctx, circleID)
+	if err != nil {
+		return nil, fmt.Errorf("getting circle members: %w", err)
+	}
+
+	var rawContribs []rawContrib
+	contribQuery := `SELECT id, circle_id, user_id, round_number, amount, txn_hash, status, on_time, verified_onchain, verification_status, created_at, updated_at
+		FROM contributions WHERE circle_id = $1 ORDER BY round_number ASC, created_at ASC`
+	if err := exec.SelectContext(ctx, &rawContribs, contribQuery, circleID); err != nil {
+		rawContribs = []rawContrib{}
+	}
+
+	var rawPayouts []rawPayout
+	payoutQuery := `SELECT id, circle_id, recipient_id, round_number, amount, fee_amount, txn_hash, payout_type, verified_onchain, verification_status, created_at, updated_at
+		FROM payouts WHERE circle_id = $1 ORDER BY round_number ASC`
+	if err := exec.SelectContext(ctx, &rawPayouts, payoutQuery, circleID); err != nil {
+		rawPayouts = []rawPayout{}
+	}
+
+	var configs []RoundConfigSnapshot
+	configQuery := `SELECT id, circle_id, round_number, config_hash, config_json, created_at
+		FROM round_config_snapshots WHERE circle_id = $1 ORDER BY round_number ASC`
+	if err := exec.SelectContext(ctx, &configs, configQuery, circleID); err != nil {
+		configs = []RoundConfigSnapshot{}
+	}
+
+	configMap := make(map[int]RoundConfigSnapshot)
+	for _, cfg := range configs {
+		configMap[cfg.RoundNumber] = cfg
+	}
+
+	userRole := "none"
+	if cir.OrganizerID == userID {
+		userRole = "organizer"
+	} else {
+		for _, m := range members {
+			if m.UserID == userID && m.Status == MemberStatusActive {
+				userRole = "member"
+				break
+			}
+		}
+	}
+
+	var userContributed, userPaidOut float64
+	var circleContributed, circlePaidOut float64
+	isCurrentRoundPaid := false
+
+	contribsByRound := make(map[int][]any)
+	for _, c := range rawContribs {
+		if c.Status != "failed" {
+			circleContributed += c.Amount
+			if c.UserID == userID {
+				userContributed += c.Amount
+				if c.RoundNumber == cir.CurrentRound && (c.Status == "confirmed" || c.Status == "pending" || c.Status == "late") {
+					isCurrentRoundPaid = true
+				}
+			}
+		}
+		contribMap := map[string]any{
+			"id":                 c.ID,
+			"circleId":           c.CircleID,
+			"userId":             c.UserID,
+			"roundNumber":        c.RoundNumber,
+			"amount":             c.Amount,
+			"txnHash":            c.TxnHash.String,
+			"status":             c.Status,
+			"onTime":             c.OnTime,
+			"verifiedOnchain":    c.VerifiedOnchain,
+			"verificationStatus": c.VerificationStatus,
+			"createdAt":          c.CreatedAt,
+		}
+		contribsByRound[c.RoundNumber] = append(contribsByRound[c.RoundNumber], contribMap)
+	}
+
+	payoutByRound := make(map[int]any)
+	for _, p := range rawPayouts {
+		circlePaidOut += p.Amount
+		if p.RecipientID == userID {
+			userPaidOut += p.Amount
+		}
+		payoutMap := map[string]any{
+			"id":                 p.ID,
+			"circleId":           p.CircleID,
+			"recipientId":        p.RecipientID,
+			"roundNumber":        p.RoundNumber,
+			"amount":             p.Amount,
+			"feeAmount":          p.FeeAmount,
+			"txnHash":            p.TxnHash.String,
+			"payoutType":         p.PayoutType,
+			"verifiedOnchain":    p.VerifiedOnchain,
+			"verificationStatus": p.VerificationStatus,
+			"createdAt":          p.CreatedAt,
+		}
+		payoutByRound[p.RoundNumber] = payoutMap
+	}
+
+	maxRound := cir.CurrentRound
+	for r := range contribsByRound {
+		if r > maxRound {
+			maxRound = r
+		}
+	}
+	for r := range payoutByRound {
+		if r > maxRound {
+			maxRound = r
+		}
+	}
+
+	rounds := make([]RoundSnapshot, 0, maxRound)
+	for r := 1; r <= maxRound; r++ {
+		roundStatus := "pending"
+		if r < cir.CurrentRound || cir.Status == CircleStatusCompleted {
+			roundStatus = "completed"
+		} else if r == cir.CurrentRound && cir.Status == CircleStatusActive {
+			roundStatus = "active"
+		}
+
+		cList := contribsByRound[r]
+		if cList == nil {
+			cList = []any{}
+		}
+
+		var cfgPtr *RoundConfigSnapshot
+		if cfg, ok := configMap[r]; ok {
+			cfgCopy := cfg
+			cfgPtr = &cfgCopy
+		}
+
+		rounds = append(rounds, RoundSnapshot{
+			RoundNumber:   r,
+			Status:        roundStatus,
+			Contributions: cList,
+			Payout:        payoutByRound[r],
+			Config:        cfgPtr,
+		})
+	}
+
+	pendingContrib := 0.0
+	if cir.Status == CircleStatusActive && !isCurrentRoundPaid && (userRole == "member" || userRole == "organizer") {
+		pendingContrib = cir.ContributionAmount
+	}
+
+	userBalance := &UserBalanceSnapshot{
+		UserID:              userID,
+		TotalContributed:    userContributed,
+		TotalPaidOut:        userPaidOut,
+		NetBalance:          userPaidOut - userContributed,
+		PendingContribution: pendingContrib,
+		IsCurrentRoundPaid:  isCurrentRoundPaid,
+	}
+
+	circleBalance := &CircleBalanceSnapshot{
+		CircleID:         circleID,
+		TotalContributed: circleContributed,
+		TotalPaidOut:     circlePaidOut,
+		VaultBalance:     circleContributed - circlePaidOut,
+	}
+
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("committing snapshot transaction: %w", err)
+		}
+		tx = nil
+	}
+
+	return &CircleSnapshot{
+		Circle:        cir,
+		Members:       members,
+		Rounds:        rounds,
+		UserBalance:   userBalance,
+		CircleBalance: circleBalance,
+		UserRole:      userRole,
+		SnapshotAt:    time.Now().UTC(),
+	}, nil
+}
+
+func (r *pgRepo) GetBulkCircleSnapshots(ctx context.Context, userID uuid.UUID, circleIDs []uuid.UUID) ([]CircleSnapshot, error) {
+	if len(circleIDs) == 0 {
+		query := `SELECT DISTINCT circle_id FROM circle_members WHERE user_id = $1
+			UNION
+			SELECT id AS circle_id FROM circles WHERE organizer_id = $1 AND deleted_at IS NULL`
+		var ids []uuid.UUID
+		if err := r.db.SelectContext(ctx, &ids, query, userID); err != nil {
+			return nil, fmt.Errorf("fetching user circle IDs: %w", err)
+		}
+		circleIDs = ids
+	}
+
+	snapshots := make([]CircleSnapshot, 0, len(circleIDs))
+	for _, cid := range circleIDs {
+		snap, err := r.GetCircleSnapshot(ctx, cid, userID)
+		if err != nil {
+			if errors.Is(err, apperrors.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		snapshots = append(snapshots, *snap)
+	}
+	return snapshots, nil
+}
+

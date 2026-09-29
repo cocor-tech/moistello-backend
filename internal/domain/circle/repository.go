@@ -43,4 +43,6 @@ type Repository interface {
 	GetAuctionBidsByRound(ctx context.Context, circleID uuid.UUID, roundNumber int) ([]CircleAuctionBid, error)
 	SaveRoundConfigSnapshot(ctx context.Context, snapshot *RoundConfigSnapshot) error
 	GetRoundConfigSnapshot(ctx context.Context, circleID uuid.UUID, roundNumber int) (*RoundConfigSnapshot, error)
+	GetCircleSnapshot(ctx context.Context, circleID, userID uuid.UUID) (*CircleSnapshot, error)
+	GetBulkCircleSnapshots(ctx context.Context, userID uuid.UUID, circleIDs []uuid.UUID) ([]CircleSnapshot, error)
 }
