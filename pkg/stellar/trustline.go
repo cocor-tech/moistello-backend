@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/moistello/backend/pkg/logger"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
-	"github.com/pkg/logger"
 )
 
 // TrustlineError represents a trustline-related error during payout operations.
 type TrustlineError struct {
-	AssetCode  string
+	AssetCode   string
 	AssetIssuer string
-	Address    string
-	Message    string
+	Address     string
+	Message     string
 }
 
 func (e *TrustlineError) Error() string {

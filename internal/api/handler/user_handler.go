@@ -57,6 +57,10 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if req.Email != nil {
+		response.BadRequest(c, "use the verified email-change flow")
+		return
+	}
 
 	u, err := h.userService.UpdateProfile(c.Request.Context(), userID, req)
 	if err != nil {

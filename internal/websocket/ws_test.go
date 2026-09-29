@@ -85,20 +85,17 @@ func TestHub_BroadcastToUser_MultipleConnections(t *testing.T) {
 
 	hub.BroadcastToUser("user-99", Message{Type: "notification.new", Payload: "badge"})
 
-	// Both c1 and c2 should receive
-	select {
-	case msg := <-c1.Send:
-		assert.Contains(t, string(msg), "notification.new")
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("timeout on c1")
+	// Exactly one tab in the user session group receives the event.
+	received := 0
+	for _, client := range []*Client{c1, c2} {
+		select {
+		case msg := <-client.Send:
+			assert.Contains(t, string(msg), "notification.new")
+			received++
+		default:
+		}
 	}
-
-	select {
-	case msg := <-c2.Send:
-		assert.Contains(t, string(msg), "notification.new")
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("timeout on c2")
-	}
+	assert.Equal(t, 1, received)
 
 	// cOther should not receive
 	select {
@@ -110,6 +107,13 @@ func TestHub_BroadcastToUser_MultipleConnections(t *testing.T) {
 	// Unregister one connection
 	hub.Unregister(c1)
 	assert.Equal(t, 1, hub.UserClientCount("user-99"))
+	hub.BroadcastToUser("user-99", Message{Type: "notification.second"})
+	select {
+	case msg := <-c2.Send:
+		assert.Contains(t, string(msg), "notification.second")
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("remaining tab was not promoted")
+	}
 
 	// Unregister second connection
 	hub.Unregister(c2)

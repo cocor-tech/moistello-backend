@@ -162,6 +162,7 @@ func NewIndexerMetrics() *IndexerMetrics {
 		DeadLettered: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "moistello_indexer_dead_lettered_total",
 			Help: "Total indexer events recorded in the dead-letter queue after a processing failure",
+		}),
 		ContractVersionUnknown: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "moistello_indexer_contract_version_unknown_total",
 			Help: "Total contract events recorded with an unknown contract version because the deployed version could not be resolved",

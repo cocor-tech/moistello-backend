@@ -1,0 +1,101 @@
+name: Performance
+
+on:
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  k6-top-five:
+    name: k6 top five endpoint SLOs
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: moistello_perf
+          POSTGRES_USER: moistello
+          POSTGRES_PASSWORD: moistello_perf
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U moistello -d moistello_perf"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3-alpine
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MOISTELLO_DATABASE_URL: postgres://moistello:moistello_perf@localhost:5432/moistello_perf?sslmode=disable
+      MOISTELLO_REDIS_URL: redis://localhost:6379
+      MOISTELLO_RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+      MOISTELLO_WALLET_PEPPER: performance-only-wallet-pepper
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      MOISTELLO_ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Generate isolated test keys
+        shell: bash
+        run: |
+          openssl genrsa -out /tmp/perf-jwt-private.pem 2048
+          openssl rsa -in /tmp/perf-jwt-private.pem -pubout -out /tmp/perf-jwt-public.pem
+          {
+            echo 'JWT_PRIVATE_KEY<<PERF_PRIVATE_EOF'
+            cat /tmp/perf-jwt-private.pem
+            echo 'PERF_PRIVATE_EOF'
+            echo 'JWT_PUBLIC_KEY<<PERF_PUBLIC_EOF'
+            cat /tmp/perf-jwt-public.pem
+            echo 'PERF_PUBLIC_EOF'
+          } >> "$GITHUB_ENV"
+          mapfile -t stellar < <(go run ./tests/performance/seed -stellar-keys)
+          echo "MOISTELLO_STELLAR_MASTER_SECRET_KEY=${stellar[0]}" >> "$GITHUB_ENV"
+          echo "MOISTELLO_STELLAR_MASTER_PUBLIC_KEY=${stellar[1]}" >> "$GITHUB_ENV"
+
+      - name: Migrate and seed local stack
+        shell: bash
+        run: |
+          go run ./cmd/migrate --direction up
+          token=$(go run ./tests/performance/seed \
+            -database-url "$MOISTELLO_DATABASE_URL" \
+            -private-key /tmp/perf-jwt-private.pem)
+          echo "ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Start API
+        shell: bash
+        run: |
+          go run ./cmd/api-server > /tmp/moistello-perf-api.log 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:1100/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/moistello-perf-api.log
+          exit 1
+
+      - name: Assert p95 SLOs
+        env:
+          BASE_URL: http://127.0.0.1:1100
+          K6_VUS: "2"
+          K6_DURATION: 15s
+        run: k6 run tests/performance/top5.js
+
+      - name: Print API logs on failure
+        if: failure()
+        run: cat /tmp/moistello-perf-api.log || true

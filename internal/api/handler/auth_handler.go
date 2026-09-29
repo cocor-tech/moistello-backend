@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -26,19 +27,24 @@ type AuthHandler struct {
 	*SessionHandler
 	*RegistrationHandler
 	*TOTPEnrollmentHandler
+	*EmailChangeHandler
 }
 
 // NewAuthHandler builds the auth handler aggregate. The signature is kept for
 // backward compatibility; each focused sub-handler consumes the dependencies
 // it actually needs.
 func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet.Service,
-	totpSvc *totp.Service, verificationSvc *verification.Service, _ *email.Service,
+	totpSvc *totp.Service, verificationSvc *verification.Service, emailSvc *email.Service,
 	redisClient *redis.Client, userRepo user.Repository) *AuthHandler {
+	if emailSvc != nil {
+		verificationSvc.WithEmailSender(func(address, code string) error { return emailSvc.SendOTP(context.Background(), address, code) }, nil)
+	}
 	return &AuthHandler{
 		WalletAuthHandler:     NewWalletAuthHandler(authSvc, userSvc),
 		SessionHandler:        NewSessionHandler(authSvc, userSvc, redisClient),
 		RegistrationHandler:   NewRegistrationHandler(authSvc, userRepo, verificationSvc, walletSvc),
 		TOTPEnrollmentHandler: NewTOTPEnrollmentHandler(userSvc, userRepo, totpSvc),
+		EmailChangeHandler:    NewEmailChangeHandler(userSvc, userRepo, verificationSvc, redisClient),
 	}
 }
 

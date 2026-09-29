@@ -227,7 +227,16 @@ func (h *Hub) Broadcast(circleID string, msg Message) {
 	}
 
 	clients := make([]*Client, 0, len(room))
+	seenUsers := make(map[string]struct{}, len(room))
 	for _, client := range room {
+		group := client.UserID
+		if group == "" {
+			group = "client:" + client.ID
+		}
+		if _, seen := seenUsers[group]; seen {
+			continue
+		}
+		seenUsers[group] = struct{}{}
 		clients = append(clients, client)
 	}
 	h.mu.RUnlock()
@@ -255,7 +264,7 @@ func (h *Hub) Broadcast(circleID string, msg Message) {
 }
 
 // BroadcastToUser sends a message to a specific user identified by userID.
-// Delivers to all connections of the user. If no client is found the message
+// Delivers once to the user's connection group. If no client is found the message
 // is silently dropped.
 func (h *Hub) BroadcastToUser(userID string, msg Message) {
 	data, err := json.Marshal(msg)
@@ -266,26 +275,26 @@ func (h *Hub) BroadcastToUser(userID string, msg Message) {
 
 	h.mu.RLock()
 	userConns := h.userClients[userID]
-	var targets []*Client
+	var target *Client
 	for _, client := range userConns {
-		targets = append(targets, client)
+		if target == nil || client.ID < target.ID {
+			target = client
+		}
 	}
 	h.mu.RUnlock()
 
-	if len(targets) == 0 {
+	if target == nil {
 		return
 	}
 
-	for _, client := range targets {
-		select {
-		case client.Send <- data:
-		default:
-			metrics.WSDroppedMessagesTotal.Inc()
-			metrics.WSSlowClientsDisconnectedTotal.Inc()
-			log.Warn().Str("clientID", client.ID).Str("userID", client.UserID).Msg("disconnecting slow client on user broadcast backpressure")
-			h.Unregister(client)
-			client.Disconnect()
-		}
+	select {
+	case target.Send <- data:
+	default:
+		metrics.WSDroppedMessagesTotal.Inc()
+		metrics.WSSlowClientsDisconnectedTotal.Inc()
+		log.Warn().Str("clientID", target.ID).Str("userID", target.UserID).Msg("disconnecting slow client on user broadcast backpressure")
+		h.Unregister(target)
+		target.Disconnect()
 	}
 }
 

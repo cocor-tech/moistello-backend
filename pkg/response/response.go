@@ -1,6 +1,9 @@
 package response
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -124,6 +127,9 @@ func problemTypeURI(code string) string {
 }
 
 func OK(c *gin.Context, data any) {
+	if notModified(c, data, nil) {
+		return
+	}
 	c.JSON(http.StatusOK, Envelope{
 		Success:   true,
 		Data:      data,
@@ -132,12 +138,53 @@ func OK(c *gin.Context, data any) {
 }
 
 func OKWithMeta(c *gin.Context, data any, meta any) {
+	if notModified(c, data, meta) {
+		return
+	}
 	c.JSON(http.StatusOK, Envelope{
 		Success:   true,
 		Data:      data,
 		Meta:      meta,
 		RequestId: getRequestID(c),
 	})
+}
+
+// notModified adds a strong entity tag to successful GET responses and
+// handles conditional requests. The tag deliberately covers the stable data
+// and metadata rather than the request ID, which changes for every request.
+func notModified(c *gin.Context, data, meta any) bool {
+	if c == nil || c.Request == nil || c.Request.Method != http.MethodGet {
+		return false
+	}
+
+	representation, err := json.Marshal(struct {
+		Data any `json:"data"`
+		Meta any `json:"meta,omitempty"`
+	}{Data: data, Meta: meta})
+	if err != nil {
+		return false
+	}
+
+	sum := sha256.Sum256(representation)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	c.Header("ETag", etag)
+	c.Header("Cache-Control", "private, must-revalidate")
+
+	if ifNoneMatch(c.GetHeader("If-None-Match"), etag) {
+		c.Status(http.StatusNotModified)
+		return true
+	}
+	return false
+}
+
+func ifNoneMatch(header, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // Error writes an RFC 9457 compliant problem details error response while

@@ -172,6 +172,10 @@ func NewRouter(
 			authenticated.POST("/auth/logout", authHandler.Logout)
 			authenticated.POST("/auth/password/change", authHandler.ChangePassword)
 			authenticated.DELETE("/sessions/:id", authHandler.RevokeSessionByID)
+			emailChangeLimit := perResource(redisClient, "email-change", cfg.RateLimit.OTPLimit, cfg.RateLimit.OTPWindowSeconds)
+			authenticated.POST("/auth/email/change", emailChangeLimit, authHandler.RequestEmailChange)
+			authenticated.POST("/auth/email/change/verify-current", emailChangeLimit, authHandler.VerifyCurrentEmail)
+			authenticated.POST("/auth/email/change/verify-new", emailChangeLimit, authHandler.VerifyNewEmail)
 
 			authenticated.POST("/users/username/claim", userHandler.ClaimName)
 
@@ -322,10 +326,10 @@ func NewRouter(
 		admin.Use(perResource(redisClient, "admin", cfg.RateLimit.AdminLimit, cfg.RateLimit.AdminWindowSeconds))
 		{
 			admin.GET("/users", adminHandler.ListUsers)
-		// Registered before any /users/:id route so the static "deleted" segment
-		// is not captured by a wildcard parameter.
-		admin.GET("/users/deleted", adminHandler.ListDeletedUsers)
-		admin.POST("/users/:id/restore", adminHandler.RestoreUser)
+			// Registered before any /users/:id route so the static "deleted" segment
+			// is not captured by a wildcard parameter.
+			admin.GET("/users/deleted", adminHandler.ListDeletedUsers)
+			admin.POST("/users/:id/restore", adminHandler.RestoreUser)
 			admin.GET("/circles", adminHandler.ListCircles)
 			admin.GET("/circles/:id/inspect", adminHandler.InspectCircleState)
 			admin.GET("/audit-log", adminHandler.GetAuditLog)

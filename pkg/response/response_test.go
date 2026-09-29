@@ -13,6 +13,36 @@ import (
 	"github.com/moistello/backend/pkg/response"
 )
 
+func TestOK_ETagConditionalRequestAndMutation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	payload := "first"
+	r := gin.New()
+	r.GET("/heavy", func(c *gin.Context) {
+		response.OK(c, gin.H{"value": payload})
+	})
+
+	first := httptest.NewRecorder()
+	r.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/heavy", nil))
+	require.Equal(t, http.StatusOK, first.Code)
+	etag := first.Header().Get("ETag")
+	require.NotEmpty(t, etag)
+
+	unchanged := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/heavy", nil)
+	req.Header.Set("If-None-Match", etag)
+	r.ServeHTTP(unchanged, req)
+	require.Equal(t, http.StatusNotModified, unchanged.Code)
+	require.Empty(t, unchanged.Body.String())
+
+	payload = "second"
+	changed := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/heavy", nil)
+	req.Header.Set("If-None-Match", etag)
+	r.ServeHTTP(changed, req)
+	require.Equal(t, http.StatusOK, changed.Code)
+	require.NotEqual(t, etag, changed.Header().Get("ETag"))
+}
+
 func TestResponse_EnvelopeContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
