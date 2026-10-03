@@ -36,14 +36,14 @@ func userRows(deletedAt interface{}) *sqlmock.Rows {
 		"country_code", "preferred_language", "moi_score", "role",
 		"session_ttl_minutes", "password_hash", "totp_secret", "totp_enabled",
 		"backup_codes", "email_verified", "passkey_credential_id",
-		"notification_channels", "notifications_muted", "push_token",
+		"notification_channels", "notifications_muted", "digest_enabled", "digest_interval_minutes", "push_token",
 		"created_at", "updated_at", "deleted_at",
 	}).AddRow(
 		uuid.New(), "GABC", "a@b.c", nil, "Ada", nil,
 		"NG", "en", 100, "user",
 		60, "hash", nil, false,
 		nil, true, nil,
-		nil, false, nil,
+		nil, false, false, 1440, nil,
 		time.Now(), time.Now(), deleted,
 	)
 }
@@ -244,8 +244,12 @@ func TestAllLookupsUseSharedProjection(t *testing.T) {
 	assert.Contains(t, userColumns, "deleted_at")
 	assert.Contains(t, userColumns, "notification_channels")
 	assert.Contains(t, userColumns, "push_token")
-	assert.Equal(t, 23, len(splitColumns(userColumns)),
-		"userColumns must stay in step with the 23 scan targets in scanUser")
+	// #415 added the digest cadence to the shared projection; it must stay in
+	// step with the scan targets in scanUser.
+	assert.Contains(t, userColumns, "digest_enabled")
+	assert.Contains(t, userColumns, "digest_interval_minutes")
+	assert.Equal(t, 25, len(splitColumns(userColumns)),
+		"userColumns must stay in step with the 25 scan targets in scanUser")
 }
 
 func splitColumns(s string) []string {

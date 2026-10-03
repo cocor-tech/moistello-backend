@@ -119,7 +119,7 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param body body user.NotificationPrefsInput true "Preferences (channels: [\"inapp\",\"email\",\"sms\",\"push\"], muted: bool)"
+// @Param body body user.NotificationPrefsInput true "Preferences (channels: [\"inapp\",\"email\",\"sms\",\"push\"], muted: bool, digestEnabled: bool, digestIntervalMinutes: int)"
 // @Success 200 {object} response.Envelope{data=object{preferences=object}}
 // @Failure 400 {object} response.Envelope
 // @Failure 500 {object} response.Envelope
@@ -139,10 +139,20 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 		return
 	}
 
+	minCadence, maxCadence := user.NotificationDigestCadenceBounds()
+
 	response.OK(c, gin.H{
 		"preferences": gin.H{
 			"channels": u.NotificationChannels,
 			"muted":    u.NotificationsMuted,
+			// Digest settings (#415). The cadence bounds are echoed back so a
+			// client can validate input without hard-coding the window.
+			"digestEnabled":         u.DigestEnabled,
+			"digestIntervalMinutes": u.DigestIntervalMinutes,
+			"digestCadenceRange": gin.H{
+				"minMinutes": minCadence,
+				"maxMinutes": maxCadence,
+			},
 		},
 	})
 }

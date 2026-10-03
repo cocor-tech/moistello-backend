@@ -129,6 +129,28 @@ func (a *userLookupAdapter) FindRecipient(ctx context.Context, userID string) (n
 	}, nil
 }
 
+// digestPreferenceAdapter resolves a notification.DigestPreferences from
+// user.Repository — #415's digest cadence, without the notification package
+// importing the user domain. Same adapter pattern as userLookupAdapter above.
+type digestPreferenceAdapter struct {
+	repo user.Repository
+}
+
+func (a *digestPreferenceAdapter) DigestPreferences(ctx context.Context, userID string) (notification.DigestPreferences, error) {
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		return notification.DigestPreferences{}, err
+	}
+	u, err := a.repo.FindByID(ctx, id)
+	if err != nil {
+		return notification.DigestPreferences{}, err
+	}
+	return notification.DigestPreferences{
+		Enabled:  u.DigestEnabled,
+		Interval: time.Duration(u.DigestIntervalMinutes) * time.Minute,
+	}, nil
+}
+
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "config-validate" || os.Args[1] == "--config-validate" || (os.Args[1] == "config" && len(os.Args) > 2 && os.Args[2] == "validate")) {
 		cfg, err := config.Load("")
@@ -270,6 +292,12 @@ func main() {
 			&notification.EmailChannel{Sender: emailSvc},
 			&notification.SMSChannel{Sender: smsSvc},
 			&notification.PushChannel{Sender: pushSvc},
+		),
+		// Digest batching (#415): non-urgent circle events collapse into a
+		// periodic per-user summary; urgent classes still go out immediately.
+		notification.WithDigestBatching(
+			notification.NewDigestBuffer(),
+			&digestPreferenceAdapter{repo: userRepo},
 		),
 	)
 
@@ -422,6 +450,12 @@ func main() {
 	mmReconciler := mobilemoney.NewReconciler(redisClient, mmSvc, reconcileInterval, cfg.Auth.CleanupJitter)
 	mmReconciler.Start(context.Background())
 
+	// Digest flusher (#415): drains each user's batched circle events into a
+	// single summary once their cadence elapses. The tick is a heartbeat only
+	// — the per-user cadence in the buffer decides what is actually due.
+	digestFlusher := notification.NewDigestFlusher(notificationSvc, notification.DefaultDigestFlushInterval)
+	digestFlusher.Start(context.Background())
+
 	// Savings goals
 	savingsRepo := savings.NewRepository(db)
 	savingsSvc := savings.NewService(savingsRepo)
@@ -493,6 +527,7 @@ func main() {
 				featureFlagCache.Stop()
 				mmReconciler.Stop()
 			},
+			func(context.Context) { digestFlusher.Stop() },
 			func(context.Context) { sessionCleaner.Stop() },
 		},
 		CloseLast: []func(){

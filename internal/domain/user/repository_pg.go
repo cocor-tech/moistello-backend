@@ -27,7 +27,7 @@ func NewRepository(db *sqlx.DB) Repository {
 const userColumns = `id, wallet_address, email, phone, display_name, avatar_ipfs_hash,
 		country_code, preferred_language, moi_score, role,
 		session_ttl_minutes, password_hash, totp_secret, totp_enabled, backup_codes, email_verified, passkey_credential_id,
-		notification_channels, notifications_muted, push_token,
+		notification_channels, notifications_muted, digest_enabled, digest_interval_minutes, push_token,
 		created_at, updated_at, deleted_at`
 
 // scanUser reads the userColumns projection. deleted_at is read into the
@@ -57,6 +57,8 @@ func scanUser(row interface{ Scan(...interface{}) error }) (*User, error) {
 		&passkeyCredentialID,
 		&u.NotificationChannels,
 		&u.NotificationsMuted,
+		&u.DigestEnabled,
+		&u.DigestIntervalMinutes,
 		&pushToken,
 		&u.CreatedAt,
 		&u.UpdatedAt,
@@ -157,7 +159,10 @@ func (r *pgRepo) Update(ctx context.Context, u *User) error {
 		role = :role, session_ttl_minutes = :session_ttl_minutes, password_hash = :password_hash,
 		totp_secret = :totp_secret, totp_enabled = :totp_enabled,
 		backup_codes = :backup_codes, email_verified = :email_verified,
-		passkey_credential_id = :passkey_credential_id, updated_at = :updated_at WHERE id = :id`
+		passkey_credential_id = :passkey_credential_id,
+		notification_channels = :notification_channels, notifications_muted = :notifications_muted,
+		digest_enabled = :digest_enabled, digest_interval_minutes = :digest_interval_minutes,
+		updated_at = :updated_at WHERE id = :id`
 	result, err := r.db.NamedExecContext(ctx, query, u)
 	if err != nil {
 		return fmt.Errorf("updating user: %w", err)
