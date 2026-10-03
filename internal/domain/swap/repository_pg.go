@@ -161,3 +161,63 @@ func (r *PostgresRepository) ListExpiredCreatedOffers(ctx context.Context, now t
 	}
 	return offers, nil
 }
+
+// ClaimOfferForSweep atomically moves one expired offer from created to
+// sweeping, reporting whether this caller won (#416).
+//
+// The expires_at check is repeated here, not just in the listing query, so the
+// claim is safe on its own: an offer cancelled or accepted between the list and
+// the claim cannot be claimed, and an offer that is no longer expired cannot
+// either. RowsAffected is the arbiter — Postgres applies the UPDATE under a row
+// lock, so exactly one concurrent caller can observe rows == 1.
+func (r *PostgresRepository) ClaimOfferForSweep(ctx context.Context, id string, now time.Time) (bool, error) {
+	query := `
+		UPDATE swap_offers
+		SET status = $1, updated_at = NOW()
+		WHERE id = $2 AND status = $3 AND expires_at <= $4
+	`
+	res, err := r.db.ExecContext(ctx, query, SwapOfferStatusSweeping, id, SwapOfferStatusCreated, now)
+	if err != nil {
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
+// ReleaseSweepClaim returns a claimed offer to created so a later tick retries
+// it. Conditional on still being sweeping, so a sweeper whose claim already
+// timed out cannot resurrect an offer someone else has since moved on.
+func (r *PostgresRepository) ReleaseSweepClaim(ctx context.Context, id string) error {
+	query := `
+		UPDATE swap_offers
+		SET status = $1, updated_at = NOW()
+		WHERE id = $2 AND status = $3
+	`
+	_, err := r.db.ExecContext(ctx, query, SwapOfferStatusCreated, id, SwapOfferStatusSweeping)
+	return err
+}
+
+// FinalizeSweep marks a successfully released offer expired and records the
+// on-chain transaction hash. Also conditional on the sweeping state.
+func (r *PostgresRepository) FinalizeSweep(ctx context.Context, id string, transactionHash *string) error {
+	query := `
+		UPDATE swap_offers
+		SET status = $1, transaction_hash = $2, updated_at = NOW()
+		WHERE id = $3 AND status = $4
+	`
+	res, err := r.db.ExecContext(ctx, query, SwapOfferStatusExpired, transactionHash, id, SwapOfferStatusSweeping)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperrors.ErrNotFound
+	}
+	return nil
+}

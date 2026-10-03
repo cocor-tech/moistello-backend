@@ -118,6 +118,16 @@ func (m *swapMockRepoForHandler) ListExpiredCreatedOffers(ctx context.Context, n
 	return nil, nil
 }
 
+// The three claim methods (#416) are not exercised by the handler tests, which
+// only cover offer creation, acceptance and history.
+func (m *swapMockRepoForHandler) ClaimOfferForSweep(ctx context.Context, id string, now time.Time) (bool, error) {
+	return false, nil
+}
+func (m *swapMockRepoForHandler) ReleaseSweepClaim(ctx context.Context, id string) error { return nil }
+func (m *swapMockRepoForHandler) FinalizeSweep(ctx context.Context, id string, transactionHash *string) error {
+	return nil
+}
+
 func TestSwapHandler_GetSwapHistory_Success(t *testing.T) {
 	repo := &swapMockRepoForHandler{offers: make(map[string]*swap.SwapOffer)}
 	swapSvc := swap.NewService(repo, nil, nil, nil)

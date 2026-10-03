@@ -12,6 +12,11 @@ const (
 	SwapOfferStatusCompleted SwapOfferStatus = "completed"
 	SwapOfferStatusCancelled SwapOfferStatus = "cancelled"
 	SwapOfferStatusExpired   SwapOfferStatus = "expired"
+	// SwapOfferStatusSweeping marks an expired offer that a sweeper has claimed
+	// and is releasing escrow for (#416). It is a transient state: the sweeper
+	// moves it to expired on success, or back to created on failure so a later
+	// tick retries.
+	SwapOfferStatusSweeping SwapOfferStatus = "sweeping"
 )
 
 type SwapOffer struct {

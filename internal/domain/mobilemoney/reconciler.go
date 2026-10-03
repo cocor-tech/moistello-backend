@@ -2,15 +2,15 @@ package mobilemoney
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"math/big"
+	"crypto/rand"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+
+	moistelloredis "github.com/moistello/backend/pkg/redis"
 )
 
 const (
@@ -38,7 +38,7 @@ type Reconciler struct {
 	service  Service
 	interval time.Duration
 	jitter   time.Duration
-	lockTTL  time.Duration
+	lock     *moistelloredis.Lock
 
 	jitterFn func(time.Duration) time.Duration
 
@@ -62,7 +62,10 @@ func NewReconciler(rdb *redis.Client, svc Service, interval, jitter time.Duratio
 		service:  svc,
 		interval: interval,
 		jitter:   jitter,
-		lockTTL:  DefaultReconcileLockTTL,
+		// #416: the single-flight lock is now the shared helper in pkg/redis,
+		// so the swap sweeper guards its pass with the same implementation
+		// rather than a second copy of the token/heartbeat logic.
+		lock:     moistelloredis.NewLock(rdb, reconcileLockKey, DefaultReconcileLockTTL),
 		jitterFn: randomJitter,
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
@@ -144,76 +147,16 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, bool, error) {
 		return count, true, err
 	}
 
-	token, err := newLockToken()
+	var count int
+	held, err := r.lock.With(ctx, func(ctx context.Context) error {
+		reconciled, reconcileErr := r.service.Reconcile(ctx)
+		count = reconciled
+		return reconcileErr
+	})
 	if err != nil {
-		return 0, false, err
+		return count, held, err
 	}
-
-	acquired, err := r.redis.SetNX(ctx, reconcileLockKey, token, r.lockTTL).Result()
-	if err != nil {
-		return 0, false, fmt.Errorf("acquiring mobile money reconcile lock: %w", err)
-	}
-	if !acquired {
-		return 0, false, nil
-	}
-	defer r.release(token)
-
-	// Heartbeat renewal loop for long passes
-	heartbeatDone := make(chan struct{})
-	defer close(heartbeatDone)
-	go r.heartbeat(heartbeatDone, token)
-
-	count, err := r.service.Reconcile(ctx)
-	if err != nil {
-		return count, true, err
-	}
-	return count, true, nil
-}
-
-var renewReconcileLock = redis.NewScript(`
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-	return redis.call("PEXPIRE", KEYS[1], ARGV[2])
-end
-return 0
-`)
-
-func (r *Reconciler) heartbeat(done chan struct{}, token string) {
-	renewInterval := r.lockTTL / 3
-	if renewInterval <= 0 {
-		renewInterval = time.Minute
-	}
-	ticker := time.NewTicker(renewInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			ttlMs := r.lockTTL.Milliseconds()
-			_, err := renewReconcileLock.Run(ctx, r.redis, []string{reconcileLockKey}, token, ttlMs).Result()
-			cancel()
-			if err != nil {
-				log.Warn().Err(err).Msg("failed to renew mobile money reconcile lock heartbeat")
-			}
-		}
-	}
-}
-
-var releaseReconcileLock = redis.NewScript(`
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-	return redis.call("DEL", KEYS[1])
-end
-return 0
-`)
-
-func (r *Reconciler) release(token string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := releaseReconcileLock.Run(ctx, r.redis, []string{reconcileLockKey}, token).Result(); err != nil {
-		log.Warn().Err(err).Msg("releasing mobile money reconcile lock")
-	}
+	return count, held, nil
 }
 
 func (r *Reconciler) sleep(ctx context.Context, d time.Duration) bool {
@@ -238,14 +181,6 @@ func (r *Reconciler) sleep(ctx context.Context, d time.Duration) bool {
 	case <-r.stopCh:
 		return false
 	}
-}
-
-func newLockToken() (string, error) {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generating reconcile lock token: %w", err)
-	}
-	return hex.EncodeToString(buf), nil
 }
 
 func randomJitter(max time.Duration) time.Duration {
