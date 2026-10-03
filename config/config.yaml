@@ -101,9 +101,15 @@ notification:
   push:
     fcm_server_key: ""
 
+# cors.allowed_origins is intentionally not set here. The allowed origins are
+# resolved per environment by config/cors.go:
+#   development -> http://localhost:1110, http://127.0.0.1:1110
+#   staging     -> https://staging.moistello.io
+#   production  -> https://app.moistello.io, https://www.moistello.io
+# Override with ALLOWED_ORIGINS (comma separated) or
+# MOISTELLO_CORS_ALLOWED_ORIGINS. A wildcard or loopback origin is rejected
+# outside development so a misconfigured deployment fails at startup.
 cors:
-  allowed_origins:
-    - "http://localhost:1110"
   allowed_methods:
     - "GET"
     - "POST"
@@ -113,7 +119,6 @@ cors:
   allowed_headers:
     - "Authorization"
     - "X-CSRF-Token"
-    - "Content-Type"
     - "Content-Type"
     - "X-Request-ID"
   allow_credentials: true
