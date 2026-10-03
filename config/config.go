@@ -233,7 +233,7 @@ type IndexerConfig struct {
 	// reaching past the window is reported rather than partially repaired
 	// (#346).
 	ReorgWindow int `mapstructure:"reorg_window"`
-	MaxCursorLag   time.Duration `mapstructure:"max_cursor_lag"`
+
 	StallThreshold time.Duration `mapstructure:"stall_threshold"`
 }
 
@@ -373,7 +373,9 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "indexer.max_cursor_lag", "2m")
 	setDefault(v, "indexer.reorg_window", 10)
 	setDefault(v, "indexer.stall_threshold", "5m")
-	setDefault(v, "cors.allowed_origins", []string{"http://localhost:1110"})
+	// cors.allowed_origins deliberately has no default: a localhost default here
+	// would be indistinguishable from an operator's explicit choice and would
+	// make ResolveCORSAllowedOrigins return it in every environment (#348).
 	setDefault(v, "cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
 	setDefault(v, "cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
 	setDefault(v, "cors.allow_credentials", true)
@@ -482,7 +484,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("indexer.max_cursor_lag", "2m")
 	v.SetDefault("indexer.reorg_window", 10)
 	v.SetDefault("indexer.stall_threshold", "5m")
-	v.SetDefault("cors.allowed_origins", []string{"http://localhost:1110"})
+	// See the note above: no default for cors.allowed_origins (#348).
 	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
 	v.SetDefault("cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
 	v.SetDefault("cors.allow_credentials", true)
@@ -569,14 +571,18 @@ func Load(path string) (*Config, error) {
 		errs = append(errs, fmt.Sprintf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", mainnetIssues))
 	}
 
+	// CORS policy is environment specific (#348): resolve the allowed origins
+	// and refuse combinations that would silently break the browser handshake.
+	// Resolved before the error return so a CORS misconfiguration is reported in
+	// the same single-pass list as every other invalid setting.
+	cfg.CORS.AllowedOrigins = ResolveCORSAllowedOrigins(cfg.CORS.AllowedOrigins, cfg.Environment)
+	for _, corsErr := range validateCORS(cfg.Environment, cfg.CORS) {
+		errs = append(errs, corsErr.Error())
+	}
+
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("config errors:\n - %s", strings.Join(errs, "\n - "))
 	}
-
-	// CORS policy is environment specific (#348): resolve the allowed origins
-	// and refuse combinations that would silently break the browser handshake.
-	cfg.CORS.AllowedOrigins = ResolveCORSAllowedOrigins(cfg.CORS.AllowedOrigins, cfg.Environment)
-	validateCORS(cfg.Environment, cfg.CORS)
 
 	cfg.Hot = NewHotReloader(&cfg)
 

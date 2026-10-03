@@ -107,32 +107,40 @@ func ResolveCORSAllowedOrigins(configured []string, environment string) []string
 // credentialed requests against Access-Control-Allow-Origin: *. Loopback
 // origins are refused outside development for the same reason the database URL
 // is: it is always a misconfiguration, never an intent.
-func validateCORS(environment string, c CORSConfig) {
+//
+// Every problem is returned rather than panicked, so config.Load can report a
+// CORS misconfiguration in the same single-pass error list as every other
+// invalid setting (see AGENTS.md: config.Load must never panic).
+func validateCORS(environment string, c CORSConfig) []error {
 	env := NormalizeEnvironment(environment)
+	var errs []error
 
 	if len(c.AllowedOrigins) == 0 {
-		panic(fmt.Errorf("config: cors.allowed_origins resolved to an empty list for environment %q", environment))
+		errs = append(errs, fmt.Errorf("config: cors.allowed_origins resolved to an empty list for environment %q", environment))
+		return errs
 	}
 
 	for _, origin := range c.AllowedOrigins {
 		if origin == "*" {
 			if c.AllowCredentials {
-				panic(fmt.Errorf("config: cors.allowed_origins \"*\" cannot be combined with cors.allow_credentials; browsers reject credentialed requests against a wildcard origin"))
+				errs = append(errs, fmt.Errorf("config: cors.allowed_origins \"*\" cannot be combined with cors.allow_credentials; browsers reject credentialed requests against a wildcard origin"))
 			}
 			if env != EnvironmentDevelopment {
-				panic(fmt.Errorf("config: cors.allowed_origins \"*\" is not allowed in %s; list the exact frontend origins", env))
+				errs = append(errs, fmt.Errorf("config: cors.allowed_origins \"*\" is not allowed in %s; list the exact frontend origins", env))
 			}
 			continue
 		}
 
 		u, err := url.Parse(origin)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-			panic(fmt.Errorf("config: cors.allowed_origins entry %q is not an absolute http(s) origin", origin))
+			errs = append(errs, fmt.Errorf("config: cors.allowed_origins entry %q is not an absolute http(s) origin", origin))
+			continue
 		}
 		if env != EnvironmentDevelopment && isLoopbackHost(u.Hostname()) {
-			panic(fmt.Errorf("config: cors.allowed_origins entry %q is a loopback address but environment is %s; set the real frontend origin via ALLOWED_ORIGINS", origin, env))
+			errs = append(errs, fmt.Errorf("config: cors.allowed_origins entry %q is a loopback address but environment is %s; set the real frontend origin via ALLOWED_ORIGINS", origin, env))
 		}
 	}
+	return errs
 }
 
 func isLoopbackHost(host string) bool {

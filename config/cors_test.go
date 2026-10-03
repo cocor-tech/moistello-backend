@@ -116,7 +116,10 @@ func TestLoad_CORSWildcardRejectedOutsideDevelopment(t *testing.T) {
 	t.Setenv("MOISTELLO_ENVIRONMENT", "production")
 	t.Setenv("ALLOWED_ORIGINS", "*")
 
-	require.Panics(t, func() { _, _ = config.Load("") })
+	cfg, err := config.Load("")
+	require.Error(t, err, "a CORS misconfiguration must be reported as an error, not a panic")
+	require.Nil(t, cfg)
+	require.Contains(t, err.Error(), "cors.allowed_origins")
 }
 
 func TestLoad_CORSWildcardWithCredentialsRejectedInDevelopment(t *testing.T) {
@@ -124,7 +127,10 @@ func TestLoad_CORSWildcardWithCredentialsRejectedInDevelopment(t *testing.T) {
 	t.Setenv("MOISTELLO_ENVIRONMENT", "development")
 	t.Setenv("ALLOWED_ORIGINS", "*")
 
-	require.Panics(t, func() { _, _ = config.Load("") })
+	cfg, err := config.Load("")
+	require.Error(t, err, "a CORS misconfiguration must be reported as an error, not a panic")
+	require.Nil(t, cfg)
+	require.Contains(t, err.Error(), "cors.allowed_origins")
 }
 
 func TestLoad_CORSLoopbackOriginRejectedInProduction(t *testing.T) {
@@ -132,7 +138,10 @@ func TestLoad_CORSLoopbackOriginRejectedInProduction(t *testing.T) {
 	t.Setenv("MOISTELLO_ENVIRONMENT", "production")
 	t.Setenv("ALLOWED_ORIGINS", "http://localhost:1110")
 
-	require.Panics(t, func() { _, _ = config.Load("") })
+	cfg, err := config.Load("")
+	require.Error(t, err, "a CORS misconfiguration must be reported as an error, not a panic")
+	require.Nil(t, cfg)
+	require.Contains(t, err.Error(), "cors.allowed_origins")
 }
 
 func TestLoad_CORSNonOriginEntryRejected(t *testing.T) {
@@ -140,7 +149,10 @@ func TestLoad_CORSNonOriginEntryRejected(t *testing.T) {
 	t.Setenv("MOISTELLO_ENVIRONMENT", "production")
 	t.Setenv("ALLOWED_ORIGINS", "app.moistello.io")
 
-	require.Panics(t, func() { _, _ = config.Load("") })
+	cfg, err := config.Load("")
+	require.Error(t, err, "a CORS misconfiguration must be reported as an error, not a panic")
+	require.Nil(t, cfg)
+	require.Contains(t, err.Error(), "cors.allowed_origins")
 }
 
 // cors.max_age was previously ignored because the middleware hardcoded 12h.

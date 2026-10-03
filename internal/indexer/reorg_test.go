@@ -95,6 +95,7 @@ func (f *fakeRewinder) Rewind(_ context.Context, lastLedger int64) error {
 	f.rewindTo = append(f.rewindTo, lastLedger)
 	return nil
 }
+
 // ---------------------------------------------------------------------------
 // LedgerHistory
 // ---------------------------------------------------------------------------
@@ -157,6 +158,7 @@ func TestNewLedgerHistory_NonPositiveWindowFallsBackToDefault(t *testing.T) {
 	assert.Equal(t, defaultReorgWindow, NewLedgerHistory(0).window)
 	assert.Equal(t, defaultReorgWindow, NewLedgerHistory(-5).window)
 }
+
 // ---------------------------------------------------------------------------
 // Detection
 // ---------------------------------------------------------------------------
@@ -229,7 +231,7 @@ func TestChainReconciler_WindowSizeIsConfigurable(t *testing.T) {
 	// Window of 2 covers only 109..110, which the fork at 108 predates.
 	outside, err := (&ChainReconciler{Window: 2}).DetectReorg(context.Background(), poller, history, 110)
 	require.Error(t, err)
-	assert.True(t, errors.Is(outside, ErrReorgTooDeep), "got %v", outside)
+	assert.True(t, errors.Is(err, ErrReorgTooDeep), "got %v", err)
 	assert.Nil(t, outside)
 }
 
@@ -263,6 +265,7 @@ func TestChainReconciler_NoOpWhenCursorAtGenesis(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, plan)
 }
+
 // ---------------------------------------------------------------------------
 // End-to-end convergence (#346 acceptance criterion)
 // ---------------------------------------------------------------------------
@@ -346,6 +349,7 @@ func TestReorg_ConvergesToCorrectState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, plan, "state must be converged - a second check finds no reorg")
 }
+
 // ---------------------------------------------------------------------------
 // Engine rollback wiring
 // ---------------------------------------------------------------------------
