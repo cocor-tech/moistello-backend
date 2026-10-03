@@ -432,4 +432,3 @@ func (h *HealthHandler) checkMobileMoney() DependencyStatus {
 		Message: fmt.Sprintf("%d active provider(s): %s (supported currencies: %s)", len(providers), strings.Join(providers, ", "), strings.Join(currencies, ", ")),
 	}
 }
-

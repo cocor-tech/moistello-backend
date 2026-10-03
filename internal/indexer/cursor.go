@@ -54,6 +54,7 @@ func (c *CursorTracker) Rewind(ctx context.Context, lastLedger int64) error {
 	}
 	return nil
 }
+
 // ErrCursorMissing is returned when the cursor row does not exist, so a
 // checkpoint would otherwise be silently dropped.
 var ErrCursorMissing = errors.New("indexer cursor row is missing")

@@ -159,4 +159,3 @@ func TestMobileMoneyHandler_ListProviders(t *testing.T) {
 	assert.True(t, ok)
 	assert.Len(t, providers, 2)
 }
-

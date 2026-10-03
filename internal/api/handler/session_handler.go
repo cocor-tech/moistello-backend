@@ -260,13 +260,13 @@ func (h *SessionHandler) ListSessions(c *gin.Context) {
 				}
 
 				sessions = append(sessions, gin.H{
-					"id":           hash,
-					"device":       sessionData["device"],
-					"user_agent":   sessionData["user_agent"],
-					"ip_address":   sessionData["ip_address"],
-					"created_at":   sessionData["created_at"],
-					"last_active":  sessionData["last_active"],
-					"is_current":   hash == currentHash,
+					"id":          hash,
+					"device":      sessionData["device"],
+					"user_agent":  sessionData["user_agent"],
+					"ip_address":  sessionData["ip_address"],
+					"created_at":  sessionData["created_at"],
+					"last_active": sessionData["last_active"],
+					"is_current":  hash == currentHash,
 				})
 			}
 		}

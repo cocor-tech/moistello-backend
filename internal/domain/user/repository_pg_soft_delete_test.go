@@ -47,6 +47,7 @@ func userRows(deletedAt interface{}) *sqlmock.Rows {
 		time.Now(), time.Now(), deleted,
 	)
 }
+
 // ---------------------------------------------------------------------------
 // Acceptance: soft-deleted users are excluded from auth and normal queries
 // ---------------------------------------------------------------------------
@@ -192,6 +193,7 @@ func TestDelete_AlreadyDeletedReportsNotDeleted(t *testing.T) {
 	require.ErrorIs(t, err, ErrUserNotDeleted)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
 // ---------------------------------------------------------------------------
 // Administrative views over soft-deleted users
 // ---------------------------------------------------------------------------

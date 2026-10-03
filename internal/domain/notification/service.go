@@ -292,4 +292,3 @@ func (s *notificationService) BulkArchive(ctx context.Context, userID string, id
 	}
 	return res, nil
 }
-
