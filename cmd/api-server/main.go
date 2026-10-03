@@ -445,7 +445,13 @@ func main() {
 	swapH := handler.NewSwapHandler(swapSvc)
 
 	governanceRepo := governance.NewRepository(db)
-	governanceSvc := governance.NewService(governanceRepo)
+	// Execution timelock (#414): a passed proposal waits this long before it
+	// can be executed, during which it can be cancelled by threshold vote. A
+	// zero delay restores the pre-#414 immediate execution.
+	governanceSvc := governance.NewService(governanceRepo, governance.WithTimelock(governance.TimelockConfig{
+		Delay:              cfg.Governance.ExecutionTimelock,
+		CancelThresholdPct: cfg.Governance.CancelThresholdPct,
+	}))
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
 
 	incentivesRepo := incentives.NewRepository(db)
