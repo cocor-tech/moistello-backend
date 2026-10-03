@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -875,3 +876,82 @@ func (h *CircleHandler) GetRoundConfig(c *gin.Context) {
 
 	response.OK(c, snapshot)
 }
+
+// GetSnapshot godoc
+// @Summary      Circle state snapshot
+// @Description  Returns a single-transaction consistent view of a circle's full state for the authenticated user:
+//
+//	circle details, members, all rounds (contributions + payouts), the user's balance, and the circle's vault balance.
+//
+// @Tags         Circles
+// @Produce      json
+// @Param        id   path      string  true  "Circle UUID"
+// @Success      200  {object}  response.Envelope{data=object{snapshot=circle.CircleSnapshot}}
+// @Failure      400  {object}  response.Envelope
+// @Failure      404  {object}  response.Envelope
+// @Failure      500  {object}  response.Envelope
+// @Router       /circles/{id}/snapshot [get]
+// @Security     BearerAuth
+func (h *CircleHandler) GetSnapshot(c *gin.Context) {
+	circleID := c.Param("id")
+	userID := middleware.GetUserID(c)
+
+	snap, err := h.circleService.GetCircleSnapshot(c.Request.Context(), circleID, userID)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			response.NotFound(c, "circle not found")
+			return
+		}
+		response.InternalError(c, "failed to build circle snapshot")
+		return
+	}
+	response.OK(c, gin.H{"snapshot": snap})
+}
+
+// GetBulkSnapshots godoc
+// @Summary      Bulk circle state snapshots
+// @Description  Returns consistent snapshots for all circles the authenticated user belongs to or organizes.
+//
+//	Optionally accepts a comma-separated list of circle UUIDs via the `ids` query parameter to filter.
+//	Each snapshot is fetched in a separate repeatable-read transaction, so results are internally consistent.
+//
+// @Tags         Circles
+// @Produce      json
+// @Param        ids  query     string  false  "Comma-separated circle UUIDs to fetch (omit for all user circles)"
+// @Success      200  {object}  response.Envelope{data=object{snapshots=[]circle.CircleSnapshot}}
+// @Failure      400  {object}  response.Envelope
+// @Failure      500  {object}  response.Envelope
+// @Router       /circles/snapshots [get]
+// @Security     BearerAuth
+func (h *CircleHandler) GetBulkSnapshots(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var circleIDs []string
+	if raw := c.Query("ids"); raw != "" {
+		for _, id := range splitComma(raw) {
+			if id != "" {
+				circleIDs = append(circleIDs, id)
+			}
+		}
+	}
+
+	snaps, err := h.circleService.GetBulkCircleSnapshots(c.Request.Context(), userID, circleIDs)
+	if err != nil {
+		response.InternalError(c, "failed to build circle snapshots")
+		return
+	}
+	response.OK(c, gin.H{"snapshots": snaps})
+}
+
+// splitComma splits a comma-separated string and trims whitespace from each element.
+func splitComma(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
