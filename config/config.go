@@ -226,6 +226,13 @@ type IndexerConfig struct {
 	StartLedger  int64         `mapstructure:"start_ledger"`
 	// MaxCursorLag is how long the cursor's last_processed_at may trail the
 	// current time before the health server reports the indexer as unhealthy.
+	MaxCursorLag time.Duration `mapstructure:"max_cursor_lag"`
+	// ReorgWindow is how many ledgers behind the cursor the reorg check
+	// inspects, and therefore how deep a reorganization can be detected and
+	// rolled back. Values <= 0 fall back to a 10 ledger default; a reorg
+	// reaching past the window is reported rather than partially repaired
+	// (#346).
+	ReorgWindow int `mapstructure:"reorg_window"`
 	MaxCursorLag   time.Duration `mapstructure:"max_cursor_lag"`
 	StallThreshold time.Duration `mapstructure:"stall_threshold"`
 }
@@ -364,6 +371,7 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "indexer.poll_interval", "3s")
 	setDefault(v, "indexer.batch_size", 50)
 	setDefault(v, "indexer.max_cursor_lag", "2m")
+	setDefault(v, "indexer.reorg_window", 10)
 	setDefault(v, "indexer.stall_threshold", "5m")
 	setDefault(v, "cors.allowed_origins", []string{"http://localhost:1110"})
 	setDefault(v, "cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
@@ -471,6 +479,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("indexer.poll_interval", "3s")
 	v.SetDefault("indexer.batch_size", 50)
 	v.SetDefault("indexer.max_cursor_lag", "2m")
+	v.SetDefault("indexer.reorg_window", 10)
 	v.SetDefault("indexer.stall_threshold", "5m")
 	v.SetDefault("cors.allowed_origins", []string{"http://localhost:1110"})
 	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})

@@ -47,6 +47,23 @@ func TestLoad_ShutdownTimeoutIsConfigurable(t *testing.T) {
 	require.Equal(t, 2*time.Second, cfg.Server.ShutdownDelay)
 }
 
+// indexer.reorg_window bounds how deep a ledger reorganization is repaired
+// (#346). It must be settable and must have a safe default.
+func TestLoad_ReorgWindowIsConfigurable(t *testing.T) {
+	t.Setenv("MOISTELLO_INDEXER_REORG_WINDOW", "25")
+
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Equal(t, 25, cfg.Indexer.ReorgWindow)
+}
+
+func TestLoad_ReorgWindowHasDefault(t *testing.T) {
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Equal(t, 10, cfg.Indexer.ReorgWindow)
+}
+
+func TestLoad_PanicsWithoutCriticalConfig(t *testing.T) {
 func TestLoad_ReportsAllMissingErrors(t *testing.T) {
 	t.Setenv("MOISTELLO_DATABASE_URL", "")
 	t.Setenv("MOISTELLO_STELLAR_MASTER_SECRET_KEY", "")

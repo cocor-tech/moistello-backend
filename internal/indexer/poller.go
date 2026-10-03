@@ -28,6 +28,12 @@ type Ledger struct {
 	Sequence int64     `json:"sequence"`
 	ClosedAt time.Time `json:"closed_at"`
 	TxCount  int       `json:"transaction_count"`
+	// Hash is the ledger header hash, and PrevHash the hash of the ledger that
+	// preceded it on the branch this ledger belongs to. Comparing these against
+	// the values recorded when the ledger was first indexed is how the indexer
+	// detects a reorg (#346).
+	Hash     string `json:"hash"`
+	PrevHash string `json:"prev_hash"`
 }
 
 // TransactionResponse is the Horizon API response for transactions.
@@ -104,6 +110,16 @@ func (p *Poller) FetchLedgers(ctx context.Context, cursor int64, limit int) ([]L
 		return nil, fmt.Errorf("decoding ledgers: %w", err)
 	}
 	return result.Embedded.Records, nil
+}
+
+// FetchLedgersInRange retrieves the ledgers in the inclusive range [from, to].
+// It is used by the reorg check to re-read the recent window of already
+// indexed ledgers and compare their hashes against what was recorded.
+func (p *Poller) FetchLedgersInRange(ctx context.Context, from, to int64) ([]Ledger, error) {
+	if to < from {
+		return nil, nil
+	}
+	return p.FetchLedgers(ctx, from-1, int(to-from+1))
 }
 
 // FetchTransactions retrieves all transactions for a specific ledger.
