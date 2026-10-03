@@ -45,6 +45,30 @@ type NotificationPrefsInput struct {
 	Channels []string `json:"channels" binding:"required,min=1"`
 	// Muted, when true, suppresses all notifications for this user.
 	Muted bool `json:"muted"`
+	// DigestEnabled turns digest batching on/off for this user (#415). Left
+	// nil it is unchanged, so an existing client that only sends channels and
+	// muted keeps its current digest setting.
+	DigestEnabled *bool `json:"digestEnabled"`
+	// DigestIntervalMinutes is the desired digest cadence. Left nil it is
+	// unchanged. Must fall within the supported window; see
+	// NotificationDigestCadenceBounds.
+	DigestIntervalMinutes *int `json:"digestIntervalMinutes"`
+}
+
+// Digest cadence bounds, mirrored here rather than imported from the
+// notification package: the user domain must not depend on notification, which
+// already depends on the user domain through its adapters.
+const (
+	MinDigestIntervalMinutes     = 15
+	MaxDigestIntervalMinutes     = 7 * 24 * 60
+	DefaultDigestIntervalMinutes = 24 * 60
+)
+
+// NotificationDigestCadenceBounds returns the supported digest cadence window in
+// minutes, exposed so the preferences endpoint can report the valid range
+// rather than hard-coding it in validation alone.
+func NotificationDigestCadenceBounds() (min, max int) {
+	return MinDigestIntervalMinutes, MaxDigestIntervalMinutes
 }
 
 type MoiScoreResponse struct {
@@ -240,6 +264,25 @@ func (s *userService) UpdateNotificationPreferences(ctx context.Context, id stri
 	u.NotificationChannels = prefs.Channels
 	u.NotificationsMuted = prefs.Muted
 	u.UpdatedAt = time.Now().UTC()
+
+	// Digest cadence (#415). Both fields are optional so a client that only
+	// manages channels/mute leaves the digest setting untouched. Enabling
+	// digesting without naming an interval gets the default cadence rather
+	// than a zero value, which would otherwise flush on every event.
+	if prefs.DigestIntervalMinutes != nil {
+		interval := *prefs.DigestIntervalMinutes
+		if interval < MinDigestIntervalMinutes || interval > MaxDigestIntervalMinutes {
+			return nil, fmt.Errorf("invalid digest interval %d minutes: must be between %d and %d",
+				interval, MinDigestIntervalMinutes, MaxDigestIntervalMinutes)
+		}
+		u.DigestIntervalMinutes = interval
+	}
+	if prefs.DigestEnabled != nil {
+		u.DigestEnabled = *prefs.DigestEnabled
+	}
+	if u.DigestEnabled && u.DigestIntervalMinutes == 0 {
+		u.DigestIntervalMinutes = DefaultDigestIntervalMinutes
+	}
 
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("saving notification preferences: %w", err)
