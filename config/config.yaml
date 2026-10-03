@@ -86,6 +86,11 @@ indexer:
   batch_size: 50
   start_ledger: 0
   max_cursor_lag: "2m"
+  # How many ledgers behind the cursor the reorg check inspects. This bounds
+  # both the per-poll cost and how deep a ledger reorganization can be detected
+  # and rolled back: a fork at or below the window boundary is reported as
+  # unrepairable rather than partially applied. <= 0 uses the 10 ledger default.
+  reorg_window: 10
   stall_threshold: "5m"
 
 notification:
