@@ -910,6 +910,12 @@ func (h *CircleHandler) GetSnapshot(c *gin.Context) {
 			response.NotFound(c, "circle not found")
 			return
 		}
+		// A snapshot is circle-private: a caller who is neither organizer nor an
+		// active member is refused rather than served a redacted one (#440).
+		if errors.Is(err, apperrors.ErrForbidden) {
+			response.Forbidden(c, "not a member of this circle")
+			return
+		}
 		response.InternalError(c, "failed to build circle snapshot")
 		return
 	}
@@ -951,6 +957,10 @@ func (h *CircleHandler) GetBulkSnapshots(c *gin.Context) {
 
 	snaps, err := h.circleService.GetBulkCircleSnapshots(c.Request.Context(), userID, circleIDs)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrForbidden) {
+			response.Forbidden(c, "not a member of one or more of these circles")
+			return
+		}
 		response.InternalError(c, "failed to build circle snapshots")
 		return
 	}

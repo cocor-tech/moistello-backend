@@ -125,6 +125,36 @@ func TestCircleHandler_GetSnapshot_NotFound(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
+// A snapshot carries the member list and the circle's whole contribution and
+// payout history, so a caller who is neither organizer nor active member must
+// be refused - not served a redacted copy, and not answered 500.
+func TestCircleHandler_GetSnapshot_NonMemberIsForbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := new(circleMocks.Repository)
+	svc := circle.NewService(repo, nil, circle.Dependencies{})
+
+	circleID := uuid.New()
+	userID := uuid.New()
+
+	repo.On("GetCircleSnapshot", mock.Anything, circleID, userID).Return(nil, apperrors.ErrForbidden)
+
+	h := handler.NewCircleHandler(svc, nil, nil, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", userID.String())
+		c.Next()
+	})
+	r.GET("/circles/:id/snapshot", h.GetSnapshot)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/circles/"+circleID.String()+"/snapshot", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	repo.AssertExpectations(t)
+}
+
 func TestCircleHandler_GetSnapshot_InvalidUUID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

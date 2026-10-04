@@ -681,6 +681,14 @@ func (r *pgRepo) GetCircleSnapshot(ctx context.Context, circleID, userID uuid.UU
 		}
 	}
 
+	// A snapshot carries the member list and every contribution and payout of
+	// the circle, so it is circle-private data: only the organizer and active
+	// members may read one. Without this gate any authenticated caller could
+	// read any circle's roster and financial history by id (#440).
+	if userRole == "none" {
+		return nil, apperrors.ErrForbidden
+	}
+
 	var userContributed, userPaidOut float64
 	var circleContributed, circlePaidOut float64
 	isCurrentRoundPaid := false
