@@ -79,10 +79,10 @@ func (h *GovernanceHandler) ListProposals(c *gin.Context) {
 		responses = append(responses, proposalResponse(&proposals[i]))
 	}
 	response.OK(c, gin.H{
-		"proposals":         responses,
-		"total":             total,
-		"page":              page,
-		"limit":             limit,
+		"proposals":          responses,
+		"total":              total,
+		"page":               page,
+		"limit":              limit,
 		"weightSnapshotRule": governance.SnapshotRule,
 	})
 }
