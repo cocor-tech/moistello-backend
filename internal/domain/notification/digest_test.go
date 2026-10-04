@@ -38,6 +38,7 @@ func TestIsUrgent_AlwaysUrgentTypesBypassDigest(t *testing.T) {
 		assert.True(t, notification.IsUrgentType(typ), "%s should be an urgent class", typ)
 		assert.True(t, notification.IsUrgent(typ, nil, now), "%s should bypass digest batching", typ)
 	}
+}
 
 func TestIsUrgent_DeadlineWindowDecidesUrgency(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -146,8 +147,6 @@ func TestAssembleDigest_UnknownTypeFallsBackToReadableLabel(t *testing.T) {
 	require.NotNil(t, digest)
 	// Dots become spaces so an unmapped type still reads as a phrase.
 	assert.Equal(t, "1 circle round advanced", digest.Body)
-}
-
 }
 
 func TestIsUrgent_BatchableTypesAloneAreNotUrgent(t *testing.T) {

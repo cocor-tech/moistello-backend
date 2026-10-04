@@ -342,10 +342,13 @@ func (s *notificationService) broadcast(ctx context.Context, n *Notification) {
 		payload, err := json.Marshal(n)
 		if err == nil {
 			routingKey := fmt.Sprintf("notification.%s", n.Channel)
-			if pubErr := s.rabbitClient.Publish(EventsExchange, routingKey, payload); pubErr == nil {
+			if pubErr := s.rabbitClient.Publish(EventsExchange, routingKey, payload); pubErr != nil {
+				// Persistence already succeeded; fall back to an immediate
+				// broadcast so the user does not miss the event.
+				log.Warn().Err(pubErr).Msg("publishing notification event")
+			} else {
 				return
 			}
-			log.Warn().Err(pubErr).Msg("publishing notification event")
 		}
 	}
 	if s.broadcaster != nil {
