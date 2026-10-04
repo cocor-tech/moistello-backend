@@ -151,6 +151,73 @@ func (a *digestPreferenceAdapter) DigestPreferences(ctx context.Context, userID 
 	}, nil
 }
 
+// governanceWeightResolver computes a voter's governance weight for the
+// creation-time snapshot (#418): their governance-token balance scaled by
+// their reputation tier factor.
+//
+// It lives here rather than in the governance package so governance does not
+// import the token, reputation and user domains — the same adapter pattern used
+// by userLookupAdapter and digestPreferenceAdapter above.
+type governanceWeightResolver struct {
+	users      user.Repository
+	reputation reputation.Repository
+	tokens     token.Service
+}
+
+func (r *governanceWeightResolver) VotingWeight(ctx context.Context, userID string) (int64, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return 0, err
+	}
+	u, err := r.users.FindByID(ctx, uid)
+	if err != nil {
+		return 0, err
+	}
+
+	// A missing reputation snapshot is not an error: the user simply counts at
+	// the default tier factor rather than being disenfranchised.
+	tier := ""
+	if snapshot, err := r.reputation.GetByUser(ctx, uid); err == nil && snapshot != nil {
+		tier = snapshot.Level
+	}
+
+	if r.tokens == nil || u.WalletAddress == "" {
+		// Without a token service (or address) there is no balance to weight,
+		// so fall back to the reputation-scaled baseline of 1.
+		return governance.ApplyTierFactor(1, tier), nil
+	}
+
+	balance, err := r.tokens.GetBalance(ctx, u.WalletAddress)
+	if err != nil {
+		return 0, err
+	}
+	return governance.ApplyTierFactor(int64(balance), tier), nil
+}
+
+// EligibleVoters returns every active user's id, so the snapshot covers anyone
+// who might later vote. It pages through the user list rather than loading
+// everyone at once, since a snapshot covering the whole electorate is the
+// point and a single unbounded query is not.
+func (r *governanceWeightResolver) EligibleVoters(ctx context.Context) ([]string, error) {
+	const pageSize = 200
+	const maxPages = 50 // cap at 10k voters per proposal
+
+	ids := make([]string, 0, pageSize)
+	for page := 1; page <= maxPages; page++ {
+		users, err := r.users.List(ctx, user.UserFilter{Page: page, Limit: pageSize})
+		if err != nil {
+			return nil, err
+		}
+		for i := range users {
+			ids = append(ids, users[i].ID.String())
+		}
+		if len(users) < pageSize {
+			return ids, nil
+		}
+	}
+	return ids, nil
+}
+
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "config-validate" || os.Args[1] == "--config-validate" || (os.Args[1] == "config" && len(os.Args) > 2 && os.Args[2] == "validate")) {
 		cfg, err := config.Load("")
@@ -485,7 +552,11 @@ func main() {
 	swapSweeper.Start(context.Background())
 
 	governanceRepo := governance.NewRepository(db)
-	governanceSvc := governance.NewService(governanceRepo)
+	// Weight snapshots (#418): voting power is frozen at proposal creation, so
+	// tokens moved mid-vote cannot change an outcome.
+	governanceSvc := governance.NewService(governanceRepo, governance.WithWeightResolver(
+		&governanceWeightResolver{users: userRepo, reputation: reputationRepo, tokens: tokenSvc},
+	))
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
 
 	incentivesRepo := incentives.NewRepository(db)

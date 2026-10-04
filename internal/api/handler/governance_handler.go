@@ -33,7 +33,34 @@ func (h *GovernanceHandler) CreateProposal(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.Created(c, gin.H{"proposal": proposal})
+	response.Created(c, gin.H{"proposal": proposalResponse(proposal)})
+}
+
+// proposalResponse wraps a proposal with the voting-weight rule that governs
+// it (#418), so a client reading a proposal can see the rule rather than having
+// to infer it from the numbers.
+func proposalResponse(p *governance.Proposal) gin.H {
+	return gin.H{
+		"id":                  p.ID,
+		"title":               p.Title,
+		"description":         p.Description,
+		"proposalType":        p.ProposalType,
+		"creatorId":           p.CreatorID,
+		"status":              p.Status,
+		"forVotes":            p.ForVotes,
+		"againstVotes":        p.AgainstVotes,
+		"forWeight":           p.ForWeight,
+		"againstWeight":       p.AgainstWeight,
+		"snapshotAt":          p.SnapshotAt,
+		"snapshotTotalWeight": p.SnapshotTotalWeight,
+		"executedAt":          p.ExecutedAt,
+		"createdAt":           p.CreatedAt,
+		"updatedAt":           p.UpdatedAt,
+		// The rule itself, plus the per-voter snapshot, so a reader can verify
+		// exactly what weight each vote was cast against (#418).
+		"weightSnapshotRule": governance.SnapshotRule,
+		"weightSnapshot":     p.WeightSnapshot,
+	}
 }
 
 func (h *GovernanceHandler) ListProposals(c *gin.Context) {
@@ -45,11 +72,18 @@ func (h *GovernanceHandler) ListProposals(c *gin.Context) {
 		response.InternalError(c, "failed to list proposals")
 		return
 	}
+	// The rule is included once at the top level rather than per proposal, since
+	// it is identical for every proposal in the list (#418).
+	responses := make([]gin.H, 0, len(proposals))
+	for i := range proposals {
+		responses = append(responses, proposalResponse(&proposals[i]))
+	}
 	response.OK(c, gin.H{
-		"proposals": proposals,
-		"total":     total,
-		"page":      page,
-		"limit":     limit,
+		"proposals":         responses,
+		"total":             total,
+		"page":              page,
+		"limit":             limit,
+		"weightSnapshotRule": governance.SnapshotRule,
 	})
 }
 
@@ -59,7 +93,7 @@ func (h *GovernanceHandler) GetProposal(c *gin.Context) {
 		response.NotFound(c, "proposal not found")
 		return
 	}
-	response.OK(c, gin.H{"proposal": proposal})
+	response.OK(c, gin.H{"proposal": proposalResponse(proposal)})
 }
 
 func (h *GovernanceHandler) VoteProposal(c *gin.Context) {
