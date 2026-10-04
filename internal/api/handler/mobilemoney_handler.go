@@ -165,4 +165,3 @@ func (h *MobileMoneyHandler) ListProviders(c *gin.Context) {
 		"supportedCurrencies": currencies,
 	})
 }
-

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
 	"github.com/moistello/backend/internal/domain/user"
 	"github.com/moistello/backend/pkg/apperrors"
 )
@@ -182,6 +184,14 @@ func (s *Service) GetCircleSwapHistory(ctx context.Context, circleID string, fil
 	return s.repo.ListCircleSwapOffers(ctx, circleID, filter)
 }
 
+// SweepExpiredOffers releases escrow on-chain for created offers past their
+// expiry and marks them expired (#243, hardened in #416).
+//
+// Each offer is claimed atomically before any escrow call, so even if two
+// replicas sweep the same expired set concurrently — because the single-flight
+// lock was unavailable, or expired mid-pass — only the caller that wins the
+// claim moves money. A lost race costs a wasted status write, never a second
+// release attempt.
 func (s *Service) SweepExpiredOffers(ctx context.Context) (int, error) {
 	expired, err := s.repo.ListExpiredCreatedOffers(ctx, time.Now())
 	if err != nil {
@@ -190,23 +200,53 @@ func (s *Service) SweepExpiredOffers(ctx context.Context) (int, error) {
 
 	swept := 0
 	for _, offer := range expired {
-		offeror, err := s.userSvc.GetByID(ctx, offer.OfferorUserID)
-		if err != nil {
+		// Claim first, then do the work. Doing it the other way round is what
+		// allowed two replicas to both attempt a release.
+		claimed, err := s.repo.ClaimOfferForSweep(ctx, offer.ID, time.Now())
+		if err != nil || !claimed {
+			// Lost the race, or the offer was cancelled/accepted/extended since
+			// the listing. Either way this replica must not touch escrow.
 			continue
 		}
 
-		swapped, err := s.repo.CompareAndSwapStatus(ctx, offer.ID, SwapOfferStatusCreated, SwapOfferStatusExpired, nil)
-		if err != nil || !swapped {
-			continue
-		}
-
-		_, err = s.escrow.CancelSwap(ctx, offer.ID, offeror.WalletAddress)
-		if err != nil {
-			_, _ = s.repo.CompareAndSwapStatus(ctx, offer.ID, SwapOfferStatusExpired, SwapOfferStatusCreated, nil)
+		if err := s.releaseExpiredOffer(ctx, offer.ID, offer.OfferorUserID); err != nil {
+			// Hand the offer back so a later tick retries it rather than
+			// stranding it in sweeping forever.
+			if relErr := s.repo.ReleaseSweepClaim(ctx, offer.ID); relErr != nil {
+				log.Error().Err(relErr).Str("offerID", offer.ID).
+					Msg("swap sweep: returning failed claim to created failed")
+			}
 			continue
 		}
 
 		swept++
 	}
 	return swept, nil
+}
+
+// releaseExpiredOffer cancels the on-chain swap and finalizes the offer. It
+// runs only for the caller that won the claim.
+func (s *Service) releaseExpiredOffer(ctx context.Context, offerID, offerorUserID string) error {
+	offeror, err := s.userSvc.GetByID(ctx, offerorUserID)
+	if err != nil {
+		// Unresolvable offeror: we cannot sign the release, so the claim is
+		// given back and a later tick can retry once the user is resolvable.
+		log.Warn().Err(err).Str("offerID", offerID).Msg("swap sweep: offeror unresolvable")
+		return err
+	}
+
+	txHash, err := s.escrow.CancelSwap(ctx, offerID, offeror.WalletAddress)
+	if err != nil {
+		log.Warn().Err(err).Str("offerID", offerID).Msg("swap sweep: on-chain cancel failed")
+		return err
+	}
+
+	if err := s.repo.FinalizeSweep(ctx, offerID, &txHash); err != nil {
+		// Escrow is already released but the row could not be finalized. Return
+		// an error so the claim is released and the offer is retried; the
+		// retry's claim is a no-op-safe status write rather than a second
+		// release, because the claim is what gates the escrow call.
+		return err
+	}
+	return nil
 }

@@ -37,10 +37,19 @@ type User struct {
 	PasskeyCredentialID  *string        `json:"passkeyCredentialId,omitempty" db:"passkey_credential_id"`
 	NotificationChannels pq.StringArray `json:"notificationChannels" db:"notification_channels"`
 	NotificationsMuted   bool           `json:"notificationsMuted" db:"notifications_muted"`
-	PushToken            *string        `json:"pushToken,omitempty" db:"push_token"`
-	CreatedAt            time.Time      `json:"createdAt" db:"created_at"`
-	UpdatedAt            time.Time      `json:"updatedAt" db:"updated_at"`
-	DeletedAt            *time.Time     `json:"deletedAt,omitempty" db:"deleted_at"`
+	// DigestEnabled turns digest batching on for this user (#415). When true,
+	// non-urgent circle events are collapsed into a periodic summary instead of
+	// being delivered one by one. Urgent classes (payout, dispute, completed
+	// circle, or a deadline under 24h) always bypass batching.
+	DigestEnabled bool `json:"digestEnabled" db:"digest_enabled"`
+	// DigestIntervalMinutes is the cadence at which batched events are
+	// summarised, in minutes. Clamped to a supported range on write; see
+	// notification.MinDigestInterval / MaxDigestInterval.
+	DigestIntervalMinutes int        `json:"digestIntervalMinutes" db:"digest_interval_minutes"`
+	PushToken             *string    `json:"pushToken,omitempty" db:"push_token"`
+	CreatedAt             time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt             time.Time  `json:"updatedAt" db:"updated_at"`
+	DeletedAt             *time.Time `json:"deletedAt,omitempty" db:"deleted_at"`
 }
 
 // HashEmail consistently hashes an email address for storage and lookup.

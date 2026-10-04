@@ -11,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 	"github.com/moistello/backend/internal/domain/admin"
 	"github.com/moistello/backend/internal/domain/audit"
 	"github.com/moistello/backend/internal/domain/circle"
@@ -20,6 +19,7 @@ import (
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/pagination"
 	"github.com/moistello/backend/pkg/response"
+	"github.com/rs/zerolog/log"
 )
 
 type AdminHandler struct {

@@ -31,12 +31,12 @@ const (
 )
 
 type Notification struct {
-	ID        uuid.UUID           `json:"id" db:"id"`
-	UserID    uuid.UUID           `json:"userId" db:"user_id"`
-	Type      NotificationType    `json:"type" db:"type"`
-	Title     string              `json:"title" db:"title"`
-	Body      string              `json:"body" db:"body"`
-	Data      json.RawMessage     `json:"data,omitempty" db:"data"`
+	ID         uuid.UUID           `json:"id" db:"id"`
+	UserID     uuid.UUID           `json:"userId" db:"user_id"`
+	Type       NotificationType    `json:"type" db:"type"`
+	Title      string              `json:"title" db:"title"`
+	Body       string              `json:"body" db:"body"`
+	Data       json.RawMessage     `json:"data,omitempty" db:"data"`
 	IsRead     bool                `json:"isRead" db:"is_read"`
 	IsArchived bool                `json:"isArchived" db:"is_archived"`
 	Channel    NotificationChannel `json:"channel" db:"channel"`

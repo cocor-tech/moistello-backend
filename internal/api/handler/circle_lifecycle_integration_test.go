@@ -162,6 +162,16 @@ func (s *lifecycleCircleService) SubmitAuctionBid(_ context.Context, _, _ string
 	return nil, nil
 }
 
+// The snapshot readers (#440) are not exercised by the lifecycle tests; they
+// are here because circle.Service requires them.
+func (s *lifecycleCircleService) GetCircleSnapshot(_ context.Context, _, _ string) (*circle.CircleSnapshot, error) {
+	return nil, circle.ErrCircleNotFound
+}
+
+func (s *lifecycleCircleService) GetBulkCircleSnapshots(_ context.Context, _ string, _ []string) ([]circle.CircleSnapshot, error) {
+	return nil, nil
+}
+
 type lifecycleContributionService struct{ store *lifecycleStore }
 
 func (s *lifecycleContributionService) Record(

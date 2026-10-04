@@ -292,4 +292,3 @@ func TestService_BulkArchive_Validation(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid notification id")
 }
-

@@ -102,7 +102,7 @@ func TestHub_AuditRoomMemberships_RemovesRevokedMemberAndStopsDelivery(t *testin
 
 	// c1 should have received error/removal notification and NOT the broadcast
 	var c1Messages []string
-	drain:
+drain:
 	for {
 		select {
 		case msg := <-c1.Send:

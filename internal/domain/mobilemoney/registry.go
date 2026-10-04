@@ -69,4 +69,3 @@ func (r *Registry) ActiveProviderNames() []string {
 	}
 	return names
 }
-

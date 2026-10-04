@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -42,7 +43,7 @@ type OperationSpec struct {
 // TestOpenAPISpec_FreshnessCheck regenerates the spec and validates it matches the file.
 func TestOpenAPISpec_FreshnessCheck(t *testing.T) {
 	// Load current spec from file
-	specPath := "docs/api/swagger.json"
+	specPath := openAPISpecPath()
 	currentSpec := loadOpenAPISpec(t, specPath)
 	require.NotNil(t, currentSpec, "spec file must exist at %s", specPath)
 
@@ -55,7 +56,7 @@ func TestOpenAPISpec_FreshnessCheck(t *testing.T) {
 
 // TestOpenAPISpec_RouteCoverage validates that every registered route appears in the spec.
 func TestOpenAPISpec_RouteCoverage(t *testing.T) {
-	specPath := "docs/api/swagger.json"
+	specPath := openAPISpecPath()
 	spec := loadOpenAPISpec(t, specPath)
 	require.NotNil(t, spec, "spec file must exist")
 
@@ -131,7 +132,7 @@ func TestOpenAPISpec_RouteCoverage(t *testing.T) {
 
 // TestOpenAPISpec_SchemaConsistency ensures operations have request/response schemas.
 func TestOpenAPISpec_SchemaConsistency(t *testing.T) {
-	specPath := "docs/api/swagger.json"
+	specPath := openAPISpecPath()
 	spec := loadOpenAPISpec(t, specPath)
 	require.NotNil(t, spec)
 
@@ -162,7 +163,7 @@ func TestOpenAPISpec_SchemaConsistency(t *testing.T) {
 
 // TestOpenAPISpec_ValidJSON ensures the spec is valid JSON that can be parsed.
 func TestOpenAPISpec_ValidJSON(t *testing.T) {
-	specPath := "docs/api/swagger.json"
+	specPath := openAPISpecPath()
 	data, err := os.ReadFile(specPath)
 	require.NoError(t, err, "spec file should exist and be readable")
 
@@ -170,6 +171,22 @@ func TestOpenAPISpec_ValidJSON(t *testing.T) {
 	err = json.Unmarshal(data, &spec)
 	assert.NoError(t, err, "spec should be valid JSON")
 	assert.NotEmpty(t, spec.OpenAPI, "openapi field should not be empty")
+}
+
+// openAPISpecPath resolves the checked-in spec. These tests run with the working
+// directory set to tests/, so the repository-relative "docs/api/swagger.json"
+// never resolved and every assertion below silently degraded into "spec file
+// must exist". Walk up until the file is found.
+func openAPISpecPath() string {
+	dir := "."
+	for i := 0; i < 5; i++ {
+		candidate := filepath.Join(dir, "docs", "api", "swagger.json")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		dir = filepath.Join(dir, "..")
+	}
+	return filepath.Join("docs", "api", "swagger.json")
 }
 
 // RouteExpectation represents a single route that should be in the spec.
@@ -242,7 +259,7 @@ func normalizePath(path string) string {
 
 // TestOpenAPISpec_ServerAndInfo checks basic metadata.
 func TestOpenAPISpec_ServerAndInfo(t *testing.T) {
-	specPath := "docs/api/swagger.json"
+	specPath := openAPISpecPath()
 	spec := loadOpenAPISpec(t, specPath)
 	require.NotNil(t, spec)
 

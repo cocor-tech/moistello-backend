@@ -33,6 +33,7 @@ type Config struct {
 	Tracing      TracingConfig
 	Swap         SwapConfig        `mapstructure:"swap"`
 	MobileMoney  MobileMoneyConfig `mapstructure:"mobile_money"`
+	Governance   GovernanceConfig  `mapstructure:"governance"`
 
 	// Hot holds the live values of the keys that can be reloaded without a
 	// restart (see HotReloader).
@@ -226,7 +227,14 @@ type IndexerConfig struct {
 	StartLedger  int64         `mapstructure:"start_ledger"`
 	// MaxCursorLag is how long the cursor's last_processed_at may trail the
 	// current time before the health server reports the indexer as unhealthy.
-	MaxCursorLag   time.Duration `mapstructure:"max_cursor_lag"`
+	MaxCursorLag time.Duration `mapstructure:"max_cursor_lag"`
+	// ReorgWindow is how many ledgers behind the cursor the reorg check
+	// inspects, and therefore how deep a reorganization can be detected and
+	// rolled back. Values <= 0 fall back to a 10 ledger default; a reorg
+	// reaching past the window is reported rather than partially repaired
+	// (#346).
+	ReorgWindow int `mapstructure:"reorg_window"`
+
 	StallThreshold time.Duration `mapstructure:"stall_threshold"`
 }
 
@@ -260,6 +268,20 @@ type SwapConfig struct {
 	// releases escrow on-chain for created swap offers past their expiry and
 	// marks them expired (#243).
 	SweepInterval time.Duration `mapstructure:"sweep_interval"`
+}
+
+// GovernanceConfig holds the execution timelock settings (#414).
+type GovernanceConfig struct {
+	// ExecutionTimelock is how long a proposal that has passed its vote waits
+	// before it can be executed. It gives members a window to review the
+	// proposal and cancel it, instead of a passed proposal executing the
+	// instant anyone calls the execute endpoint. Set to "0" to disable the
+	// timelock and restore immediate execution.
+	ExecutionTimelock time.Duration `mapstructure:"execution_timelock"`
+	// CancelThresholdPct is the share of votes cast (for + against) that must
+	// vote to cancel a proposal while it is inside its timelock. Out-of-range
+	// values fall back to the domain default.
+	CancelThresholdPct int `mapstructure:"cancel_threshold_pct"`
 }
 
 type RateLimitConfig struct {
@@ -364,8 +386,11 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "indexer.poll_interval", "3s")
 	setDefault(v, "indexer.batch_size", 50)
 	setDefault(v, "indexer.max_cursor_lag", "2m")
+	setDefault(v, "indexer.reorg_window", 10)
 	setDefault(v, "indexer.stall_threshold", "5m")
-	setDefault(v, "cors.allowed_origins", []string{"http://localhost:1110"})
+	// cors.allowed_origins deliberately has no default: a localhost default here
+	// would be indistinguishable from an operator's explicit choice and would
+	// make ResolveCORSAllowedOrigins return it in every environment (#348).
 	setDefault(v, "cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
 	setDefault(v, "cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
 	setDefault(v, "cors.allow_credentials", true)
@@ -402,6 +427,10 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "yellow_card.api_secret", "")
 	setDefault(v, "yellow_card.webhook_secret", "")
 	setDefault(v, "swap.sweep_interval", "1m")
+	// #414: a passed proposal waits 48h before it can be executed, giving
+	// members time to review it and cancel it. Set to "0" to execute immediately.
+	setDefault(v, "governance.execution_timelock", "48h")
+	setDefault(v, "governance.cancel_threshold_pct", "33")
 	setDefault(v, "security.wallet_pepper", "")
 	setDefault(v, "security.passkey_pepper", "")
 	setDefault(v, "security.encryption_key", "")
@@ -425,6 +454,7 @@ func Load(path string) (*Config, error) {
 	mustBindEnv(v, "yellow_card.api_key", "YELLOW_CARD_API_KEY")
 	mustBindEnv(v, "yellow_card.api_secret", "YELLOW_CARD_API_SECRET")
 	mustBindEnv(v, "yellow_card.webhook_secret", "YELLOW_CARD_WEBHOOK_SECRET")
+	mustBindEnv(v, "cors.allowed_origins", "MOISTELLO_CORS_ALLOWED_ORIGINS", "ALLOWED_ORIGINS")
 	mustBindEnv(v, "redis.url", "MOISTELLO_REDIS_URL", "REDIS_URL")
 	mustBindEnv(v, "redis.password", "MOISTELLO_REDIS_PASSWORD", "REDIS_PASSWORD")
 	mustBindEnv(v, "auth.admin_api_key", "MOISTELLO_AUTH_ADMIN_API_KEY", "ADMIN_API_KEY")
@@ -471,8 +501,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("indexer.poll_interval", "3s")
 	v.SetDefault("indexer.batch_size", 50)
 	v.SetDefault("indexer.max_cursor_lag", "2m")
+	v.SetDefault("indexer.reorg_window", 10)
 	v.SetDefault("indexer.stall_threshold", "5m")
-	v.SetDefault("cors.allowed_origins", []string{"http://localhost:1110"})
+	// See the note above: no default for cors.allowed_origins (#348).
 	v.SetDefault("cors.allowed_methods", []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"})
 	v.SetDefault("cors.allowed_headers", []string{"Authorization", "Content-Type", "X-Request-ID"})
 	v.SetDefault("cors.allow_credentials", true)
@@ -557,6 +588,15 @@ func Load(path string) (*Config, error) {
 
 	if mainnetIssues := checkMainnetIssues(&cfg); len(mainnetIssues) > 0 {
 		errs = append(errs, fmt.Sprintf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", mainnetIssues))
+	}
+
+	// CORS policy is environment specific (#348): resolve the allowed origins
+	// and refuse combinations that would silently break the browser handshake.
+	// Resolved before the error return so a CORS misconfiguration is reported in
+	// the same single-pass list as every other invalid setting.
+	cfg.CORS.AllowedOrigins = ResolveCORSAllowedOrigins(cfg.CORS.AllowedOrigins, cfg.Environment)
+	for _, corsErr := range validateCORS(cfg.Environment, cfg.CORS) {
+		errs = append(errs, corsErr.Error())
 	}
 
 	if len(errs) > 0 {

@@ -19,8 +19,8 @@ import (
 // fakeDeadLetters records what the engine and reconciler dead-letter, so the
 // behaviour can be asserted without a database.
 type fakeDeadLetters struct {
-	mu       sync.Mutex
-	recorded []*DeadLetterEntry
+	mu        sync.Mutex
+	recorded  []*DeadLetterEntry
 	recordErr error
 }
 
@@ -58,6 +58,7 @@ func sampleTxn() *Transaction {
 		},
 	}
 }
+
 // ---------------------------------------------------------------------------
 // The gap this closes
 // ---------------------------------------------------------------------------
@@ -140,6 +141,7 @@ func TestReconciler_WithDeadLettersWiresStore(t *testing.T) {
 	require.NotNil(t, r.deadLetters)
 	assert.Same(t, store, r.deadLetters)
 }
+
 // counterValue reads a counter for assertions, tolerating a nil collector so
 // tests can build a partial IndexerMetrics.
 func counterValue(c prometheus.Counter) float64 {
@@ -167,6 +169,7 @@ func TestMarshalPayload_RoundTripsTheEvent(t *testing.T) {
 	require.Len(t, decoded.Operations, 1)
 	assert.Equal(t, "invoke_host_function", decoded.Operations[0].Type)
 }
+
 // ---------------------------------------------------------------------------
 // PGDeadLetterStore
 // ---------------------------------------------------------------------------

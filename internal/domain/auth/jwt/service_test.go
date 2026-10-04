@@ -2,8 +2,8 @@ package jwt_test
 
 import (
 	"context"
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"sync"
 	"testing"
 	"time"

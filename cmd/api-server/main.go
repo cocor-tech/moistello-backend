@@ -51,11 +51,11 @@ import (
 	"github.com/moistello/backend/internal/domain/token"
 	"github.com/moistello/backend/internal/domain/totp"
 	"github.com/moistello/backend/internal/domain/user"
-	"github.com/moistello/backend/internal/indexer"
 	"github.com/moistello/backend/internal/domain/verification"
 	"github.com/moistello/backend/internal/domain/wallet"
 	"github.com/moistello/backend/internal/domain/withdrawal"
 	"github.com/moistello/backend/internal/domain/yellowcard"
+	"github.com/moistello/backend/internal/indexer"
 	ws "github.com/moistello/backend/internal/websocket"
 	"github.com/moistello/backend/pkg/jobqueue"
 	"github.com/moistello/backend/pkg/logger"
@@ -127,6 +127,95 @@ func (a *userLookupAdapter) FindRecipient(ctx context.Context, userID string) (n
 		PreferredChannels: []string(u.NotificationChannels),
 		Muted:             u.NotificationsMuted,
 	}, nil
+}
+
+// digestPreferenceAdapter resolves a notification.DigestPreferences from
+// user.Repository — #415's digest cadence, without the notification package
+// importing the user domain. Same adapter pattern as userLookupAdapter above.
+type digestPreferenceAdapter struct {
+	repo user.Repository
+}
+
+func (a *digestPreferenceAdapter) DigestPreferences(ctx context.Context, userID string) (notification.DigestPreferences, error) {
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		return notification.DigestPreferences{}, err
+	}
+	u, err := a.repo.FindByID(ctx, id)
+	if err != nil {
+		return notification.DigestPreferences{}, err
+	}
+	return notification.DigestPreferences{
+		Enabled:  u.DigestEnabled,
+		Interval: time.Duration(u.DigestIntervalMinutes) * time.Minute,
+	}, nil
+}
+
+// governanceWeightResolver computes a voter's governance weight for the
+// creation-time snapshot (#418): their governance-token balance scaled by
+// their reputation tier factor.
+//
+// It lives here rather than in the governance package so governance does not
+// import the token, reputation and user domains — the same adapter pattern used
+// by userLookupAdapter and digestPreferenceAdapter above.
+type governanceWeightResolver struct {
+	users      user.Repository
+	reputation reputation.Repository
+	tokens     token.Service
+}
+
+func (r *governanceWeightResolver) VotingWeight(ctx context.Context, userID string) (int64, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return 0, err
+	}
+	u, err := r.users.FindByID(ctx, uid)
+	if err != nil {
+		return 0, err
+	}
+
+	// A missing reputation snapshot is not an error: the user simply counts at
+	// the default tier factor rather than being disenfranchised.
+	tier := ""
+	if snapshot, err := r.reputation.GetByUser(ctx, uid); err == nil && snapshot != nil {
+		tier = snapshot.Level
+	}
+
+	if r.tokens == nil || u.WalletAddress == "" {
+		// Without a token service (or address) there is no balance to weight,
+		// so fall back to the reputation-scaled baseline of 1.
+		return governance.ApplyTierFactor(1, tier), nil
+	}
+
+	balance, err := r.tokens.GetBalance(ctx, u.WalletAddress)
+	if err != nil {
+		return 0, err
+	}
+	return governance.ApplyTierFactor(int64(balance), tier), nil
+}
+
+// EligibleVoters returns every active user's id, so the snapshot covers anyone
+// who might later vote. It pages through the user list rather than loading
+// everyone at once, since a snapshot covering the whole electorate is the
+// point and a single unbounded query is not.
+func (r *governanceWeightResolver) EligibleVoters(ctx context.Context) ([]string, error) {
+	const pageSize = 200
+	const maxPages = 50 // cap at 10k voters per proposal
+
+	ids := make([]string, 0, pageSize)
+	for page := 1; page <= maxPages; page++ {
+		users, err := r.users.List(ctx, user.UserFilter{Page: page, Limit: pageSize})
+		if err != nil {
+			return nil, err
+		}
+		for i := range users {
+			ids = append(ids, users[i].ID.String())
+		}
+		if len(users) < pageSize {
+			return ids, nil
+		}
+	}
+	return ids, nil
 }
 
 func main() {
@@ -270,6 +359,12 @@ func main() {
 			&notification.EmailChannel{Sender: emailSvc},
 			&notification.SMSChannel{Sender: smsSvc},
 			&notification.PushChannel{Sender: pushSvc},
+		),
+		// Digest batching (#415): non-urgent circle events collapse into a
+		// periodic per-user summary; urgent classes still go out immediately.
+		notification.WithDigestBatching(
+			notification.NewDigestBuffer(),
+			&digestPreferenceAdapter{repo: userRepo},
 		),
 	)
 
@@ -422,6 +517,12 @@ func main() {
 	mmReconciler := mobilemoney.NewReconciler(redisClient, mmSvc, reconcileInterval, cfg.Auth.CleanupJitter)
 	mmReconciler.Start(context.Background())
 
+	// Digest flusher (#415): drains each user's batched circle events into a
+	// single summary once their cadence elapses. The tick is a heartbeat only
+	// — the per-user cadence in the buffer decides what is actually due.
+	digestFlusher := notification.NewDigestFlusher(notificationSvc, notification.DefaultDigestFlushInterval)
+	digestFlusher.Start(context.Background())
+
 	// Savings goals
 	savingsRepo := savings.NewRepository(db)
 	savingsSvc := savings.NewService(savingsRepo)
@@ -444,8 +545,27 @@ func main() {
 	swapSvc := swap.NewService(swapRepo, circleSvc, userSvc, escrowSwapClient)
 	swapH := handler.NewSwapHandler(swapSvc)
 
+	// Swap sweep worker with Redis single-flight lock across replicas (#416).
+	// The lock avoids duplicated work; the per-offer atomic claim in
+	// SweepExpiredOffers is what guarantees escrow is never released twice.
+	swapSweeper := swap.NewSweeper(swapSvc, redisClient, cfg.Swap.SweepInterval)
+	swapSweeper.Start(context.Background())
+
 	governanceRepo := governance.NewRepository(db)
-	governanceSvc := governance.NewService(governanceRepo)
+	// Both #418 and #414 configure the same service: weight is snapshotted at
+	// proposal creation so tokens moved mid-vote cannot change an outcome, and a
+	// passed proposal waits out an execution timelock during which it can still
+	// be cancelled by threshold vote. A zero timelock delay restores the
+	// pre-#414 immediate execution.
+	governanceSvc := governance.NewService(governanceRepo,
+		governance.WithWeightResolver(
+			&governanceWeightResolver{users: userRepo, reputation: reputationRepo, tokens: tokenSvc},
+		),
+		governance.WithTimelock(governance.TimelockConfig{
+			Delay:              cfg.Governance.ExecutionTimelock,
+			CancelThresholdPct: cfg.Governance.CancelThresholdPct,
+		}),
+	)
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
 
 	incentivesRepo := incentives.NewRepository(db)
@@ -493,6 +613,8 @@ func main() {
 				featureFlagCache.Stop()
 				mmReconciler.Stop()
 			},
+			func(context.Context) { digestFlusher.Stop() },
+			func(context.Context) { swapSweeper.Stop() },
 			func(context.Context) { sessionCleaner.Stop() },
 		},
 		CloseLast: []func(){

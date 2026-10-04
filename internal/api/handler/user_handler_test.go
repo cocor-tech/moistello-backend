@@ -84,7 +84,6 @@ func TestUserHandler_UpdateProfile_Unauthorized(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-
 type fakeUserService struct {
 	user      *user.User
 	claimName string

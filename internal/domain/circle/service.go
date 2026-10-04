@@ -35,6 +35,8 @@ type Service interface {
 	CastVote(ctx context.Context, circleID, userID string, input VoteInput) (*CircleVote, bool, string, error)
 	SubmitAuctionBid(ctx context.Context, circleID, userID string, input AuctionBidInput) (*CircleAuctionBid, error)
 	QueryRoundConfig(ctx context.Context, circleID string, round int) (*RoundConfigSnapshot, error)
+	GetCircleSnapshot(ctx context.Context, circleID, userID string) (*CircleSnapshot, error)
+	GetBulkCircleSnapshots(ctx context.Context, userID string, circleIDs []string) ([]CircleSnapshot, error)
 }
 
 type UserMOIFetcher interface {
@@ -995,4 +997,32 @@ func (s *circleService) QueryRoundConfig(ctx context.Context, circleID string, r
 		return nil, err
 	}
 	return s.repo.GetRoundConfigSnapshot(ctx, cid, round)
+}
+
+func (s *circleService) GetCircleSnapshot(ctx context.Context, circleID, userID string) (*CircleSnapshot, error) {
+	cid, err := parseUUID(circleID)
+	if err != nil {
+		return nil, err
+	}
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetCircleSnapshot(ctx, cid, uid)
+}
+
+func (s *circleService) GetBulkCircleSnapshots(ctx context.Context, userID string, circleIDs []string) ([]CircleSnapshot, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, 0, len(circleIDs))
+	for _, id := range circleIDs {
+		parsed, err := parseUUID(id)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, parsed)
+	}
+	return s.repo.GetBulkCircleSnapshots(ctx, uid, ids)
 }

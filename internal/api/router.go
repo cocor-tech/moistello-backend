@@ -238,6 +238,10 @@ func NewRouter(
 			authenticated.POST("/circles/:id/auction-bid", requireIdem, circleHandler.AuctionBid)
 			authenticated.POST("/circles/:id/members/:address/remove", circleHandler.RemoveMember)
 
+			// Dashboard snapshot endpoints (replaces multi-call pattern — see #440)
+			authenticated.GET("/circles/snapshots", circleHandler.GetBulkSnapshots)
+			authenticated.GET("/circles/:id/snapshot", circleHandler.GetSnapshot)
+
 			authenticated.GET("/circles/:id/invites", inviteHandler.ListInvites)
 			authenticated.POST("/circles/:id/invites", requireIdem, inviteHandler.CreateInvite)
 			authenticated.DELETE("/invites/:code", inviteHandler.RevokeInvite)
@@ -254,6 +258,8 @@ func NewRouter(
 			authenticated.GET("/governance/proposals/:id", governanceHandler.GetProposal)
 			authenticated.POST("/governance/proposals/:id/vote", requireIdem, governanceHandler.VoteProposal)
 			authenticated.POST("/governance/proposals/:id/execute", requireIdem, governanceHandler.ExecuteProposal)
+			// Cancellation inside the execution timelock (#414).
+			authenticated.POST("/governance/proposals/:id/cancel", requireIdem, governanceHandler.CancelProposal)
 
 			// Reputation tiers
 			authenticated.GET("/reputation/tiers", reputationHandler.GetTiers)

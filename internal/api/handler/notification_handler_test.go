@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -49,6 +50,12 @@ func (s *fakeNotificationService) BulkArchive(ctx context.Context, userID string
 		return s.bulkArchiveFn(ctx, userID, ids, archived)
 	}
 	return ids, nil
+}
+
+// FlushDueDigests satisfies notification.Service for the digest batching
+// worker (#415). The handler tests never flush, so a no-op is correct here.
+func (s *fakeNotificationService) FlushDueDigests(context.Context, time.Time) (int, error) {
+	return 0, nil
 }
 
 func setupNotificationTestRouter(svc notification.Service) *gin.Engine {

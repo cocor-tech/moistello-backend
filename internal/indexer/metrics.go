@@ -15,6 +15,9 @@ type IndexerMetrics struct {
 	DedupSize             prometheus.Gauge
 	CursorLagSeconds      prometheus.Gauge
 	UnknownContractEvents prometheus.Counter
+	// ReorgsDetected counts ledger reorganizations that were detected and
+	// rolled back (#346).
+	ReorgsDetected prometheus.Counter
 	// DeadLettered counts events recorded in the indexer dead-letter queue
 	// because they could not be processed (#349).
 	DeadLettered prometheus.Counter
@@ -158,6 +161,10 @@ func NewIndexerMetrics() *IndexerMetrics {
 		UnknownContractEvents: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "moistello_indexer_unknown_contract_events_total",
 			Help: "Total contract events skipped because they came from an unknown contract",
+		}),
+		ReorgsDetected: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "moistello_indexer_reorgs_detected_total",
+			Help: "Total ledger reorganizations detected and rolled back",
 		}),
 		DeadLettered: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "moistello_indexer_dead_lettered_total",

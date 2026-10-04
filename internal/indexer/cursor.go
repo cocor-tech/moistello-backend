@@ -43,6 +43,18 @@ func (c *CursorTracker) GetCurrent(ctx context.Context) (*Cursor, error) {
 	return &cursor, nil
 }
 
+// Rewind moves the cursor backwards to lastLedger. Update deliberately only
+// advances the cursor, so a reorg rollback needs this separate path (#346).
+func (c *CursorTracker) Rewind(ctx context.Context, lastLedger int64) error {
+	_, err := c.db.ExecContext(ctx,
+		"UPDATE indexer_cursor SET last_ledger = $1, last_processed_at = $2 WHERE chain = 'stellar'",
+		lastLedger, time.Now())
+	if err != nil {
+		return fmt.Errorf("rewinding cursor: %w", err)
+	}
+	return nil
+}
+
 // ErrCursorMissing is returned when the cursor row does not exist, so a
 // checkpoint would otherwise be silently dropped.
 var ErrCursorMissing = errors.New("indexer cursor row is missing")

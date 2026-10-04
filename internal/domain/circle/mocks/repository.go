@@ -163,3 +163,19 @@ func (m *Repository) GetRoundConfigSnapshot(ctx context.Context, circleID uuid.U
 	}
 	return args.Get(0).(*circle.RoundConfigSnapshot), args.Error(1)
 }
+
+func (m *Repository) GetCircleSnapshot(ctx context.Context, circleID, userID uuid.UUID) (*circle.CircleSnapshot, error) {
+	args := m.Called(ctx, circleID, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*circle.CircleSnapshot), args.Error(1)
+}
+
+func (m *Repository) GetBulkCircleSnapshots(ctx context.Context, userID uuid.UUID, circleIDs []uuid.UUID) ([]circle.CircleSnapshot, error) {
+	args := m.Called(ctx, userID, circleIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]circle.CircleSnapshot), args.Error(1)
+}
