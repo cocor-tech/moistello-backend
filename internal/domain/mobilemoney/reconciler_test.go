@@ -11,6 +11,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	moistelloredis "github.com/moistello/backend/pkg/redis"
 )
 
 type mockReconcileService struct {
@@ -128,7 +130,10 @@ func TestReconcilerHeartbeatRenewsLock(t *testing.T) {
 	}
 
 	reconciler := NewReconciler(rdb, svc, time.Minute, 0)
-	reconciler.lockTTL = 100 * time.Millisecond // very short TTL to trigger heartbeat
+	// Very short TTL to force the shared lock's heartbeat renewal to run
+	// during the pass. #416 moved the lock into pkg/redis, so the TTL now
+	// lives on the shared lock rather than on the reconciler.
+	reconciler.lock = moistelloredis.NewLock(rdb, reconcileLockKey, 100*time.Millisecond)
 
 	count, held, err := reconciler.RunOnce(context.Background())
 	require.NoError(t, err)

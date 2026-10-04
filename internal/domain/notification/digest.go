@@ -327,6 +327,9 @@ type DigestFlusher struct {
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 	stopOnce sync.Once
+
+	mu      sync.Mutex
+	started bool
 }
 
 // DefaultDigestFlushInterval is how often the flusher checks for due digests.
@@ -346,8 +349,18 @@ func NewDigestFlusher(svc Service, interval time.Duration) *DigestFlusher {
 	}
 }
 
-// Start launches the flush loop in the background. It returns immediately.
+// Start launches the flush loop in the background. It returns immediately and
+// is safe to call more than once: a second call is a no-op rather than a second
+// worker racing the first one for the same doneCh.
 func (f *DigestFlusher) Start(ctx context.Context) {
+	f.mu.Lock()
+	if f.started {
+		f.mu.Unlock()
+		return
+	}
+	f.started = true
+	f.mu.Unlock()
+
 	go f.run(ctx)
 }
 

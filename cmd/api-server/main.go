@@ -478,6 +478,12 @@ func main() {
 	swapSvc := swap.NewService(swapRepo, circleSvc, userSvc, escrowSwapClient)
 	swapH := handler.NewSwapHandler(swapSvc)
 
+	// Swap sweep worker with Redis single-flight lock across replicas (#416).
+	// The lock avoids duplicated work; the per-offer atomic claim in
+	// SweepExpiredOffers is what guarantees escrow is never released twice.
+	swapSweeper := swap.NewSweeper(swapSvc, redisClient, cfg.Swap.SweepInterval)
+	swapSweeper.Start(context.Background())
+
 	governanceRepo := governance.NewRepository(db)
 	governanceSvc := governance.NewService(governanceRepo)
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
@@ -528,6 +534,7 @@ func main() {
 				mmReconciler.Stop()
 			},
 			func(context.Context) { digestFlusher.Stop() },
+			func(context.Context) { swapSweeper.Stop() },
 			func(context.Context) { sessionCleaner.Stop() },
 		},
 		CloseLast: []func(){

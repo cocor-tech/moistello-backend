@@ -48,15 +48,22 @@ func (f *fakeEscrow) ExecuteSwap(ctx context.Context, swapID string) (string, er
 }
 
 type fakeRepo struct {
-	createFn        func(ctx context.Context, offer *SwapOffer) error
-	getByIDFn       func(ctx context.Context, id string) (*SwapOffer, error)
-	updateFn        func(ctx context.Context, id string, status SwapOfferStatus, transactionHash *string) error
-	casFn           func(ctx context.Context, id string, expectedStatus, newStatus SwapOfferStatus, transactionHash *string) (bool, error)
-	listUserFn      func(ctx context.Context, userID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
-	listCircleFn    func(ctx context.Context, circleID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
-	listExpiredFn   func(ctx context.Context, now time.Time) ([]SwapOffer, error)
-	updatedStatuses []SwapOfferStatus
-	updatedIDs      []string
+	createFn         func(ctx context.Context, offer *SwapOffer) error
+	getByIDFn        func(ctx context.Context, id string) (*SwapOffer, error)
+	updateFn         func(ctx context.Context, id string, status SwapOfferStatus, transactionHash *string) error
+	casFn            func(ctx context.Context, id string, expectedStatus, newStatus SwapOfferStatus, transactionHash *string) (bool, error)
+	listUserFn       func(ctx context.Context, userID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
+	listCircleFn     func(ctx context.Context, circleID string, filter SwapHistoryFilter) ([]SwapOffer, int, error)
+	listExpiredFn    func(ctx context.Context, now time.Time) ([]SwapOffer, error)
+	claimFn          func(ctx context.Context, id string, now time.Time) (bool, error)
+	releaseClaimFn   func(ctx context.Context, id string) error
+	finalizeSweepFn  func(ctx context.Context, id string, transactionHash *string) error
+	updatedStatuses  []SwapOfferStatus
+	updatedIDs       []string
+	claimedIDs       []string
+	releasedClaimIDs []string
+	finalizedIDs     []string
+	mu               sync.Mutex
 }
 
 func (f *fakeRepo) CreateSwapOffer(ctx context.Context, offer *SwapOffer) error {
@@ -95,6 +102,38 @@ func (f *fakeRepo) ListExpiredCreatedOffers(ctx context.Context, now time.Time) 
 	return f.listExpiredFn(ctx, now)
 }
 
+// ClaimOfferForSweep records the claim and delegates to claimFn. A nil claimFn
+// grants the claim, which keeps the pre-#416 sweep tests working unchanged.
+func (f *fakeRepo) ClaimOfferForSweep(ctx context.Context, id string, now time.Time) (bool, error) {
+	f.mu.Lock()
+	f.claimedIDs = append(f.claimedIDs, id)
+	f.mu.Unlock()
+	if f.claimFn != nil {
+		return f.claimFn(ctx, id, now)
+	}
+	return true, nil
+}
+
+func (f *fakeRepo) ReleaseSweepClaim(ctx context.Context, id string) error {
+	f.mu.Lock()
+	f.releasedClaimIDs = append(f.releasedClaimIDs, id)
+	f.mu.Unlock()
+	if f.releaseClaimFn != nil {
+		return f.releaseClaimFn(ctx, id)
+	}
+	return nil
+}
+
+func (f *fakeRepo) FinalizeSweep(ctx context.Context, id string, transactionHash *string) error {
+	f.mu.Lock()
+	f.finalizedIDs = append(f.finalizedIDs, id)
+	f.mu.Unlock()
+	if f.finalizeSweepFn != nil {
+		return f.finalizeSweepFn(ctx, id, transactionHash)
+	}
+	return nil
+}
+
 func walletUser(id string) *user.User {
 	return &user.User{WalletAddress: "G" + id + "WALLET"}
 }
@@ -131,6 +170,99 @@ func TestSweepExpiredOffers_ReleasesEscrowAndMarksExpired(t *testing.T) {
 
 	assert.Equal(t, 2, swept)
 	assert.Equal(t, []string{"offer-1:Gu1WALLET", "offer-2:Gu2WALLET"}, cancelled)
+	// #416: every offer is claimed before escrow is touched, then finalized.
+	assert.ElementsMatch(t, []string{"offer-1", "offer-2"}, repo.claimedIDs)
+	assert.ElementsMatch(t, []string{"offer-1", "offer-2"}, repo.finalizedIDs)
+	assert.Empty(t, repo.releasedClaimIDs, "a successful sweep returns no claims")
+}
+
+// The core #416 guarantee: a caller that loses the claim must never touch
+// escrow, so a lost race costs wasted work rather than a double release.
+func TestSweepExpiredOffers_LosingTheClaimSkipsEscrowEntirely(t *testing.T) {
+	ctx := context.Background()
+	offers := []SwapOffer{*createdOffer("offer-1", "u1"), *createdOffer("offer-2", "u2")}
+	repo := &fakeRepo{
+		listExpiredFn: func(ctx context.Context, now time.Time) ([]SwapOffer, error) {
+			return offers, nil
+		},
+		claimFn: func(ctx context.Context, id string, now time.Time) (bool, error) {
+			// Simulate another replica having already claimed offer-1.
+			return id != "offer-1", nil
+		},
+	}
+	users := &fakeUserService{getByIDFn: func(ctx context.Context, id string) (*user.User, error) {
+		return walletUser(id), nil
+	}}
+	var cancelled []string
+	escrow := &fakeEscrow{cancelSwapFn: func(ctx context.Context, swapID, canceller string) (string, error) {
+		cancelled = append(cancelled, swapID)
+		return "tx-" + swapID, nil
+	}}
+
+	svc := NewService(repo, nil, users, escrow)
+	swept, err := svc.SweepExpiredOffers(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, swept)
+	assert.Equal(t, []string{"offer-2"}, cancelled, "the unclaimed offer must never reach escrow")
+	assert.Equal(t, []string{"offer-2"}, repo.finalizedIDs)
+}
+
+// A claim error must be treated as "not claimed" — never as permission to
+// proceed, and never as a reason to abort the whole pass.
+func TestSweepExpiredOffers_ClaimErrorSkipsOfferButContinuesPass(t *testing.T) {
+	ctx := context.Background()
+	offers := []SwapOffer{*createdOffer("offer-1", "u1"), *createdOffer("offer-2", "u2")}
+	repo := &fakeRepo{
+		listExpiredFn: func(ctx context.Context, now time.Time) ([]SwapOffer, error) {
+			return offers, nil
+		},
+		claimFn: func(ctx context.Context, id string, now time.Time) (bool, error) {
+			if id == "offer-1" {
+				return false, errors.New("deadlock detected")
+			}
+			return true, nil
+		},
+	}
+	users := &fakeUserService{getByIDFn: func(ctx context.Context, id string) (*user.User, error) {
+		return walletUser(id), nil
+	}}
+	var cancelled []string
+	escrow := &fakeEscrow{cancelSwapFn: func(ctx context.Context, swapID, canceller string) (string, error) {
+		cancelled = append(cancelled, swapID)
+		return "tx-" + swapID, nil
+	}}
+
+	svc := NewService(repo, nil, users, escrow)
+	swept, err := svc.SweepExpiredOffers(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, swept)
+	assert.Equal(t, []string{"offer-2"}, cancelled, "one failing claim must not stall the pass")
+}
+
+// A failed release must hand the claim back so a later tick retries, rather
+// than stranding the offer in the sweeping state forever.
+func TestSweepExpiredOffers_FailedReleaseReturnsClaimForRetry(t *testing.T) {
+	ctx := context.Background()
+	offers := []SwapOffer{*createdOffer("offer-1", "u1")}
+	repo := &fakeRepo{listExpiredFn: func(ctx context.Context, now time.Time) ([]SwapOffer, error) {
+		return offers, nil
+	}}
+	users := &fakeUserService{getByIDFn: func(ctx context.Context, id string) (*user.User, error) {
+		return walletUser(id), nil
+	}}
+	escrow := &fakeEscrow{cancelSwapFn: func(ctx context.Context, swapID, canceller string) (string, error) {
+		return "", errors.New("simulation failed")
+	}}
+
+	svc := NewService(repo, nil, users, escrow)
+	swept, err := svc.SweepExpiredOffers(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, swept)
+	assert.Equal(t, []string{"offer-1"}, repo.releasedClaimIDs, "the claim must be returned so a later tick retries")
+	assert.Empty(t, repo.finalizedIDs)
 }
 
 func TestSweepExpiredOffers_SkipsOfferWhenOnChainCancelFails(t *testing.T) {
