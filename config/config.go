@@ -33,6 +33,7 @@ type Config struct {
 	Tracing      TracingConfig
 	Swap         SwapConfig        `mapstructure:"swap"`
 	MobileMoney  MobileMoneyConfig `mapstructure:"mobile_money"`
+	Governance   GovernanceConfig  `mapstructure:"governance"`
 
 	// Hot holds the live values of the keys that can be reloaded without a
 	// restart (see HotReloader).
@@ -269,6 +270,20 @@ type SwapConfig struct {
 	SweepInterval time.Duration `mapstructure:"sweep_interval"`
 }
 
+// GovernanceConfig holds the execution timelock settings (#414).
+type GovernanceConfig struct {
+	// ExecutionTimelock is how long a proposal that has passed its vote waits
+	// before it can be executed. It gives members a window to review the
+	// proposal and cancel it, instead of a passed proposal executing the
+	// instant anyone calls the execute endpoint. Set to "0" to disable the
+	// timelock and restore immediate execution.
+	ExecutionTimelock time.Duration `mapstructure:"execution_timelock"`
+	// CancelThresholdPct is the share of votes cast (for + against) that must
+	// vote to cancel a proposal while it is inside its timelock. Out-of-range
+	// values fall back to the domain default.
+	CancelThresholdPct int `mapstructure:"cancel_threshold_pct"`
+}
+
 type RateLimitConfig struct {
 	Global        int `mapstructure:"global"`
 	Authenticated int `mapstructure:"authenticated"`
@@ -412,6 +427,10 @@ func Load(path string) (*Config, error) {
 	setDefault(v, "yellow_card.api_secret", "")
 	setDefault(v, "yellow_card.webhook_secret", "")
 	setDefault(v, "swap.sweep_interval", "1m")
+	// #414: a passed proposal waits 48h before it can be executed, giving
+	// members time to review it and cancel it. Set to "0" to execute immediately.
+	setDefault(v, "governance.execution_timelock", "48h")
+	setDefault(v, "governance.cancel_threshold_pct", "33")
 	setDefault(v, "security.wallet_pepper", "")
 	setDefault(v, "security.passkey_pepper", "")
 	setDefault(v, "security.encryption_key", "")

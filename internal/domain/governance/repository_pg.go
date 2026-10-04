@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
+
+	"github.com/moistello/backend/pkg/apperrors"
 )
 
 type pgRepository struct {
@@ -21,10 +23,13 @@ func NewRepository(db *sqlx.DB) Repository {
 }
 
 // proposalColumns is the canonical projection for reading a proposal. Every
-// read path shares it so a column added here is picked up everywhere at once.
+// read path shares it so a column added here is picked up everywhere at once,
+// and the scan order matches scanProposal below: the weight snapshot columns
+// (#418) and the execution timelock columns (#414) are both projected.
 const proposalColumns = `id, title, description, proposal_type, creator_id, status,
 	for_votes, against_votes, for_weight, against_weight,
-	snapshot_at, snapshot_total_weight, executed_at, created_at, updated_at`
+	snapshot_at, snapshot_total_weight, executed_at, executable_at, cancelled_at,
+	created_at, updated_at`
 
 func (r *pgRepository) CreateProposal(ctx context.Context, p *Proposal) error {
 	query := `
@@ -93,6 +98,19 @@ func (r *pgRepository) loadWeightSnapshot(ctx context.Context, p *Proposal) erro
 	return nil
 }
 
+// loadCancellationVotes populates p.CancellationVotes. A failure is
+// non-fatal: the proposal is still readable without the count, and the
+// timelock fields that gate execution are on the proposal row itself.
+func (r *pgRepository) loadCancellationVotes(ctx context.Context, p *Proposal) {
+	count, err := r.CountCancellationVotes(ctx, p.ID)
+	if err != nil {
+		log.Warn().Err(err).Str("proposalID", p.ID.String()).
+			Msg("governance: counting cancellation votes failed")
+		return
+	}
+	p.CancellationVotes = count
+}
+
 func (r *pgRepository) GetProposal(ctx context.Context, id uuid.UUID) (*Proposal, error) {
 	query := `SELECT ` + proposalColumns + `
 		FROM governance_proposals
@@ -109,6 +127,7 @@ func (r *pgRepository) GetProposal(ctx context.Context, id uuid.UUID) (*Proposal
 	if err := r.loadWeightSnapshot(ctx, &p); err != nil {
 		return nil, err
 	}
+	r.loadCancellationVotes(ctx, &p)
 	return &p, nil
 }
 
@@ -147,13 +166,95 @@ func (r *pgRepository) ListProposals(ctx context.Context, page, limit int) ([]Pr
 	// cast against. A failure here is non-fatal: the list is still useful
 	// without the per-voter breakdown, and the proposal's own snapshot columns
 	// (snapshot_at, snapshot_total_weight) are already populated.
+	//
+	// The cancellation counts (#414) are populated in the same pass so a client
+	// can show how close a proposal in its timelock window is to being cancelled.
 	for i := range proposals {
 		if err := r.loadWeightSnapshot(ctx, &proposals[i]); err != nil {
 			log.Warn().Err(err).Str("proposalID", proposals[i].ID.String()).
 				Msg("listing governance proposals: loading weight snapshot failed")
 		}
+		r.loadCancellationVotes(ctx, &proposals[i])
 	}
 	return proposals, total, nil
+}
+
+// MarkPassed moves a proposal from pending to passed and stamps the moment it
+// becomes executable (#414). Conditional on still being pending so two
+// concurrent callers cannot both open a timelock.
+func (r *pgRepository) MarkPassed(ctx context.Context, id uuid.UUID, executableAt time.Time) error {
+	query := `
+		UPDATE governance_proposals
+		SET status = $1, executable_at = $2, updated_at = NOW()
+		WHERE id = $3 AND status = $4
+	`
+	res, err := r.db.ExecContext(ctx, query, ProposalStatusPassed, executableAt, id, ProposalStatusPending)
+	if err != nil {
+		return fmt.Errorf("marking governance proposal passed: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		// Someone else already moved it out of pending.
+		return apperrors.ErrConflict
+	}
+	return nil
+}
+
+// MarkCancelled moves a proposal from passed to cancelled (#414). Conditional
+// on still being passed, so a proposal that has already been executed — or
+// already cancelled — cannot be cancelled after the fact.
+func (r *pgRepository) MarkCancelled(ctx context.Context, id uuid.UUID, cancelledAt time.Time) error {
+	query := `
+		UPDATE governance_proposals
+		SET status = $1, cancelled_at = $2, updated_at = NOW()
+		WHERE id = $3 AND status = $4
+	`
+	res, err := r.db.ExecContext(ctx, query, ProposalStatusCancelled, cancelledAt, id, ProposalStatusPassed)
+	if err != nil {
+		return fmt.Errorf("cancelling governance proposal: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperrors.ErrConflict
+	}
+	return nil
+}
+
+// RecordCancellationVote records a member's vote to cancel, reporting false if
+// they had already voted to cancel (#414).
+func (r *pgRepository) RecordCancellationVote(ctx context.Context, proposalID, voterID uuid.UUID) (bool, error) {
+	query := `
+		INSERT INTO governance_cancellation_votes (proposal_id, voter_id, created_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (proposal_id, voter_id) DO NOTHING
+	`
+	res, err := r.db.ExecContext(ctx, query, proposalID, voterID)
+	if err != nil {
+		return false, fmt.Errorf("recording governance cancellation vote: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	// DO NOTHING affects 0 rows when the vote already existed, which is how a
+	// repeat vote is detected without a separate existence check.
+	return rows > 0, nil
+}
+
+// CountCancellationVotes returns how many members have voted to cancel.
+func (r *pgRepository) CountCancellationVotes(ctx context.Context, proposalID uuid.UUID) (int, error) {
+	var count int
+	query := `SELECT COUNT(*) FROM governance_cancellation_votes WHERE proposal_id = $1`
+	if err := r.db.GetContext(ctx, &count, query, proposalID); err != nil {
+		return 0, fmt.Errorf("counting governance cancellation votes: %w", err)
+	}
+	return count, nil
 }
 
 func (r *pgRepository) HasVoted(ctx context.Context, proposalID, voterID uuid.UUID) (bool, error) {

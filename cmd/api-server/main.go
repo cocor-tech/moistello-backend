@@ -552,11 +552,20 @@ func main() {
 	swapSweeper.Start(context.Background())
 
 	governanceRepo := governance.NewRepository(db)
-	// Weight snapshots (#418): voting power is frozen at proposal creation, so
-	// tokens moved mid-vote cannot change an outcome.
-	governanceSvc := governance.NewService(governanceRepo, governance.WithWeightResolver(
-		&governanceWeightResolver{users: userRepo, reputation: reputationRepo, tokens: tokenSvc},
-	))
+	// Both #418 and #414 configure the same service: weight is snapshotted at
+	// proposal creation so tokens moved mid-vote cannot change an outcome, and a
+	// passed proposal waits out an execution timelock during which it can still
+	// be cancelled by threshold vote. A zero timelock delay restores the
+	// pre-#414 immediate execution.
+	governanceSvc := governance.NewService(governanceRepo,
+		governance.WithWeightResolver(
+			&governanceWeightResolver{users: userRepo, reputation: reputationRepo, tokens: tokenSvc},
+		),
+		governance.WithTimelock(governance.TimelockConfig{
+			Delay:              cfg.Governance.ExecutionTimelock,
+			CancelThresholdPct: cfg.Governance.CancelThresholdPct,
+		}),
+	)
 	governanceH := handler.NewGovernanceHandler(governanceSvc)
 
 	incentivesRepo := incentives.NewRepository(db)

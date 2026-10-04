@@ -177,6 +177,17 @@ swap:
   # How often the sweep worker releases escrow for expired swap offers (#243).
   sweep_interval: "1m"
 
+governance:
+  # How long a proposal that has passed its vote waits before it can be
+  # executed (#414). This is the window in which members can review the
+  # proposal and cancel it, instead of a passed proposal executing the instant
+  # anyone calls the execute endpoint. Set to "0s" to disable the timelock and
+  # restore immediate execution.
+  execution_timelock: "48h"
+  # Share of votes cast (for + against) that must vote to cancel a proposal
+  # while it sits inside its timelock. 33 means a third of voters.
+  cancel_threshold_pct: 33
+
 # Deployed Contract IDs (Testnet)
 contracts:
   circle_factory: "CADZWDGER6PYEWVHZDZ5HMEV6A5TKFVD4EY4DSPUTEKAM2KDPEABGJQU"
