@@ -165,3 +165,38 @@ type RoundConfigSnapshot struct {
 	ConfigJSON  string    `json:"configJson" db:"config_json"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 }
+
+type UserBalanceSnapshot struct {
+	UserID              uuid.UUID `json:"userId"`
+	TotalContributed    float64   `json:"totalContributed"`
+	TotalPaidOut        float64   `json:"totalPaidOut"`
+	NetBalance          float64   `json:"netBalance"`
+	PendingContribution float64   `json:"pendingContribution"`
+	IsCurrentRoundPaid  bool      `json:"isCurrentRoundPaid"`
+}
+
+type CircleBalanceSnapshot struct {
+	CircleID         uuid.UUID `json:"circleId"`
+	TotalContributed float64   `json:"totalContributed"`
+	TotalPaidOut     float64   `json:"totalPaidOut"`
+	VaultBalance     float64   `json:"vaultBalance"`
+}
+
+type RoundSnapshot struct {
+	RoundNumber   int                  `json:"roundNumber"`
+	Status        string               `json:"status"`
+	Contributions []any                `json:"contributions"`
+	Payout        any                  `json:"payout,omitempty"`
+	Config        *RoundConfigSnapshot `json:"configSnapshot,omitempty"`
+}
+
+type CircleSnapshot struct {
+	Circle        *Circle                `json:"circle"`
+	Members       []CircleMember         `json:"members"`
+	Rounds        []RoundSnapshot        `json:"rounds"`
+	UserBalance   *UserBalanceSnapshot   `json:"userBalance,omitempty"`
+	CircleBalance *CircleBalanceSnapshot `json:"circleBalance"`
+	UserRole      string                 `json:"userRole"`
+	SnapshotAt    time.Time              `json:"snapshotAt"`
+}
+

@@ -238,6 +238,10 @@ func NewRouter(
 			authenticated.POST("/circles/:id/auction-bid", requireIdem, circleHandler.AuctionBid)
 			authenticated.POST("/circles/:id/members/:address/remove", circleHandler.RemoveMember)
 
+			// Dashboard snapshot endpoints (replaces multi-call pattern — see #440)
+			authenticated.GET("/circles/snapshots", circleHandler.GetBulkSnapshots)
+			authenticated.GET("/circles/:id/snapshot", circleHandler.GetSnapshot)
+
 			authenticated.GET("/circles/:id/invites", inviteHandler.ListInvites)
 			authenticated.POST("/circles/:id/invites", requireIdem, inviteHandler.CreateInvite)
 			authenticated.DELETE("/invites/:code", inviteHandler.RevokeInvite)
