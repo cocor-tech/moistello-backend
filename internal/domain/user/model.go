@@ -45,11 +45,11 @@ type User struct {
 	// DigestIntervalMinutes is the cadence at which batched events are
 	// summarised, in minutes. Clamped to a supported range on write; see
 	// notification.MinDigestInterval / MaxDigestInterval.
-	DigestIntervalMinutes int `json:"digestIntervalMinutes" db:"digest_interval_minutes"`
-	PushToken             *string        `json:"pushToken,omitempty" db:"push_token"`
-	CreatedAt             time.Time      `json:"createdAt" db:"created_at"`
-	UpdatedAt             time.Time      `json:"updatedAt" db:"updated_at"`
-	DeletedAt             *time.Time     `json:"deletedAt,omitempty" db:"deleted_at"`
+	DigestIntervalMinutes int        `json:"digestIntervalMinutes" db:"digest_interval_minutes"`
+	PushToken             *string    `json:"pushToken,omitempty" db:"push_token"`
+	CreatedAt             time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt             time.Time  `json:"updatedAt" db:"updated_at"`
+	DeletedAt             *time.Time `json:"deletedAt,omitempty" db:"deleted_at"`
 }
 
 // HashEmail consistently hashes an email address for storage and lookup.

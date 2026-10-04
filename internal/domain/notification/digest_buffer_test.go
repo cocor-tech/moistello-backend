@@ -98,19 +98,30 @@ func TestDigestBuffer_ConcurrentEnqueuesAreNotLost(t *testing.T) {
 	now := time.Now().UTC()
 
 	const writers, each = 10, 20
+	var mu sync.Mutex
+	accepted := 0
 	var wg sync.WaitGroup
 	for i := 0; i < writers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < each; j++ {
-				buf.Enqueue(userID, event(notification.TypeContributionReceived, now), time.Hour)
+				if buf.Enqueue(userID, event(notification.TypeContributionReceived, now), time.Hour) {
+					mu.Lock()
+					accepted++
+					mu.Unlock()
+				}
 			}
 		}()
 	}
 	wg.Wait()
 
-	assert.Equal(t, writers*each, buf.Pending(userID))
+	// The batch cap applies here too, so writers*each (200) cannot all be
+	// accepted against MaxDigestBatchSize (100). What must hold is that the
+	// buffer holds every event it accepted: a lost update under the lock would
+	// show up as accepted > Pending.
+	assert.Equal(t, notification.MaxDigestBatchSize, accepted, "the cap is reached exactly once")
+	assert.Equal(t, accepted, buf.Pending(userID), "no accepted event may be lost to a concurrent update")
 }
 
 func TestDigestPreferences_NormalizeClampsUnsupportedCadences(t *testing.T) {

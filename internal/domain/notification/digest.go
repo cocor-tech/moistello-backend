@@ -59,9 +59,9 @@ const TypeDigest NotificationType = "digest.summary"
 // urgentTypes are the notification classes that always bypass batching,
 // regardless of how quiet the user's cadence is.
 var urgentTypes = map[NotificationType]struct{}{
-	TypePayoutReceived: {},
+	TypePayoutReceived:  {},
 	TypeCircleCompleted: {},
-	TypeDisputeRaised:  {},
+	TypeDisputeRaised:   {},
 }
 
 // digestTypeLabels give each batchable event class a human-readable phrase for
@@ -187,10 +187,17 @@ func (b *DigestBuffer) Enqueue(userID uuid.UUID, e DigestEntry, interval time.Du
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	now := b.now()
+	if e.QueuedAt.IsZero() {
+		e.QueuedAt = b.now()
+	}
 	bucket, ok := b.buckets[userID]
 	if !ok {
-		bucket = &digestBucket{windowStart: now, interval: interval}
+		// The window is measured from when the first event of the window was
+		// queued, i.e. the entry's own QueuedAt, not from the wall clock read
+		// here: a caller that enqueues with a QueuedAt slightly in the past
+		// (a replayed event, a batched import) must still flush one full
+		// interval after that event, not one interval after this call.
+		bucket = &digestBucket{windowStart: e.QueuedAt, interval: interval}
 		b.buckets[userID] = bucket
 	}
 	if len(bucket.entries) >= MaxDigestBatchSize {

@@ -79,7 +79,10 @@ func TestService_FlushDueDigests_persistFailureDoesNotBlockOtherUsers(t *testing
 	repo := new(notifMocks.Repository)
 	bc := new(mockBroadcaster)
 	buffer := notification.NewDigestBuffer()
-	prefs := &fakeDigestPrefs{prefs: notification.DigestPreferences{Enabled: true, Interval: time.Minute}}
+	// The cadence must be a supported one: Normalize() clamps anything under
+	// MinDigestInterval to DefaultDigestInterval, so a 1m cadence here would
+	// silently be flushed at 24h and the assertions below would be vacuous.
+	prefs := &fakeDigestPrefs{prefs: notification.DigestPreferences{Enabled: true, Interval: notification.MinDigestInterval}}
 	svc := notification.NewService(repo, nil, bc, notification.WithDigestBatching(buffer, prefs))
 
 	base := time.Now().UTC()
@@ -96,7 +99,7 @@ func TestService_FlushDueDigests_persistFailureDoesNotBlockOtherUsers(t *testing
 	repo.On("Create", mock.Anything, mock.AnythingOfType("*notification.Notification")).Return(nil)
 	bc.On("NotificationCreated", mock.Anything, mock.Anything, mock.Anything).Return()
 
-	flushed, err := svc.FlushDueDigests(ctx, base.Add(2*time.Minute))
+	flushed, err := svc.FlushDueDigests(ctx, base.Add(notification.MinDigestInterval+time.Minute))
 
 	assert.Error(t, err, "the failing user should be reported")
 	assert.Equal(t, 2, flushed, "the other two digests must still be delivered")
@@ -119,7 +122,10 @@ func TestService_FlushDueDigests_concurrentFlushesNeverDoubleDeliver(t *testing.
 	repo := new(notifMocks.Repository)
 	bc := new(mockBroadcaster)
 	buffer := notification.NewDigestBuffer()
-	prefs := &fakeDigestPrefs{prefs: notification.DigestPreferences{Enabled: true, Interval: time.Minute}}
+	// The cadence must be a supported one: Normalize() clamps anything under
+	// MinDigestInterval to DefaultDigestInterval, so a 1m cadence here would
+	// silently be flushed at 24h and the assertions below would be vacuous.
+	prefs := &fakeDigestPrefs{prefs: notification.DigestPreferences{Enabled: true, Interval: notification.MinDigestInterval}}
 	svc := notification.NewService(repo, nil, bc, notification.WithDigestBatching(buffer, prefs))
 
 	userID := uuid.New()
@@ -139,7 +145,7 @@ func TestService_FlushDueDigests_concurrentFlushesNeverDoubleDeliver(t *testing.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			n, err := svc.FlushDueDigests(ctx, base.Add(2*time.Minute))
+			n, err := svc.FlushDueDigests(ctx, base.Add(notification.MinDigestInterval+time.Minute))
 			assert.NoError(t, err)
 			mu.Lock()
 			total += n
