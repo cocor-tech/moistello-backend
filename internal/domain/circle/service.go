@@ -1026,4 +1026,3 @@ func (s *circleService) GetBulkCircleSnapshots(ctx context.Context, userID strin
 	}
 	return s.repo.GetBulkCircleSnapshots(ctx, uid, ids)
 }
-

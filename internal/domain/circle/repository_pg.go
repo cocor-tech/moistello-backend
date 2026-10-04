@@ -839,4 +839,3 @@ func (r *pgRepo) GetBulkCircleSnapshots(ctx context.Context, userID uuid.UUID, c
 	}
 	return snapshots, nil
 }
-

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/circle"
@@ -28,31 +29,35 @@ func TestCircleHandler_GetSnapshot_Success(t *testing.T) {
 	userID := uuid.New()
 
 	expectedSnapshot := &circle.CircleSnapshot{
-		CircleID:           circleID,
-		Name:               "Snapshot Test Circle",
-		Status:             circle.CircleStatusActive,
-		ContributionAmount: 100.0,
-		Currency:           circle.CurrencyUSDC,
-		Frequency:          circle.FrequencyWeekly,
-		CurrentRound:       1,
-		TotalRounds:        10,
-		MaxMembers:         5,
-		MembersCount:       3,
-		UserBalance: &circle.UserBalanceSnapshot{
-			UserID:             userID,
-			TotalContributed:   100.0,
-			TotalPaidOut:       0.0,
-			NetBalance:         100.0,
-			HasReceivedPayout:  false,
-			PendingPayoutRound: 0,
+		Circle: &circle.Circle{
+			ID:                 circleID,
+			Name:               "Snapshot Test Circle",
+			Status:             circle.CircleStatusActive,
+			ContributionAmount: 100.0,
+			Currency:           circle.CurrencyUSDC,
+			Frequency:          circle.FrequencyWeekly,
+			CurrentRound:       1,
+			MaxMembers:         5,
+			MemberCount:        3,
 		},
-		CircleBalance: circle.CircleBalanceSnapshot{
+		Members: []circle.CircleMember{},
+		UserBalance: &circle.UserBalanceSnapshot{
+			UserID:              userID,
+			TotalContributed:    100.0,
+			TotalPaidOut:        0.0,
+			NetBalance:          100.0,
+			PendingContribution: 0.0,
+			IsCurrentRoundPaid:  true,
+		},
+		CircleBalance: &circle.CircleBalanceSnapshot{
+			CircleID:         circleID,
 			TotalContributed: 300.0,
 			TotalPaidOut:     0.0,
 			VaultBalance:     300.0,
 		},
-		Rounds: []circle.RoundSnapshot{},
-		AsOf:   time.Now().UTC(),
+		Rounds:     []circle.RoundSnapshot{},
+		UserRole:   "member",
+		SnapshotAt: time.Now().UTC(),
 	}
 
 	repo.On("GetCircleSnapshot", mock.Anything, circleID, userID).Return(expectedSnapshot, nil)
@@ -78,8 +83,14 @@ func TestCircleHandler_GetSnapshot_Success(t *testing.T) {
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, circleID, resp.Data.Snapshot.CircleID)
-	assert.Equal(t, "Snapshot Test Circle", resp.Data.Snapshot.Name)
+	require.NotNil(t, resp.Data.Snapshot.Circle)
+	assert.Equal(t, circleID, resp.Data.Snapshot.Circle.ID)
+	assert.Equal(t, "Snapshot Test Circle", resp.Data.Snapshot.Circle.Name)
+	assert.Equal(t, circle.CircleStatusActive, resp.Data.Snapshot.Circle.Status)
+	assert.Equal(t, 3, resp.Data.Snapshot.Circle.MemberCount)
+	assert.Equal(t, "member", resp.Data.Snapshot.UserRole)
+	require.NotNil(t, resp.Data.Snapshot.CircleBalance)
+	assert.Equal(t, 300.0, resp.Data.Snapshot.CircleBalance.VaultBalance)
 	assert.NotNil(t, resp.Data.Snapshot.UserBalance)
 	assert.Equal(t, userID, resp.Data.Snapshot.UserBalance.UserID)
 	assert.Equal(t, 100.0, resp.Data.Snapshot.UserBalance.TotalContributed)
@@ -143,20 +154,20 @@ func TestCircleHandler_GetBulkSnapshots_Success(t *testing.T) {
 
 	expectedSnapshots := []circle.CircleSnapshot{
 		{
-			CircleID:           circleID1,
-			Name:               "Circle 1",
-			Status:             circle.CircleStatusActive,
-			ContributionAmount: 50.0,
-			CircleBalance:      circle.CircleBalanceSnapshot{TotalContributed: 150.0},
-			AsOf:               time.Now().UTC(),
+			Circle: &circle.Circle{
+				ID: circleID1, Name: "Circle 1",
+				Status: circle.CircleStatusActive, ContributionAmount: 50.0,
+			},
+			CircleBalance: &circle.CircleBalanceSnapshot{CircleID: circleID1, TotalContributed: 150.0},
+			SnapshotAt:    time.Now().UTC(),
 		},
 		{
-			CircleID:           circleID2,
-			Name:               "Circle 2",
-			Status:             circle.CircleStatusActive,
-			ContributionAmount: 100.0,
-			CircleBalance:      circle.CircleBalanceSnapshot{TotalContributed: 500.0},
-			AsOf:               time.Now().UTC(),
+			Circle: &circle.Circle{
+				ID: circleID2, Name: "Circle 2",
+				Status: circle.CircleStatusActive, ContributionAmount: 100.0,
+			},
+			CircleBalance: &circle.CircleBalanceSnapshot{CircleID: circleID2, TotalContributed: 500.0},
+			SnapshotAt:    time.Now().UTC(),
 		},
 	}
 
@@ -183,9 +194,13 @@ func TestCircleHandler_GetBulkSnapshots_Success(t *testing.T) {
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
-	assert.Len(t, resp.Data.Snapshots, 2)
-	assert.Equal(t, circleID1, resp.Data.Snapshots[0].CircleID)
-	assert.Equal(t, circleID2, resp.Data.Snapshots[1].CircleID)
+	require.Len(t, resp.Data.Snapshots, 2)
+	require.NotNil(t, resp.Data.Snapshots[0].Circle)
+	require.NotNil(t, resp.Data.Snapshots[1].Circle)
+	assert.Equal(t, circleID1, resp.Data.Snapshots[0].Circle.ID)
+	assert.Equal(t, circleID2, resp.Data.Snapshots[1].Circle.ID)
+	assert.Equal(t, 150.0, resp.Data.Snapshots[0].CircleBalance.TotalContributed)
+	assert.Equal(t, 500.0, resp.Data.Snapshots[1].CircleBalance.TotalContributed)
 
 	repo.AssertExpectations(t)
 }

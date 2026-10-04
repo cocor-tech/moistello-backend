@@ -179,4 +179,3 @@ func (m *Repository) GetBulkCircleSnapshots(ctx context.Context, userID uuid.UUI
 	}
 	return args.Get(0).([]circle.CircleSnapshot), args.Error(1)
 }
-

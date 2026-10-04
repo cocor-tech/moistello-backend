@@ -199,4 +199,3 @@ type CircleSnapshot struct {
 	UserRole      string                 `json:"userRole"`
 	SnapshotAt    time.Time              `json:"snapshotAt"`
 }
-

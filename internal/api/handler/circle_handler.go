@@ -896,6 +896,14 @@ func (h *CircleHandler) GetSnapshot(c *gin.Context) {
 	circleID := c.Param("id")
 	userID := middleware.GetUserID(c)
 
+	// A malformed id is the caller's mistake, not a server fault: answer 400
+	// here rather than letting the service's parse failure fall through to the
+	// 500 branch below.
+	if _, err := uuid.Parse(circleID); err != nil {
+		response.BadRequest(c, "invalid circle id")
+		return
+	}
+
 	snap, err := h.circleService.GetCircleSnapshot(c.Request.Context(), circleID, userID)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
@@ -930,6 +938,12 @@ func (h *CircleHandler) GetBulkSnapshots(c *gin.Context) {
 	if raw := c.Query("ids"); raw != "" {
 		for _, id := range splitComma(raw) {
 			if id != "" {
+				// Same reasoning as GetSnapshot: a malformed filter is a bad
+				// request, not a server fault.
+				if _, err := uuid.Parse(id); err != nil {
+					response.BadRequest(c, "invalid circle id")
+					return
+				}
 				circleIDs = append(circleIDs, id)
 			}
 		}
@@ -954,4 +968,3 @@ func splitComma(s string) []string {
 	}
 	return out
 }
-
