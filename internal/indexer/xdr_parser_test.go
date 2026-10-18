@@ -3,6 +3,7 @@ package indexer
 import (
 	"testing"
 
+	"github.com/stellar/go/xdr"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,9 +31,40 @@ func TestParseContractEvents_InvalidXDR(t *testing.T) {
 }
 
 func TestScValToGo_Void(t *testing.T) {
-	// Full round-trip XDR tests require Soroban testnet data and are covered
-	// in integration tests. This file covers helper utilities only.
-	t.Log("XDR round-trip tests require live testnet data — see xdr_parser integration tests")
+	assert.Nil(t, scValToGo(xdr.ScVal{Type: xdr.ScValTypeScvVoid}))
+}
+
+func TestXDRParserHelpers(t *testing.T) {
+	assert.Len(t, eventTypeHash([]byte("created")), 16)
+
+	symbol, err := xdr.NewScVal(xdr.ScValTypeScvSymbol, xdr.ScSymbol("created"))
+	assert.NoError(t, err)
+	assert.Equal(t, "created", decodeSymbol(symbol))
+
+	var contractID xdr.ContractId
+	contractID[0] = 0xab
+	address, err := xdr.NewScVal(xdr.ScValTypeScvAddress, xdr.ScAddress{
+		Type:       xdr.ScAddressTypeScAddressTypeContract,
+		ContractId: &contractID,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "ab00000000000000000000000000000000000000000000000000000000000000", scValToGo(address))
+
+	payload := decodePayload([]xdr.ScVal{symbol}, address)
+	assert.Equal(t, "created", payload["topic_1"])
+	assert.Equal(t, "ab00000000000000000000000000000000000000000000000000000000000000", payload["data"])
+
+	body, err := xdr.NewContractEventBody(0, xdr.ContractEventV0{
+		Topics: []xdr.ScVal{symbol},
+		Data:   address,
+	})
+	assert.NoError(t, err)
+	raw := xdr.ContractEvent{Type: xdr.ContractEventTypeContract, Body: body}
+	event, ok := decodeContractEvent("tx", 10, raw)
+	assert.True(t, ok)
+	assert.Equal(t, "created", event.EventType)
+
+	logSkippedEvent("test", "tx", 10, "contract", raw, []xdr.ScVal{symbol})
 }
 
 func TestPayloadStr(t *testing.T) {
