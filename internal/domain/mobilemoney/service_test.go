@@ -104,6 +104,42 @@ func TestService_InitiateOfframp_PersistsAfterProviderAccepts(t *testing.T) {
 	provider.AssertExpectations(t)
 }
 
+func TestService_ListsProvidersAndCurrencies(t *testing.T) {
+	ctx := context.Background()
+	registry := mobilemoney.NewRegistry()
+	registry.Register(newFakeProvider("mpesa", "KES"))
+	registry.Register(newFakeProvider("mtn", "UGX"))
+	svc := mobilemoney.NewService(new(mocks.Repository), registry)
+
+	assert.ElementsMatch(t, []mobilemoney.ProviderInfo{
+		{Name: "mpesa", Currency: "KES"},
+		{Name: "mtn", Currency: "UGX"},
+	}, svc.ListProviders(ctx))
+	assert.ElementsMatch(t, []string{"KES", "UGX"}, svc.GetSupportedCurrencies(ctx))
+
+	emptyService := mobilemoney.NewService(new(mocks.Repository), nil)
+	assert.Empty(t, emptyService.ListProviders(ctx))
+	assert.Empty(t, emptyService.GetSupportedCurrencies(ctx))
+}
+
+func TestService_GetTransaction(t *testing.T) {
+	ctx := context.Background()
+	repo := new(mocks.Repository)
+	svc := mobilemoney.NewService(repo, nil)
+	want := &mobilemoney.Transaction{ID: "txn-1", UserID: "user-1"}
+	repo.On("GetByID", ctx, "txn-1").Return(want, nil).Once()
+	repo.On("GetByID", ctx, "missing").Return((*mobilemoney.Transaction)(nil), assert.AnError).Once()
+
+	got, err := svc.GetTransaction(ctx, "txn-1")
+	require.NoError(t, err)
+	assert.Same(t, want, got)
+
+	got, err = svc.GetTransaction(ctx, "missing")
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, assert.AnError)
+	repo.AssertExpectations(t)
+}
+
 func TestService_Reconcile_UpdatesSettledTransactions(t *testing.T) {
 	repo := new(mocks.Repository)
 	provider := newFakeProvider("mpesa", "KES")

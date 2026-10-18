@@ -2,6 +2,9 @@ package config_test
 
 import (
 	"encoding/hex"
+	"os"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,47 @@ import (
 
 	"github.com/moistello/backend/config"
 )
+
+func TestEnvExampleDocumentsConfigKeys(t *testing.T) {
+	envExample, err := os.ReadFile("../.env.example")
+	require.NoError(t, err)
+	contents := string(envExample)
+
+	var visit func(reflect.Type, string)
+	visit = func(configType reflect.Type, prefix string) {
+		for index := 0; index < configType.NumField(); index++ {
+			field := configType.Field(index)
+			key := strings.Split(field.Tag.Get("mapstructure"), ",")[0]
+			if key == "-" {
+				continue
+			}
+			if key == "" {
+				key = strings.ToLower(field.Name)
+			}
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
+			}
+
+			fieldType := field.Type
+			for fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+			if fieldType.Kind() == reflect.Struct {
+				visit(fieldType, path)
+				continue
+			}
+
+			if fieldType.Kind() == reflect.Map {
+				require.Contains(t, contents, path, "structured config key %s must be documented", path)
+				continue
+			}
+			envKey := "MOISTELLO_" + strings.ToUpper(strings.ReplaceAll(path, ".", "_"))
+			require.Contains(t, contents, envKey, "config key %s must document its environment variable", path)
+		}
+	}
+	visit(reflect.TypeOf(config.Config{}), "")
+}
 
 func TestLoad_SucceedsWithRequiredConfig(t *testing.T) {
 	t.Setenv("MOISTELLO_DATABASE_URL", "postgres://localhost:5432/db")
