@@ -76,6 +76,16 @@ func rowsWith(n int) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{"count"}).AddRow(n)
 }
 
+func TestCircleLockKeyNeverSetsTheSignBit(t *testing.T) {
+	for _, id := range []uuid.UUID{
+		{},
+		{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	} {
+		testKey := circleLockKey(id)
+		require.GreaterOrEqual(t, testKey, int64(0))
+	}
+}
+
 // expectContributionTx queues the successful contribution transaction:
 // lock, insert, count, update, commit.
 func expectContributionTx(dbm sqlmock.Sqlmock, circleID uuid.UUID, round, amount, contributed, active int, complete bool) {

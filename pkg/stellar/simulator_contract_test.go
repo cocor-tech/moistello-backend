@@ -89,3 +89,8 @@ func TestSimulator_ApplyResources_ScalesFeeWithinBounds(t *testing.T) {
 	tx = sim.ApplyResources(buildTx(), &stellar.SimulationResult{})
 	assert.Equal(t, int64(100), tx.Fee, "never below the minimum fee")
 }
+
+func TestResourceCostFactor_ClampsLargeUint64Values(t *testing.T) {
+	assert.Equal(t, int64(1000), stellar.ResourceCostFactor(^uint64(0), ^uint64(0)))
+	assert.Equal(t, int64(1), stellar.ResourceCostFactor(0, 0))
+}
