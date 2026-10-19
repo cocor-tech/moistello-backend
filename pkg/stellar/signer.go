@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/stellar/go/keypair"
@@ -63,11 +64,22 @@ func NewSignerFromHex(publicKeyHex, secretKeyHex string) (*Signer, error) {
 
 // NewSignerFromFile creates a signer from PEM or raw key files.
 func NewSignerFromFile(pubPath, secPath string) (*Signer, error) {
-	pubData, err := os.ReadFile(pubPath)
+	pubPath, err := validatedKeyPath(pubPath)
+	if err != nil {
+		return nil, fmt.Errorf("validating public key path: %w", err)
+	}
+	secPath, err = validatedKeyPath(secPath)
+	if err != nil {
+		return nil, fmt.Errorf("validating secret key path: %w", err)
+	}
+	// Paths are resolved and checked as regular files above; this is the only
+	// remaining dynamic read and is intentionally limited to caller-selected
+	// key files.
+	pubData, err := os.ReadFile(pubPath) // #nosec G304 -- validated regular key path
 	if err != nil {
 		return nil, fmt.Errorf("reading public key file: %w", err)
 	}
-	secData, err := os.ReadFile(secPath)
+	secData, err := os.ReadFile(secPath) // #nosec G304 -- validated regular key path
 	if err != nil {
 		return nil, fmt.Errorf("reading secret key file: %w", err)
 	}
@@ -75,6 +87,24 @@ func NewSignerFromFile(pubPath, secPath string) (*Signer, error) {
 	pubHex := strings.TrimSpace(string(pubData))
 	secHex := strings.TrimSpace(string(secData))
 	return NewSignerFromHex(pubHex, secHex)
+}
+
+func validatedKeyPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("path is not a regular file")
+	}
+	return abs, nil
 }
 
 func (s *Signer) Sign(message []byte) ([]byte, error) {

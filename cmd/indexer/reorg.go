@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/rs/zerolog/log"
@@ -70,7 +71,7 @@ Example:
 		}
 
 		log.Info().Int64("new_ledger", targetLedger).Msg("indexer cursor rewound successfully")
-		fmt.Printf("Indexer cursor rewound to ledger %d\n", targetLedger)
+		fmt.Fprintf(os.Stdout, "Indexer cursor rewound to ledger %d\n", targetLedger)
 		return nil
 	},
 }

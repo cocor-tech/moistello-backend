@@ -17,7 +17,9 @@ func newTestRepo(t *testing.T) (Repository, sqlmock.Sqlmock, func()) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	db := sqlx.NewDb(mockDB, "sqlmock")
-	return NewRepository(db), mock, func() { mockDB.Close() }
+	// The mock's Close error is intentionally ignored: sqlmock reports it for
+	// any unexpected Close, and each test asserts its own expectations.
+	return NewRepository(db), mock, func() { _ = mockDB.Close() }
 }
 
 func TestRepository_Create(t *testing.T) {

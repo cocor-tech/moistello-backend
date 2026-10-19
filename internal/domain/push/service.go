@@ -102,8 +102,14 @@ func (s *Service) Send(ctx context.Context, token, title, body string) error {
 			}
 		}
 
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		respBody, readErr := io.ReadAll(resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("failed to close FCM response body")
+		}
+		if readErr != nil {
+			lastErr = fmt.Errorf("reading FCM response (attempt %d/%d): %w", attempt, maxAttempts, readErr)
+			continue
+		}
 
 		if resp.StatusCode < 300 {
 			log.Info().Str("token", token).Msg("push sent via fcm")

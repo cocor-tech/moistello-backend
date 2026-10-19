@@ -48,7 +48,7 @@ func clientIDForUser(t *testing.T, hub *Hub, userID string) string {
 func readSeqMessages(t *testing.T, conn *websocket.Conn, want int) []seqMessage {
 	t.Helper()
 	out := make([]seqMessage, 0, want)
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10 * time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
 	for len(out) < want {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -217,7 +217,7 @@ func TestHub_SlowConsumerIsEvictedAndDisconnected(t *testing.T) {
 	require.True(t, evicted, "a consumer that never reads must be evicted for backpressure")
 
 	// The connection must be torn down, not merely unregistered.
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10 * time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
 	var readErr error
 	for readErr == nil {
 		if _, _, err := conn.ReadMessage(); err != nil {
@@ -267,7 +267,7 @@ func TestHub_ReconnectRequiresResubscribe(t *testing.T) {
 	require.True(t, hub.JoinRoom(joinCircle, clientIDForUser(t, hub, "user-reconnect")))
 
 	hub.Broadcast(joinCircle, Message{Type: "state_update", Payload: map[string]int{"seq": 1}})
-	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5 * time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	_, data, err := conn.ReadMessage()
 	require.NoError(t, err, "subscribed client should receive the broadcast")
 	require.Contains(t, string(data), `"seq":1`)
@@ -297,7 +297,7 @@ func TestHub_ReconnectRequiresResubscribe(t *testing.T) {
 		"client did not re-subscribe to the room")
 
 	hub.Broadcast(joinCircle, Message{Type: "state_update", Payload: map[string]int{"seq": 3}})
-	require.NoError(t, conn2.SetReadDeadline(time.Now().Add(5 * time.Second)))
+	require.NoError(t, conn2.SetReadDeadline(time.Now().Add(5*time.Second)))
 	_, data, err = conn2.ReadMessage()
 	require.NoError(t, err, "re-subscribed client should receive broadcasts again")
 	assert.Contains(t, string(data), `"seq":3`, "messages missed while disconnected must not be replayed")

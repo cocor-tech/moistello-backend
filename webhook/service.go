@@ -423,7 +423,11 @@ func SignWebhookPayload(payload []byte, secret string) string {
 		key = []byte(secret)
 	}
 	mac := hmac.New(sha256.New, key)
-	mac.Write(payload)
+	if _, err := mac.Write(payload); err != nil {
+		// hash.Hash implementations used here never fail, but preserve the
+		// contract if the implementation changes.
+		return ""
+	}
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

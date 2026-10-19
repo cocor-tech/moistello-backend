@@ -387,7 +387,10 @@ func (h *CircleHandler) PreviewPayout(c *gin.Context) {
 		Amount      *float64 `json:"amount"`
 		FeeAmount   *float64 `json:"feeAmount"`
 	}
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request body")
+		return
+	}
 
 	preview := h.buildPayoutPreview(cir, req.Amount, req.FeeAmount, req.RecipientID, req.RoundNumber)
 	response.OK(c, gin.H{"preview": preview})
@@ -420,7 +423,10 @@ func (h *CircleHandler) TriggerPayout(c *gin.Context) {
 			Amount      *float64 `json:"amount"`
 			FeeAmount   *float64 `json:"feeAmount"`
 		}
-		_ = c.ShouldBindJSON(&previewReq)
+		if err := c.ShouldBindJSON(&previewReq); err != nil {
+			response.BadRequest(c, "invalid request body")
+			return
+		}
 		preview := h.buildPayoutPreview(cir, previewReq.Amount, previewReq.FeeAmount, previewReq.RecipientID, previewReq.RoundNumber)
 		response.OK(c, gin.H{"preview": preview})
 		return
@@ -793,8 +799,10 @@ func (h *CircleHandler) RemoveMember(c *gin.Context) {
 	var req struct {
 		Reason string `json:"reason"`
 	}
-	// reason is optional; ignore bind errors
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request body")
+		return
+	}
 
 	if err := h.circleService.RemoveMember(c.Request.Context(), circleID, callerID, memberAddress, req.Reason); err != nil {
 		switch err {

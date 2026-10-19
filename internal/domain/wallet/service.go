@@ -90,7 +90,7 @@ func (s *service) CreateWallet(ctx context.Context, userID string, passkeySeed [
 	// Bounded async funding with context and timeout. The actual create-account
 	// transaction building, signing, and retry logic lives in pkg/stellar.
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
 		_ = s.fundAccountWithRetry(bgCtx, w.PublicKey)

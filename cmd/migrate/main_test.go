@@ -79,6 +79,7 @@ func TestMigrationIdempotencyAndRollback(t *testing.T) {
 				done <- err
 				return
 			}
+			var runErr error
 			defer func() {
 				if cerr := db1.Close(); cerr != nil {
 					t.Logf("failed to close db1: %v", cerr)

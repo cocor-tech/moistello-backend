@@ -2,7 +2,9 @@ package rabbitmq
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	amqp091 "github.com/rabbitmq/amqp091-go"
 	"github.com/rs/zerolog/log"
@@ -43,13 +45,35 @@ func (c *Client) IsAlive() bool {
 	return c.conn != nil && !c.conn.IsClosed()
 }
 
-func (c *Client) Close() {
+// Close closes the channel and then the connection. Both are always
+// attempted; any failures are joined into the returned error so callers can
+// see every cleanup problem rather than only the first.
+func (c *Client) Close() error {
+	var closers []namedCloser
 	if c.ch != nil {
-		c.ch.Close()
+		closers = append(closers, namedCloser{"channel", c.ch})
 	}
 	if c.conn != nil {
-		c.conn.Close()
+		closers = append(closers, namedCloser{"connection", c.conn})
 	}
+	return closeAll(closers...)
+}
+
+type namedCloser struct {
+	name string
+	c    io.Closer
+}
+
+// closeAll closes every closer in order, continuing past failures, and
+// returns the joined errors (nil if all succeeded).
+func closeAll(closers ...namedCloser) error {
+	var errs []error
+	for _, nc := range closers {
+		if err := nc.c.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing rabbitmq %s: %w", nc.name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (c *Client) Publish(exchange, routingKey string, body []byte) error {
@@ -96,10 +120,14 @@ func (c *Client) Consume(ctx context.Context, queue string, handler Handler) err
 			}
 			if err := handler(ctx, msg.Body); err != nil {
 				log.Warn().Err(err).Str("queue", queue).Msg("message handler failed; nacking")
-				_ = msg.Nack(false, false)
+				if nackErr := msg.Nack(false, false); nackErr != nil {
+					log.Error().Err(nackErr).Str("queue", queue).Msg("failed to nack message")
+				}
 				continue
 			}
-			_ = msg.Ack(false)
+			if ackErr := msg.Ack(false); ackErr != nil {
+				log.Error().Err(ackErr).Str("queue", queue).Msg("failed to ack message")
+			}
 		}
 	}
 }

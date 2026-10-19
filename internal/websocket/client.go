@@ -77,7 +77,7 @@ func (c *Client) Close() {
 			return
 		}
 		if c.Conn != nil {
-			_ = c.Conn.Close()
+			c.logError("close", c.Conn.Close())
 		}
 	})
 }
@@ -94,7 +94,7 @@ func (c *Client) Close() {
 func (c *Client) Disconnect() {
 	c.closeOnce.Do(func() {
 		if c.Conn != nil {
-			_ = c.Conn.Close()
+			c.logError("disconnect", c.Conn.Close())
 		}
 		if c.closing != nil {
 			close(c.closing)
@@ -107,10 +107,10 @@ func (c *Client) Disconnect() {
 func (c *Client) Kick(code int, reason string) {
 	c.closeOnce.Do(func() {
 		if c.Conn != nil {
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-			_ = c.Conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(code, reason))
-			_ = c.Conn.Close()
+			c.logError("set close deadline", c.Conn.SetWriteDeadline(time.Now().Add(writeWait)))
+			c.logError("write close message", c.Conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(code, reason)))
+			c.logError("close", c.Conn.Close())
 		}
 		if c.closing != nil {
 			close(c.closing)
@@ -126,7 +126,7 @@ func (c *Client) Kick(code int, reason string) {
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister(c)
-		_ = c.Conn.Close()
+		c.logError("close after read", c.Conn.Close())
 	}()
 
 	c.Conn.SetReadLimit(maxMessageSize)
@@ -169,20 +169,20 @@ func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		_ = c.Conn.Close()
+		c.logError("close after write", c.Conn.Close())
 	}()
 
 	for {
 		select {
 		case <-c.closing:
 			// Server is shutting down: tell the peer to reconnect elsewhere.
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			c.logError("set shutdown deadline", c.Conn.SetWriteDeadline(time.Now().Add(writeWait)))
 			delay := time.Duration(c.reconnectAfter.Load())
 			if delay <= 0 {
 				delay = reconnectDelay(reconnectSpread(0))
 			}
-			_ = c.Conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseGoingAway, shutdownCloseReason(delay)))
+			c.logError("write shutdown message", c.Conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, shutdownCloseReason(delay))))
 			return
 		case msg, ok := <-c.Send:
 			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
@@ -191,7 +191,7 @@ func (c *Client) WritePump() {
 			}
 			if !ok {
 				// Hub closed the Send channel — close the connection
-				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				c.logError("write empty close message", c.Conn.WriteMessage(websocket.CloseMessage, []byte{}))
 				return
 			}
 			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
@@ -214,6 +214,12 @@ func (c *Client) WritePump() {
 				return
 			}
 		}
+	}
+}
+
+func (c *Client) logError(operation string, err error) {
+	if err != nil {
+		log.Warn().Err(err).Str("clientID", c.ID).Str("operation", operation).Msg("websocket operation failed")
 	}
 }
 

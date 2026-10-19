@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/moistello/backend/pkg/stellar"
 )
@@ -30,7 +31,11 @@ func NewContractDeployer(client *Client, signer *stellar.Signer, accountMgr *ste
 //  2. Upload WASM to Soroban RPC (install)
 //  3. Create (instantiate) the contract with init args
 func (d *ContractDeployer) DeployContract(ctx context.Context, wasmPath string, initArgs ...interface{}) (string, error) {
-	wasmBytes, err := os.ReadFile(wasmPath)
+	wasmPath, err := validatedWASMPath(wasmPath)
+	if err != nil {
+		return "", fmt.Errorf("validating wasm path: %w", err)
+	}
+	wasmBytes, err := os.ReadFile(wasmPath) // #nosec G304 -- validated regular WASM path
 	if err != nil {
 		return "", fmt.Errorf("reading wasm file %s: %w", wasmPath, err)
 	}
@@ -50,11 +55,33 @@ func (d *ContractDeployer) DeployContract(ctx context.Context, wasmPath string, 
 
 // InstallWASM uploads WASM bytes to the network and returns the hash.
 func (d *ContractDeployer) InstallWASM(ctx context.Context, wasmPath string) (string, error) {
-	wasmBytes, err := os.ReadFile(wasmPath)
+	wasmPath, err := validatedWASMPath(wasmPath)
+	if err != nil {
+		return "", fmt.Errorf("validating wasm path: %w", err)
+	}
+	wasmBytes, err := os.ReadFile(wasmPath) // #nosec G304 -- validated regular WASM path
 	if err != nil {
 		return "", fmt.Errorf("reading wasm file %s: %w", wasmPath, err)
 	}
 	return d.uploadWASM(ctx, wasmBytes)
+}
+
+func validatedWASMPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("path is not a regular file")
+	}
+	return abs, nil
 }
 
 // uploadWASM submits a HostFunction install operation on behalf of the deployer.

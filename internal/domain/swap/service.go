@@ -3,6 +3,7 @@ package swap
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,13 @@ func (s *Service) CreateSwapOffer(ctx context.Context, userID string, input Swap
 	}
 
 	expiresAt := time.Now().Add(time.Duration(input.ExpiresIn) * time.Hour)
+	if expiresAt.Unix() < 0 {
+		return nil, fmt.Errorf("swap expiry cannot be before the Unix epoch")
+	}
+	expiresAtUnix, err := strconv.ParseUint(strconv.FormatInt(expiresAt.Unix(), 10), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid swap expiry: %w", err)
+	}
 
 	offereeID := input.OffereeUserID
 
@@ -70,7 +78,7 @@ func (s *Service) CreateSwapOffer(ctx context.Context, userID string, input Swap
 		input.OfferorAmount,
 		input.RequestedAsset,
 		input.RequestedAmount,
-		uint64(expiresAt.Unix()),
+		expiresAtUnix,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create escrow swap: %w", err)

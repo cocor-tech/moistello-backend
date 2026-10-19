@@ -14,8 +14,7 @@ import (
 func openDB() (*sql.DB, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://moistello:moistello@localhost:5432/moistello?sslmode=disable"
-		log.Warn().Msg("DATABASE_URL not set, using default")
+		return nil, errors.New("DATABASE_URL is required")
 	}
 
 	db, err := sql.Open("postgres", dsn)
