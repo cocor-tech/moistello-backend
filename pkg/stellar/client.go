@@ -53,7 +53,11 @@ func (c *Client) GetAccount(ctx context.Context, address string) (account *Horiz
 		if err != nil {
 			return fmt.Errorf("horizon request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if cerr := resp.Body.Close(); cerr != nil {
+				log.Warn().Err(cerr).Str("url", url).Msg("failed to close horizon response body")
+			}
+		}()
 
 		if resp.StatusCode == http.StatusNotFound {
 			return fmt.Errorf("account not found")
@@ -87,7 +91,11 @@ func (c *Client) GetTransaction(ctx context.Context, txnHash string) (result map
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if cerr := resp.Body.Close(); cerr != nil {
+				log.Warn().Err(cerr).Str("url", url).Msg("failed to close horizon response body")
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("horizon error %d", resp.StatusCode)
@@ -165,7 +173,11 @@ func (c *Client) getTransactionOperations(ctx context.Context, txnHash string) (
 	if err != nil {
 		return nil, fmt.Errorf("horizon request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Str("url", url).Msg("failed to close horizon response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

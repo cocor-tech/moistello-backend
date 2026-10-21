@@ -39,7 +39,7 @@ func newMiniredis(t *testing.T) (*redis.Client, func()) {
 	require.NoError(t, err)
 	rdb := redis.NewClient(&redis.Options{Addr: s.Addr(), DB: 0})
 	return rdb, func() {
-		rdb.Close()
+		_ = rdb.Close()
 		s.Close()
 	}
 }
@@ -53,7 +53,7 @@ func newMiniredis(t *testing.T) (*redis.Client, func()) {
 func TestRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	cfg := newRateLimitConfig()
 	r := gin.New()
@@ -77,7 +77,7 @@ func TestRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 func TestRateLimitMiddleware_FailsClosedWhenRedisDownEvenIfConfigFlips(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	cfg := newRateLimitConfig()
 	cfg.FailClosed = false // operator flipped the global default to fail-open
@@ -100,7 +100,7 @@ func TestRateLimitMiddleware_FailsClosedWhenRedisDownEvenIfConfigFlips(t *testin
 func TestRateLimitMiddleware_FailOpenWhenRedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	cfg := newRateLimitConfig()
 	r := gin.New()
@@ -122,7 +122,7 @@ func TestRateLimitMiddleware_FailOpenWhenRedisDown(t *testing.T) {
 func TestAuthRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	cfg := newRateLimitConfig()
 	r := gin.New()
@@ -145,7 +145,7 @@ func TestAuthRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 func TestAuthRateLimitMiddleware_FailsClosedWhenRedisDownEvenIfConfigFlips(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	cfg := newRateLimitConfig()
 	cfg.FailClosed = false
@@ -329,7 +329,7 @@ func TestPerResourceRateLimitMiddleware_ExceedsLimit(t *testing.T) {
 func TestPerResourceRateLimitMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	r := gin.New()
 	r.POST("/auth/register", middleware.PerResourceRateLimitMiddleware(rdb, "otp", 5, 15*time.Minute, middleware.WithFailClosed()), func(c *gin.Context) {
@@ -385,7 +385,7 @@ func TestPerResourceRateLimitMiddleware_IndependentBudgetsPerResource(t *testing
 func TestRateLimitMiddleware_LiveLimitsApplyWithoutRestart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := newUnreachableRedis()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	live := newRateLimitConfig()
 	r := gin.New()

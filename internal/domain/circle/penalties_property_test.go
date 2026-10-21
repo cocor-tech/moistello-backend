@@ -15,12 +15,14 @@ func TestLateFee_Property_RoundTrip(t *testing.T) {
 		contribution := rapid.Float64Range(0, 1_000_000).Draw(t, "contribution")
 		percent := rapid.Float64Range(0, 100).Draw(t, "percent")
 
-		fee, err := LateFee(money.MustFromFloat64(contribution), percent)
+		mContrib := money.MustFromFloat64(contribution)
+		fee, err := LateFee(mContrib, percent)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		expected := contribution * percent / 100
+		effectivePercent := math.Round(percent*1_000_000) / 1_000_000
+		expected := mContrib.Float64() * effectivePercent / 100
 		got := fee.Float64()
 
 		// Allow rounding tolerance of ±1 stroop (0.0000001)
@@ -68,14 +70,15 @@ func TestLateFee_Property_100Percent(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		contribution := rapid.Float64Range(0, 1_000_000).Draw(t, "contribution")
 
-		fee, err := LateFee(money.MustFromFloat64(contribution), 100)
+		mContrib := money.MustFromFloat64(contribution)
+		fee, err := LateFee(mContrib, 100)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		got := fee.Float64()
-		if math.Abs(got-contribution) > 0.0000001 {
-			t.Errorf("LateFee(%v, 100) = %v, want ≈ %v", contribution, got, contribution)
+		if math.Abs(got-mContrib.Float64()) > 0.0000001 {
+			t.Errorf("LateFee(%v, 100) = %v, want ≈ %v", contribution, got, mContrib.Float64())
 		}
 	})
 }

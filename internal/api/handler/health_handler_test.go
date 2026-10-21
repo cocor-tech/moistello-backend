@@ -39,7 +39,7 @@ func setupTestHealthHandler(t *testing.T) (*HealthHandler, sqlmock.Sqlmock, func
 	// without requiring external services on fixed localhost ports.
 	stellarRPC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"status":"healthy"}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"status":"healthy"}}`)
 	}))
 	horizon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -51,8 +51,8 @@ func setupTestHealthHandler(t *testing.T) (*HealthHandler, sqlmock.Sqlmock, func
 	cleanup := func() {
 		stellarRPC.Close()
 		horizon.Close()
-		mockDB.Close()
-		rds.Close()
+		_ = mockDB.Close()
+		_ = rds.Close()
 		mr.Close()
 	}
 
@@ -134,12 +134,12 @@ func TestHealthHandler_Readiness_RedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	require.NoError(t, err)
-	defer mockDB.Close()
+	defer func() { _ = mockDB.Close() }()
 	mock.ExpectPing()
 
 	// Nothing listens on this address, so the Redis check must fail.
 	rds := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
-	defer rds.Close()
+	defer func() { _ = rds.Close() }()
 
 	h := NewHealthHandler(mockDB, rds, "", "")
 	h.WithRabbitMQ(&mockRabbit{alive: true})

@@ -53,7 +53,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to rabbitmq")
 	}
-	defer rmqClient.Close()
+	defer logClose(rmqClient, "rabbitmq")
 
 	// --- Domain repositories ---
 

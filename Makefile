@@ -37,8 +37,18 @@ test:
 test-cover:
 	go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out -o coverage.html
 
+GOLANGCI_LINT_VERSION ?= v1.64.5
+
 lint:
-	golangci-lint run ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	elif [ -x "$$(go env GOPATH)/bin/golangci-lint" ]; then \
+		"$$(go env GOPATH)/bin/golangci-lint" run ./...; \
+	else \
+		echo "golangci-lint not found in PATH or GOPATH/bin. Installing $(GOLANGCI_LINT_VERSION)..."; \
+		go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) && \
+		"$$(go env GOPATH)/bin/golangci-lint" run ./...; \
+	fi
 
 migrate-up:
 	go run ./cmd/migrate --direction up

@@ -138,7 +138,10 @@ func (s *PGDeadLetterStore) Resolve(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("resolving indexer dead letter %s: %w", id, err)
 	}
-	rows, _ := res.RowsAffected()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected for dead letter %s: %w", id, err)
+	}
 	if rows == 0 {
 		return ErrDeadLetterNotFound
 	}

@@ -83,7 +83,7 @@ func (r *pgRepo) Metrics(ctx context.Context, days int) (*Metrics, error) {
 	return m, nil
 }
 
-func (r *pgRepo) DailyVolume(ctx context.Context, days int) ([]DailyVolumePoint, error) {
+func (r *pgRepo) DailyVolume(ctx context.Context, days int) (points []DailyVolumePoint, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -113,9 +113,12 @@ func (r *pgRepo) DailyVolume(ctx context.Context, days int) ([]DailyVolumePoint,
 	if err != nil {
 		return nil, fmt.Errorf("querying daily volume: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			points, err = nil, fmt.Errorf("closing daily volume rows: %w", closeErr)
+		}
+	}()
 
-	var points []DailyVolumePoint
 	for rows.Next() {
 		var p DailyVolumePoint
 		if err := rows.Scan(&p.Date, &p.ContributionVolume, &p.PayoutVolume); err != nil {

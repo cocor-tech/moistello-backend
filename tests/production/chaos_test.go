@@ -109,8 +109,7 @@ func TestChaos_SequenceManager_ResetRecovery(t *testing.T) {
 func TestChaos_Redis_OutageFailsClosed(t *testing.T) {
 	t.Log("Redis outage: rate limiting and session validation must fail closed (deny requests)")
 
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	type outageScenario struct {
@@ -165,8 +164,7 @@ func TestChaos_Redis_OutageFailsClosed(t *testing.T) {
 func TestChaos_Postgres_FailoverFailsFast(t *testing.T) {
 	t.Log("Postgres failover: write operations must fail fast with 503, not hang")
 
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	type failoverScenario struct {

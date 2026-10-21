@@ -107,7 +107,9 @@ func (h *SessionHandler) Logout(c *gin.Context) {
 					pipe.Del(ctx, fmt.Sprintf("session:%s", hash))
 				}
 				pipe.Del(ctx, userSessionsKey)
-				pipe.Exec(ctx)
+				if _, err := pipe.Exec(ctx); err != nil {
+					log.Warn().Err(err).Str("userId", userID).Msg("failed to delete user sessions from redis")
+				}
 			}
 
 			// 3. Set blocklist key for any missed sessions
@@ -309,7 +311,9 @@ func (h *SessionHandler) RevokeDeviceSession(c *gin.Context) {
 		pipe := h.redisClient.Pipeline()
 		pipe.Del(ctx, sessionKey)
 		pipe.SRem(ctx, userSessionsKey, sessionID)
-		pipe.Exec(ctx)
+		if _, err := pipe.Exec(ctx); err != nil {
+			log.Warn().Err(err).Str("sessionId", sessionID).Msg("failed to delete session from redis")
+		}
 
 		response.OK(c, gin.H{"success": true})
 	} else {

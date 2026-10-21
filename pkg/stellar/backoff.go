@@ -2,8 +2,9 @@ package stellar
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -34,7 +35,10 @@ func ExecuteWithBackoffConfig(ctx context.Context, opName string, cfg BackoffCon
 			// Calculate exponential backoff: BaseDelay * 2^(attempt-1)
 			backoff := cfg.BaseDelay * (1 << uint(attempt-1))
 			// Apply full jitter: random duration between 0 and backoff
-			jitter := time.Duration(rand.Int63n(int64(backoff) + 1))
+			jitter, err := cryptoJitter(backoff)
+			if err != nil {
+				return fmt.Errorf("generating backoff jitter for %s: %w", opName, err)
+			}
 
 			log.Warn().
 				Str("op", opName).
@@ -60,4 +64,15 @@ func ExecuteWithBackoffConfig(ctx context.Context, opName string, cfg BackoffCon
 	}
 
 	return fmt.Errorf("%s failed after %d retries: %w", opName, cfg.MaxRetries, lastErr)
+}
+
+func cryptoJitter(max time.Duration) (time.Duration, error) {
+	if max <= 0 {
+		return 0, nil
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)+1))
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(n.Int64()), nil
 }

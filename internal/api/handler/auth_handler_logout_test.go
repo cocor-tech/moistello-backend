@@ -101,7 +101,7 @@ func TestAuthHandler_Logout_WithRedisBlocklist(t *testing.T) {
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo, nil)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 0})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, rdb, nil)
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/moistello/backend/pkg/rabbitmq"
+	"github.com/rs/zerolog/log"
 )
 
 // WebhookRoutingKey is the routing key queued webhook messages are published
@@ -21,17 +22,21 @@ type Publisher interface {
 }
 
 // Message is the durable envelope for a single webhook delivery attempt set.
-// It carries everything the queue consumer needs to sign and POST the payload
-// without touching the database again.
+// It carries everything the queue consumer needs to POST the payload.
+// The signing secret is intentionally excluded from the JSON envelope and
+// looked up from the database by the consumer using RegistrationID, so that
+// raw secrets never travel through the message queue (gosec G117).
 type Message struct {
-	RegistrationID string `json:"registrationId"`
-	UserID         string `json:"userId,omitempty"`
-	TargetURL      string `json:"targetUrl"`
-	// Secret contains either the raw secret (if available in-memory) or the stored secret hash.
-	Secret     string          `json:"secret"`
-	Payload    json.RawMessage `json:"payload"`
-	RequestID  string          `json:"requestId,omitempty"`
-	MaxRetries int             `json:"maxRetries"`
+	RegistrationID string          `json:"registrationId"`
+	UserID         string          `json:"userId,omitempty"`
+	TargetURL      string          `json:"targetUrl"`
+	Payload        json.RawMessage `json:"payload"`
+	RequestID      string          `json:"requestId,omitempty"`
+	MaxRetries     int             `json:"maxRetries"`
+	// Secret is populated in-memory by the consumer after a database lookup.
+	// It is deliberately excluded from JSON to prevent secrets leaking into
+	// the queue broker or its logs.
+	Secret string `json:"-"`
 }
 
 // Deliver POSTs the message payload to the registered target with an
@@ -54,11 +59,15 @@ func (m Message) Deliver(ctx context.Context, httpClient *http.Client) error {
 
 		resp, err := httpClient.Do(req)
 		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				log.Warn().Err(cerr).Str("targetUrl", m.TargetURL).Msg("failed to close response body")
+			}
 			return nil
 		}
 		if resp != nil {
-			resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				log.Warn().Err(cerr).Str("targetUrl", m.TargetURL).Msg("failed to close response body")
+			}
 		}
 
 		if attempt < m.MaxRetries {
@@ -101,18 +110,15 @@ func (d *QueuedDispatcher) DispatchPayload(ctx context.Context, payload interfac
 	}
 
 	for _, wh := range webhooks {
-		key := wh.Secret
-		if key == "" {
-			key = wh.SecretHash
-		}
 		msg := Message{
 			RegistrationID: wh.ID,
 			UserID:         wh.UserID,
 			TargetURL:      wh.TargetURL,
-			Secret:         key,
 			Payload:        body,
 			RequestID:      requestID,
 			MaxRetries:     maxRetries,
+			// Secret is intentionally omitted; the consumer fetches it from
+			// the database by RegistrationID at delivery time.
 		}
 		envelope, err := json.Marshal(msg)
 		if err != nil {
@@ -128,7 +134,10 @@ func (d *QueuedDispatcher) DispatchPayload(ctx context.Context, payload interfac
 // StartQueueConsumer ensures the durable webhooks queue exists and consumes
 // envelopes, delivering each over HTTP. Failures after MaxRetries attempts are
 // nacked without requeueing so poison messages do not block the queue.
-func StartQueueConsumer(ctx context.Context, client *rabbitmq.Client, exchange, queue string) error {
+//
+// repo is used to look up the signing secret by RegistrationID at delivery
+// time; the secret is never stored in the queue envelope (gosec G117).
+func StartQueueConsumer(ctx context.Context, client *rabbitmq.Client, exchange, queue string, repo WebhookRepository) error {
 	if err := client.EnsureQueue(queue, exchange, WebhookRoutingKey); err != nil {
 		return fmt.Errorf("ensuring webhooks queue: %w", err)
 	}
@@ -143,6 +152,18 @@ func StartQueueConsumer(ctx context.Context, client *rabbitmq.Client, exchange, 
 		if msg.MaxRetries <= 0 {
 			msg.MaxRetries = 3
 		}
+
+		// Fetch the signing secret from the database so it is never stored
+		// in the queue broker or its logs.
+		wh, err := repo.GetByID(ctx, msg.RegistrationID)
+		if err != nil {
+			return fmt.Errorf("fetching webhook secret for %s: %w", msg.RegistrationID, err)
+		}
+		msg.Secret = wh.Secret
+		if msg.Secret == "" {
+			msg.Secret = wh.SecretHash
+		}
+
 		return msg.Deliver(ctx, httpClient)
 	})
 }

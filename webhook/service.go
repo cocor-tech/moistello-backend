@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/moistello/backend/pkg/jobqueue"
+	"github.com/rs/zerolog/log"
 )
 
 type WebhookRegistration struct {
@@ -73,7 +74,11 @@ func (r *PostgresRepository) GetActiveWebhooks(ctx context.Context) ([]WebhookRe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close active webhooks rows")
+		}
+	}()
 
 	var list []WebhookRegistration
 	for rows.Next() {
@@ -82,6 +87,9 @@ func (r *PostgresRepository) GetActiveWebhooks(ctx context.Context) ([]WebhookRe
 			return nil, err
 		}
 		list = append(list, wh)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return list, nil
 }
@@ -104,7 +112,11 @@ func (r *PostgresRepository) GetByUserID(ctx context.Context, userID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close user webhooks rows")
+		}
+	}()
 
 	var list []WebhookRegistration
 	for rows.Next() {
@@ -113,6 +125,9 @@ func (r *PostgresRepository) GetByUserID(ctx context.Context, userID string) ([]
 			return nil, err
 		}
 		list = append(list, wh)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return list, nil
 }
@@ -135,7 +150,11 @@ func (r *PostgresRepository) ListDeliveries(ctx context.Context, webhookID strin
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close webhook deliveries rows")
+		}
+	}()
 
 	var list []DeliveryLog
 	for rows.Next() {
@@ -144,6 +163,9 @@ func (r *PostgresRepository) ListDeliveries(ctx context.Context, webhookID strin
 			return nil, 0, err
 		}
 		list = append(list, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
 	return list, total, nil
 }
@@ -338,7 +360,11 @@ func (d *Dispatcher) sendHTTP(ctx context.Context, targetURL, secret string, bod
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Str("target_url", targetURL).Msg("failed to close webhook response body")
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook endpoint returned status %d", resp.StatusCode)
@@ -397,7 +423,11 @@ func SignWebhookPayload(payload []byte, secret string) string {
 		key = []byte(secret)
 	}
 	mac := hmac.New(sha256.New, key)
-	mac.Write(payload)
+	if _, err := mac.Write(payload); err != nil {
+		// hash.Hash implementations used here never fail, but preserve the
+		// contract if the implementation changes.
+		return ""
+	}
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

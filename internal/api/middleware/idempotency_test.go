@@ -19,7 +19,7 @@ import (
 func TestIdempotencyMiddleware_ConcurrentRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -75,7 +75,7 @@ func TestIdempotencyMiddleware_ConcurrentRequests(t *testing.T) {
 func TestIdempotencyMiddleware_NoHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -98,7 +98,7 @@ func TestIdempotencyMiddleware_NoHeader(t *testing.T) {
 func TestIdempotencyMiddleware_DifferentKeys(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -132,7 +132,7 @@ func TestIdempotencyMiddleware_DifferentKeys(t *testing.T) {
 func TestIdempotencyMiddleware_ReplaysStoredResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -172,7 +172,7 @@ func TestIdempotencyMiddleware_ReplaysStoredResponse(t *testing.T) {
 func TestIdempotencyMiddleware_ScopedPerUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
@@ -212,7 +212,7 @@ func TestIdempotencyMiddleware_ScopedPerUser(t *testing.T) {
 func TestIdempotencyMiddleware_FailsClosedWhenRedisDown(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:19999", DB: 0})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	r := gin.New()
 	r.Use(middleware.IdempotencyMiddleware(rdb))

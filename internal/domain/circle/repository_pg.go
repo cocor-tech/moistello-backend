@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/moistello/backend/pkg/apperrors"
+	"github.com/rs/zerolog/log"
 )
 
 type dbExecutor interface {
@@ -186,7 +187,11 @@ func (r *pgRepo) List(ctx context.Context, filter CircleFilter) ([]Circle, error
 	if err != nil {
 		return nil, fmt.Errorf("listing circles: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close circles rows")
+		}
+	}()
 
 	var circles []Circle
 	for rows.Next() {
@@ -319,7 +324,11 @@ func (r *pgRepo) GetMembers(ctx context.Context, circleID uuid.UUID) ([]CircleMe
 	if err != nil {
 		return nil, fmt.Errorf("getting circle members: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close circle members rows")
+		}
+	}()
 
 	var members []CircleMember
 	for rows.Next() {
@@ -380,7 +389,11 @@ func (r *pgRepo) FindCirclesByUserID(ctx context.Context, userID uuid.UUID) ([]C
 	if err != nil {
 		return nil, fmt.Errorf("finding circles by user ID: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close user circles rows")
+		}
+	}()
 
 	var circles []Circle
 	for rows.Next() {
@@ -490,7 +503,11 @@ func (r *pgRepo) GetVotesByRound(ctx context.Context, circleID uuid.UUID, roundN
 	if err != nil {
 		return nil, fmt.Errorf("getting votes by round: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close circle votes rows")
+		}
+	}()
 
 	var votes []CircleVote
 	for rows.Next() {
@@ -499,6 +516,9 @@ func (r *pgRepo) GetVotesByRound(ctx context.Context, circleID uuid.UUID, roundN
 			return nil, fmt.Errorf("scanning vote: %w", err)
 		}
 		votes = append(votes, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating votes: %w", err)
 	}
 	if votes == nil {
 		votes = []CircleVote{}
@@ -538,7 +558,11 @@ func (r *pgRepo) GetAuctionBidsByRound(ctx context.Context, circleID uuid.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("getting auction bids by round: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close auction bids rows")
+		}
+	}()
 
 	var bids []CircleAuctionBid
 	for rows.Next() {
@@ -547,6 +571,9 @@ func (r *pgRepo) GetAuctionBidsByRound(ctx context.Context, circleID uuid.UUID, 
 			return nil, fmt.Errorf("scanning auction bid: %w", err)
 		}
 		bids = append(bids, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating auction bids: %w", err)
 	}
 	if bids == nil {
 		bids = []CircleAuctionBid{}

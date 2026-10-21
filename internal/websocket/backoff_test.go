@@ -63,7 +63,7 @@ func TestHub_Shutdown_HintsAreJitteredAndReconnectsFitOneCycle(t *testing.T) {
 	spread := reconnectSpread(n)
 	distinct := make(map[time.Duration]struct{})
 	for _, conn := range conns {
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
 		_, _, err := conn.ReadMessage()
 		var closeErr *websocket.CloseError
 		require.ErrorAs(t, err, &closeErr)

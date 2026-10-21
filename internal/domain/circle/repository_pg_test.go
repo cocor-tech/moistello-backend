@@ -19,7 +19,11 @@ func TestPostgresRepository_ListUsesOneAggregatedQuery(t *testing.T) {
 		t.Run(fmt.Sprintf("rows_%d", size), func(t *testing.T) {
 			mockDB, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer mockDB.Close()
+			defer func() {
+				if cerr := mockDB.Close(); cerr != nil {
+					t.Logf("failed to close mockDB: %v", cerr)
+				}
+			}()
 			repo := NewRepository(sqlx.NewDb(mockDB, "sqlmock"))
 			columns := []string{"id", "contract_id", "community_id", "name", "description", "circle_type", "payout_type", "contribution_amount", "currency", "frequency", "max_members", "min_moi_score", "collateral_percent", "late_fee_percent", "grace_period_hours", "max_strikes", "member_count", "requires_invite", "start_date", "end_date", "status", "current_round", "total_contributions", "organizer_id", "created_at", "updated_at"}
 			rows := sqlmock.NewRows(columns)
@@ -39,7 +43,11 @@ func TestPostgresRepository_ListUsesOneAggregatedQuery(t *testing.T) {
 func TestPostgresRepository_CreatePenalty(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer mockDB.Close()
+	defer func() {
+		if cerr := mockDB.Close(); cerr != nil {
+			t.Logf("failed to close mockDB: %v", cerr)
+		}
+	}()
 
 	db := sqlx.NewDb(mockDB, "sqlmock")
 	repo := NewRepository(db)

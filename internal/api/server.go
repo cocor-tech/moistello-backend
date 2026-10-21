@@ -77,7 +77,7 @@ func NewServer(router http.Handler, cfg config.ServerConfig, hooks ShutdownHooks
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 5 * time.Second,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				target := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
+				target := fmt.Sprintf("https://%s%s", cfg.Host, r.RequestURI)
 				http.Redirect(w, r, target, http.StatusMovedPermanently)
 			}),
 		}

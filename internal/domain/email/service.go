@@ -148,8 +148,14 @@ func (s *Service) sendBrevo(ctx context.Context, to, subject, htmlBody string) e
 			}
 		}
 
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		respBody, readErr := io.ReadAll(resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("failed to close Brevo response body")
+		}
+		if readErr != nil {
+			lastErr = fmt.Errorf("reading Brevo response (attempt %d/%d): %w", attempt, maxAttempts, readErr)
+			continue
+		}
 
 		if resp.StatusCode < 400 {
 			log.Info().Str("to", to).Str("subject", subject).Msg("email sent via brevo")

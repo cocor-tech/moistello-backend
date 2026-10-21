@@ -186,35 +186,59 @@ func decodePayload(remainingTopics []xdr.ScVal, data xdr.ScVal) map[string]any {
 func scValToGo(v xdr.ScVal) any {
 	switch v.Type {
 	case xdr.ScValTypeScvBool:
-		b, _ := v.GetB()
+		b, ok := v.GetB()
+		if !ok {
+			return nil
+		}
 		return b
 
 	case xdr.ScValTypeScvSymbol:
-		sym, _ := v.GetSym()
+		sym, ok := v.GetSym()
+		if !ok {
+			return nil
+		}
 		return string(sym)
 
 	case xdr.ScValTypeScvString:
-		s, _ := v.GetStr()
+		s, ok := v.GetStr()
+		if !ok {
+			return nil
+		}
 		return string(s)
 
 	case xdr.ScValTypeScvU32:
-		u, _ := v.GetU32()
+		u, ok := v.GetU32()
+		if !ok {
+			return nil
+		}
 		return uint32(u)
 
 	case xdr.ScValTypeScvI32:
-		i, _ := v.GetI32()
+		i, ok := v.GetI32()
+		if !ok {
+			return nil
+		}
 		return int32(i)
 
 	case xdr.ScValTypeScvU64:
-		u, _ := v.GetU64()
+		u, ok := v.GetU64()
+		if !ok {
+			return nil
+		}
 		return uint64(u)
 
 	case xdr.ScValTypeScvI64:
-		i, _ := v.GetI64()
+		i, ok := v.GetI64()
+		if !ok {
+			return nil
+		}
 		return int64(i)
 
 	case xdr.ScValTypeScvU128:
-		u, _ := v.GetU128()
+		u, ok := v.GetU128()
+		if !ok {
+			return nil
+		}
 		// Represent as decimal string to avoid precision loss in JSON.
 		hi := uint64(u.Hi)
 		lo := uint64(u.Lo)
@@ -224,7 +248,10 @@ func scValToGo(v xdr.ScVal) any {
 		return fmt.Sprintf("%d%018d", hi, lo)
 
 	case xdr.ScValTypeScvI128:
-		i, _ := v.GetI128()
+		i, ok := v.GetI128()
+		if !ok {
+			return nil
+		}
 		hi := int64(i.Hi)
 		lo := uint64(i.Lo)
 		if hi == 0 {
@@ -233,16 +260,22 @@ func scValToGo(v xdr.ScVal) any {
 		return fmt.Sprintf("%d%018d", hi, lo)
 
 	case xdr.ScValTypeScvAddress:
-		addr, _ := v.GetAddress()
+		addr, ok := v.GetAddress()
+		if !ok {
+			return nil
+		}
 		return scAddressToString(addr)
 
 	case xdr.ScValTypeScvBytes:
-		b, _ := v.GetBytes()
+		b, ok := v.GetBytes()
+		if !ok {
+			return nil
+		}
 		return base64.StdEncoding.EncodeToString(b)
 
 	case xdr.ScValTypeScvMap:
-		m, _ := v.GetMap()
-		if m == nil {
+		m, ok := v.GetMap()
+		if !ok || m == nil {
 			return nil
 		}
 		result := make(map[string]any, len(*m))
@@ -253,8 +286,8 @@ func scValToGo(v xdr.ScVal) any {
 		return result
 
 	case xdr.ScValTypeScvVec:
-		vec, _ := v.GetVec()
-		if vec == nil {
+		vec, ok := v.GetVec()
+		if !ok || vec == nil {
 			return nil
 		}
 		result := make([]any, len(*vec))

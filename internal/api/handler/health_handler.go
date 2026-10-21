@@ -328,7 +328,7 @@ func (h *HealthHandler) checkStellarRPC(timeout time.Duration) DependencyStatus 
 			Message: fmt.Sprintf("unreachable: %v", err),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return DependencyStatus{
@@ -367,7 +367,7 @@ func (h *HealthHandler) checkHorizon(timeout time.Duration) DependencyStatus {
 			Message: fmt.Sprintf("unreachable: %v", err),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return DependencyStatus{

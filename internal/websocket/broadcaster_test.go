@@ -237,11 +237,11 @@ func TestBroadcaster_Publish_RelaysToRedisAndLocalSubscribers(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 	rdb := redis.NewClient(&redis.Options{Addr: s.Addr()})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	ctx := t.Context()
 	pubsub := rdb.Subscribe(ctx, redisChannel)
-	defer pubsub.Close()
+	defer func() { _ = pubsub.Close() }()
 	_, err = pubsub.Receive(ctx) // wait for the subscription to be confirmed
 	require.NoError(t, err)
 
@@ -267,7 +267,7 @@ func TestBroadcaster_Publish_StillDeliversLocallyWhenRedisIsDown(t *testing.T) {
 	s, err := miniredis.Run()
 	require.NoError(t, err)
 	rdb := redis.NewClient(&redis.Options{Addr: s.Addr(), MaxRetries: -1, DialTimeout: 200 * time.Millisecond})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	s.Close() // every publish from here on fails
 
 	hub := NewHub()

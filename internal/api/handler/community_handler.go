@@ -193,7 +193,10 @@ func (h *CommunityHandler) PinAnnouncement(c *gin.Context) {
 	var req struct {
 		Pinned bool `json:"pinned"`
 	}
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request body")
+		return
+	}
 	if err := h.communitySvc.PinAnnouncement(c.Request.Context(), id, userID, req.Pinned); err != nil {
 		response.BadRequest(c, err.Error())
 		return

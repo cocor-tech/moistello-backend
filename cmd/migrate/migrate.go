@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"regexp"
@@ -142,14 +144,18 @@ func resolveTargetIndex(to string, files []string) (int, error) {
 }
 
 // loadAppliedVersions reads the raw version column of schema_migrations.
-func loadAppliedVersions(ctx context.Context, conn *sql.Conn) (map[string]bool, error) {
+func loadAppliedVersions(ctx context.Context, conn *sql.Conn) (applied map[string]bool, err error) {
 	rows, err := conn.QueryContext(ctx, "SELECT version FROM schema_migrations ORDER BY version")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close schema_migrations rows")
+		}
+	}()
 
-	applied := make(map[string]bool)
+	applied = make(map[string]bool)
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
@@ -157,7 +163,10 @@ func loadAppliedVersions(ctx context.Context, conn *sql.Conn) (map[string]bool, 
 		}
 		applied[v] = true
 	}
-	return applied, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return applied, nil
 }
 
 // expandLegacyRows maps legacy bare-prefix rows (e.g. "016") onto the full
@@ -426,7 +435,7 @@ func runMigrationsDown(ctx context.Context, conn *sql.Conn, opts Options) error 
 // Run executes a migration run described by opts. All work happens on a single
 // pinned connection so the advisory lock is held and released by the same
 // database session.
-func Run(db *sql.DB, opts Options) error {
+func Run(db *sql.DB, opts Options) (err error) {
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -440,7 +449,11 @@ func Run(db *sql.DB, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("acquiring dedicated migration connection: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close dedicated migration connection")
+		}
+	}()
 
 	if err := ensureMigrationsTable(ctx, conn); err != nil {
 		return fmt.Errorf("ensuring migrations table: %w", err)
@@ -454,5 +467,21 @@ func Run(db *sql.DB, opts Options) error {
 		return runMigrationsDown(ctx, conn, opts)
 	default:
 		return fmt.Errorf("unknown direction %q: use 'up' or 'down'", opts.Direction)
+	}
+}
+
+// closeInto closes c and joins any close error into *errp, so a failed close
+// surfaces from the caller instead of being silently dropped.
+func closeInto(c io.Closer, what string, errp *error) {
+	if cerr := c.Close(); cerr != nil {
+		*errp = errors.Join(*errp, fmt.Errorf("closing %s: %w", what, cerr))
+	}
+}
+
+// logClose closes c and logs any close error. It is for deferred cleanup in
+// main, where there is no caller to return the error to.
+func logClose(c io.Closer, what string) {
+	if err := c.Close(); err != nil {
+		log.Error().Err(err).Str("resource", what).Msg("failed to close")
 	}
 }

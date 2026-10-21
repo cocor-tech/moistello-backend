@@ -116,7 +116,11 @@ func (s *Submitter) submit(ctx context.Context, signedTx string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("submit request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close submit response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -216,7 +220,11 @@ func (s *Submitter) getTransactionStatus(ctx context.Context, txHash string) (*t
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close getTransaction response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

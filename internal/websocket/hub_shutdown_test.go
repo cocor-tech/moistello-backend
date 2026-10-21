@@ -60,7 +60,7 @@ func TestHub_Shutdown_SendsCloseFrameAndDrains(t *testing.T) {
 	assert.Equal(t, 0, hub.ClientCount(), "every client must be unregistered before Shutdown returns")
 
 	for _, conn := range []*websocket.Conn{conn1, conn2} {
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
 		_, _, err := conn.ReadMessage()
 		var closeErr *websocket.CloseError
 		require.ErrorAs(t, err, &closeErr, "peer must receive a close frame")
@@ -81,7 +81,7 @@ func TestHub_Shutdown_RefusesNewClients(t *testing.T) {
 	conn, cleanup := dialTestClient(t, hub, "late-user")
 	defer cleanup()
 
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
 	_, _, err := conn.ReadMessage()
 	var closeErr *websocket.CloseError
 	require.ErrorAs(t, err, &closeErr, "a client arriving during shutdown is closed immediately")

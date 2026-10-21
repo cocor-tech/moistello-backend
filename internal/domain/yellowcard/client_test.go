@@ -30,7 +30,7 @@ func TestGetQuote_Success(t *testing.T) {
 		assert.Contains(t, r.URL.RawQuery, "amount=50000.00")
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Quote{
+		_ = json.NewEncoder(w).Encode(Quote{
 			QuoteID:      "q-123",
 			FromCurrency: "NGN",
 			ToCurrency:   "USDC",
@@ -60,7 +60,7 @@ func TestGetQuote_Success(t *testing.T) {
 func TestGetQuote_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid currency pair"}`))
+		_, _ = w.Write([]byte(`{"error":"invalid currency pair"}`))
 	}))
 	defer server.Close()
 
@@ -91,7 +91,7 @@ func TestCreateReceive_Success(t *testing.T) {
 		assert.Equal(t, "GABC123", req.DestinationAddress)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ReceiveResponse{
+		_ = json.NewEncoder(w).Encode(ReceiveResponse{
 			ReceiveID: "r-456",
 			Status:    "pending",
 			BankDetails: BankDetails{
@@ -139,7 +139,7 @@ func TestCreateSend_Success(t *testing.T) {
 		assert.Equal(t, "NGN", req.TargetCurrency)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(SendResponse{
+		_ = json.NewEncoder(w).Encode(SendResponse{
 			SendID:    "s-789",
 			Status:    "processing",
 			Fee:       0.25,
@@ -176,7 +176,7 @@ func TestGetTransactionStatus_Success(t *testing.T) {
 		assert.True(t, strings.HasSuffix(r.URL.Path, "/txn-abc"))
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(TransactionStatus{
+		_ = json.NewEncoder(w).Encode(TransactionStatus{
 			ID:     "txn-abc",
 			Type:   "receive",
 			Status: "completed",
@@ -213,7 +213,7 @@ func TestSignRequest_IncludedInHeaders(t *testing.T) {
 		assert.NotEmpty(t, r.Header.Get("X-YC-Signature"))
 		assert.NotEmpty(t, r.Header.Get("X-API-Key"))
 		w.WriteHeader(200)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 
@@ -231,7 +231,7 @@ func TestSignRequest_IncludedInHeaders(t *testing.T) {
 func TestDoRequest_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":"internal server error"}`))
+		_, _ = w.Write([]byte(`{"error":"internal server error"}`))
 	}))
 	defer server.Close()
 
@@ -253,7 +253,7 @@ func TestDoRequest_NoAuth_NoSignature(t *testing.T) {
 		assert.Empty(t, r.Header.Get("X-YC-Signature"))
 		assert.Empty(t, r.Header.Get("X-YC-Timestamp"))
 		w.WriteHeader(200)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 

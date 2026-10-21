@@ -83,7 +83,9 @@ func (s *Service) SendOTP(ctx context.Context, email string) error {
 	}
 
 	// Set resend rate limit
-	s.rdb.Set(ctx, resendKey, "1", resendTTL)
+	if err := s.rdb.Set(ctx, resendKey, "1", resendTTL).Err(); err != nil {
+		return fmt.Errorf("storing resend limit: %w", err)
+	}
 
 	if s.sendOTP != nil {
 		if err := s.sendOTP(email, code); err != nil {
@@ -107,13 +109,23 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string) (bool, erro
 
 	parts := strings.SplitN(stored, ":", 2)
 	if len(parts) != 2 {
-		s.rdb.Del(ctx, otpKey)
+		if err := s.rdb.Del(ctx, otpKey).Err(); err != nil {
+			return false, fmt.Errorf("clearing malformed OTP: %w", err)
+		}
 		return false, fmt.Errorf("invalid OTP format")
 	}
 
-	attempts, _ := strconv.Atoi(parts[1])
+	attempts, err := strconv.Atoi(parts[1])
+	if err != nil || attempts < 0 {
+		if delErr := s.rdb.Del(ctx, otpKey).Err(); delErr != nil {
+			return false, fmt.Errorf("invalid OTP attempt counter (also failed to clear it: %w)", delErr)
+		}
+		return false, fmt.Errorf("invalid OTP attempt counter")
+	}
 	if attempts >= maxAttempts {
-		s.rdb.Del(ctx, otpKey)
+		if err := s.rdb.Del(ctx, otpKey).Err(); err != nil {
+			return false, fmt.Errorf("clearing exhausted OTP: %w", err)
+		}
 		return false, fmt.Errorf("too many incorrect attempts. request a new code")
 	}
 
@@ -121,13 +133,17 @@ func (s *Service) VerifyOTP(ctx context.Context, email, code string) (bool, erro
 	hashedCode := hex.EncodeToString(codeHash[:])
 
 	if hashedCode == parts[0] {
-		s.rdb.Del(ctx, otpKey)
+		if err := s.rdb.Del(ctx, otpKey).Err(); err != nil {
+			return false, fmt.Errorf("clearing verified OTP: %w", err)
+		}
 		return true, nil
 	}
 
 	// Increment attempts
 	newValue := fmt.Sprintf("%s:%d", parts[0], attempts+1)
-	s.rdb.Set(ctx, otpKey, newValue, otpTTL)
+	if err := s.rdb.Set(ctx, otpKey, newValue, otpTTL).Err(); err != nil {
+		return false, fmt.Errorf("updating OTP attempts: %w", err)
+	}
 	return false, nil
 }
 
@@ -167,7 +183,9 @@ func (s *Service) VerifyRecoveryCode(ctx context.Context, email, code string) (b
 
 	codeHash := sha256.Sum256([]byte(code))
 	if hex.EncodeToString(codeHash[:]) == stored {
-		s.rdb.Del(ctx, recoveryKey)
+		if err := s.rdb.Del(ctx, recoveryKey).Err(); err != nil {
+			return false, fmt.Errorf("clearing recovery code: %w", err)
+		}
 		return true, nil
 	}
 	return false, nil
@@ -215,7 +233,8 @@ func generateNumericCode(length int) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("generating random digit: %w", err)
 		}
-		code[i] = byte('0') + byte(n.Int64())
+		digit := strconv.FormatInt(n.Int64(), 10)
+		code[i] = digit[0]
 	}
 	return string(code), nil
 }

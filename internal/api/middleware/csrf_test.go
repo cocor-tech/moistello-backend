@@ -63,7 +63,9 @@ func TestCSRFTokenValidatorIfAuthenticated(t *testing.T) {
 
 	t.Run("authenticated request with a wrong CSRF token is rejected", func(t *testing.T) {
 		r, mr := newIfAuthenticatedRouter(t)
-		mr.Set(fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(csrfTestBearer))), "expected-token")
+		if err := mr.Set(fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(csrfTestBearer))), "expected-token"); err != nil {
+			t.Fatalf("seed csrf token: %v", err)
+		}
 		w := doCSRF(r, http.MethodPost, "Bearer "+csrfTestBearer, "wrong-token")
 		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "invalid CSRF token") {
 			t.Fatalf("got %d %s, want 403 invalid CSRF token", w.Code, w.Body.String())
@@ -72,7 +74,9 @@ func TestCSRFTokenValidatorIfAuthenticated(t *testing.T) {
 
 	t.Run("authenticated request with the session's CSRF token passes", func(t *testing.T) {
 		r, mr := newIfAuthenticatedRouter(t)
-		mr.Set(fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(csrfTestBearer))), "expected-token")
+		if err := mr.Set(fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(csrfTestBearer))), "expected-token"); err != nil {
+			t.Fatalf("seed csrf token: %v", err)
+		}
 		if w := doCSRF(r, http.MethodPost, "Bearer "+csrfTestBearer, "expected-token"); w.Code != http.StatusNoContent {
 			t.Fatalf("got %d %s, want 204", w.Code, w.Body.String())
 		}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/moistello/backend/pkg/stellar"
+	"github.com/rs/zerolog/log"
 )
 
 // Client wraps the Soroban RPC endpoint for contract operations.
@@ -93,7 +94,11 @@ func (c *Client) rpcCall(ctx context.Context, body string) (map[string]any, erro
 		if err != nil {
 			return fmt.Errorf("rpc request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if cerr := resp.Body.Close(); cerr != nil {
+				log.Warn().Err(cerr).Msg("failed to close rpc response body")
+			}
+		}()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -212,7 +217,11 @@ func (s *txSubmitter) sendTransaction(ctx context.Context, signedTxEnvelope stri
 	if err != nil {
 		return "", fmt.Errorf("send transaction: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close send response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -301,7 +310,11 @@ func (s *txSubmitter) getTransactionStatus(ctx context.Context, txHash string) (
 	if err != nil {
 		return nil, fmt.Errorf("poll request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close poll response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

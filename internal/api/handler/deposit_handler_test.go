@@ -234,7 +234,7 @@ func TestDepositHandler_AmountCaps(t *testing.T) {
 
 func TestDepositHandler_DailyCapsAndIdempotency(t *testing.T) {
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 15})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		t.Skip("Redis is not available, skipping live daily caps & idempotency test")

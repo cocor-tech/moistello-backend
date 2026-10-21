@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
@@ -191,6 +192,9 @@ func (r *governanceWeightResolver) VotingWeight(ctx context.Context, userID stri
 	if err != nil {
 		return 0, err
 	}
+	if balance > math.MaxInt64 {
+		return 0, fmt.Errorf("governance token balance %d exceeds supported voting weight", balance)
+	}
 	return governance.ApplyTierFactor(int64(balance), tier), nil
 }
 
@@ -229,7 +233,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "❌ Configuration offline validation failed:\n%v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("✅ Configuration is valid (environment=%s, offline preflight passed)\n", cfg.Environment)
+		fmt.Fprintf(os.Stdout, "✅ Configuration is valid (environment=%s, offline preflight passed)\n", cfg.Environment)
 		os.Exit(0)
 	}
 
@@ -620,7 +624,9 @@ func main() {
 		CloseLast: []func(){
 			func() {
 				if rmqClient != nil {
-					rmqClient.Close()
+					if err := rmqClient.Close(); err != nil {
+						log.Warn().Err(err).Msg("closing rabbitmq")
+					}
 				}
 			},
 			func() {

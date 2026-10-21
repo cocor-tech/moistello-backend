@@ -1173,7 +1173,10 @@ func payloadStr(p map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
-	s, _ := v.(string)
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
 	return s
 }
 

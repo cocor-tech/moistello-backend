@@ -210,9 +210,7 @@ func TestOnMemberJoined_UserNotFound(t *testing.T) {
 
 func TestOnContributionReceived_Success(t *testing.T) {
 	cRepo := &circleMocks.Repository{}
-	ctRepo := &contribMocks.Repository{}
 	uRepo := &userMocks.Repository{}
-	p := newTestProcessor(cRepo, ctRepo, nil, nil, uRepo)
 
 	c := testCircle("cid1")
 	u := testUser("GWALLET1")
@@ -244,9 +242,7 @@ func TestOnContributionReceived_Success(t *testing.T) {
 
 func TestOnPayoutExecuted_Success(t *testing.T) {
 	cRepo := &circleMocks.Repository{}
-	pRepo := &payoutMocks.Repository{}
 	uRepo := &userMocks.Repository{}
-	p := newTestProcessor(cRepo, nil, pRepo, nil, uRepo)
 
 	c := testCircle("cid1")
 	u := testUser("GWALLET_RECIPIENT")
@@ -620,9 +616,7 @@ func TestBroadcast_CallsWsBroadcast(t *testing.T) {
 
 func TestOnContributionReceived_Reprocessed_IsNoOp(t *testing.T) {
 	cRepo := &circleMocks.Repository{}
-	ctRepo := &contribMocks.Repository{}
 	uRepo := &userMocks.Repository{}
-	p := newTestProcessor(cRepo, ctRepo, nil, nil, uRepo)
 
 	c := testCircle("cid1")
 	u := testUser("GWALLET1")
@@ -650,9 +644,7 @@ func TestOnContributionReceived_Reprocessed_IsNoOp(t *testing.T) {
 
 func TestOnPayoutExecuted_Reprocessed_IsNoOp(t *testing.T) {
 	cRepo := &circleMocks.Repository{}
-	pRepo := &payoutMocks.Repository{}
 	uRepo := &userMocks.Repository{}
-	p := newTestProcessor(cRepo, nil, pRepo, nil, uRepo)
 
 	c := testCircle("cid1")
 	c.CurrentRound = 2

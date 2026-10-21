@@ -50,7 +50,7 @@ func TestIdempotencyMiddleware_ScopedPerRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	calls := map[string]int{}
 	r := gin.New()

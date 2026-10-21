@@ -137,18 +137,20 @@ func (m Money) Float64() float64 { return float64(m.stroops) / float64(StroopsPe
 // String renders the amount with exactly seven decimal places, the same
 // canonical form Horizon uses for balances and payment amounts.
 func (m Money) String() string {
-	s := m.stroops
+	value := new(big.Int).SetInt64(m.stroops)
 	sign := ""
-	var abs uint64
-	if s < 0 {
+	if value.Sign() < 0 {
 		sign = "-"
-		abs = uint64(-(s + 1)) + 1 // safe for MinInt64
-	} else {
-		abs = uint64(s)
+		value.Abs(value)
 	}
-	whole := abs / uint64(StroopsPerUnit)
-	frac := abs % uint64(StroopsPerUnit)
-	return fmt.Sprintf("%s%d.%07d", sign, whole, frac)
+	unit := big.NewInt(StroopsPerUnit)
+	whole, frac := new(big.Int), new(big.Int)
+	whole.QuoRem(value, unit, frac)
+	fracText := frac.String()
+	if len(fracText) < Precision {
+		fracText = strings.Repeat("0", Precision-len(fracText)) + fracText
+	}
+	return fmt.Sprintf("%s%s.%s", sign, whole.String(), fracText)
 }
 
 // IsZero reports whether the amount is zero.

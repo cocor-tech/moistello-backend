@@ -36,7 +36,11 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("failed to connect to test database: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if cerr := db.Close(); cerr != nil {
+			t.Logf("failed to close test database: %v", cerr)
+		}
+	})
 	if err := db.Ping(); err != nil {
 		t.Fatalf("failed to ping test database: %v", err)
 	}
@@ -75,7 +79,12 @@ func TestMigrationIdempotencyAndRollback(t *testing.T) {
 				done <- err
 				return
 			}
-			defer db1.Close()
+			var runErr error
+			defer func() {
+				if cerr := db1.Close(); cerr != nil {
+					t.Logf("failed to close db1: %v", cerr)
+				}
+			}()
 			done <- Run(db1, Options{Direction: DirectionUp})
 		}()
 		go func() {
@@ -84,7 +93,11 @@ func TestMigrationIdempotencyAndRollback(t *testing.T) {
 				done <- err
 				return
 			}
-			defer db2.Close()
+			defer func() {
+				if cerr := db2.Close(); cerr != nil {
+					t.Logf("failed to close db2: %v", cerr)
+				}
+			}()
 			done <- Run(db2, Options{Direction: DirectionUp})
 		}()
 

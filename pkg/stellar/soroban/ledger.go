@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/moistello/backend/pkg/tracing"
+	"github.com/rs/zerolog/log"
 )
 
 // contractIDSize is the byte length of a Soroban contract ID, which is a
@@ -93,7 +94,11 @@ func (c *LedgerClient) GetContractWasmHash(ctx context.Context, contractID strin
 	if err != nil {
 		return "", fmt.Errorf("getLedgerEntries request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close getLedgerEntries response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

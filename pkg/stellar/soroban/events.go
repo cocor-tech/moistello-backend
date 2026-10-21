@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/moistello/backend/pkg/tracing"
+	"github.com/rs/zerolog/log"
 )
 
 // ContractEvent represents a Soroban contract event.
@@ -94,7 +95,11 @@ func (c *EventsClient) GetEvents(ctx context.Context, filter EventFilter) (resul
 	if err != nil {
 		return nil, fmt.Errorf("events request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Warn().Err(cerr).Msg("failed to close events response body")
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

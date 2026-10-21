@@ -117,7 +117,7 @@ func (l *Lock) With(ctx context.Context, fn func(context.Context) error) (bool, 
 	if l.client != nil {
 		heartbeatDone := make(chan struct{})
 		defer close(heartbeatDone)
-		go l.heartbeat(heartbeatDone)
+		go l.heartbeat(heartbeatDone, ctx)
 	}
 
 	if err := fn(ctx); err != nil {
@@ -144,7 +144,7 @@ func (l *Lock) Release() {
 	l.token = ""
 }
 
-func (l *Lock) heartbeat(done chan struct{}) {
+func (l *Lock) heartbeat(done chan struct{}, parent context.Context) {
 	renewInterval := l.ttl / 3
 	if renewInterval <= 0 {
 		renewInterval = time.Minute
@@ -156,8 +156,10 @@ func (l *Lock) heartbeat(done chan struct{}) {
 		select {
 		case <-done:
 			return
+		case <-parent.Done():
+			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 			_, err := renewScript.Run(ctx, l.client, []string{l.key}, l.token, l.ttl.Milliseconds()).Result()
 			cancel()
 			if err != nil {

@@ -101,7 +101,10 @@ func (p *Poller) FetchLedgers(ctx context.Context, cursor int64, limit int) ([]L
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("horizon error %d: failed to read response body: %w", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("horizon error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -137,7 +140,10 @@ func (p *Poller) FetchTransactions(ctx context.Context, ledger int64) ([]Transac
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("horizon error %d: failed to read response body: %w", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("horizon error %d: %s", resp.StatusCode, string(body))
 	}
 
