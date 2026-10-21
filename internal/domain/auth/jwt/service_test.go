@@ -45,6 +45,30 @@ func TestJWTService_KeyIDInHeader(t *testing.T) {
 	assert.Equal(t, "key-1", parsedToken.Header["kid"])
 }
 
+func TestJWTService_NewServiceAndSetPreviousKey(t *testing.T) {
+	currentKey := generateTestRSAKey(t, "current")
+	previousKey := generateTestRSAKey(t, "previous")
+	svc := domainJWT.NewService(currentKey.SigningKey, currentKey.SigningMethod, currentKey.VerifyingKey, currentKey.VerifyingAlg)
+	svc.SetPreviousKey(previousKey)
+	previousService := domainJWT.NewServiceWithKeys(previousKey, nil)
+
+	userID := uuid.New()
+	tokenStr, err := svc.GenerateToken(context.Background(), userID, "GABC", "member", time.Minute)
+	require.NoError(t, err)
+	previousToken, err := previousService.GenerateToken(context.Background(), userID, "GABC", "member", time.Minute)
+	require.NoError(t, err)
+
+	claims, err := svc.ValidateToken(context.Background(), tokenStr)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), claims.UserID)
+	assert.Equal(t, "GABC", claims.Wallet)
+	assert.Equal(t, "member", claims.Role)
+	previousClaims, err := svc.ValidateToken(context.Background(), previousToken)
+	require.NoError(t, err)
+	assert.Equal(t, userID.String(), previousClaims.UserID)
+	assert.Equal(t, "invalid token", domainJWT.ErrInvalidToken.Error())
+}
+
 func TestJWTService_RotateKey_BothWindowsValid(t *testing.T) {
 	key1 := generateTestRSAKey(t, "key-1")
 	key2 := generateTestRSAKey(t, "key-2")
