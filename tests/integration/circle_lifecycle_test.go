@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -45,7 +46,7 @@ func TestCircleLifecycle(t *testing.T) {
 		userRepo.On("FindByWalletAddress", mock.Anything, organizer.WalletAddress).Return(nil, nil).Once()
 		userRepo.On("Create", mock.Anything, mock.AnythingOfType("*user.User")).Return(nil).Once()
 
-		u, err := userSvc.Create(nil, organizer.WalletAddress)
+		u, err := userSvc.Create(context.TODO(), organizer.WalletAddress)
 		assert.NoError(t, err)
 		assert.Equal(t, organizer.WalletAddress, u.WalletAddress)
 		userRepo.AssertExpectations(t)
@@ -55,7 +56,7 @@ func TestCircleLifecycle(t *testing.T) {
 		circleRepo.On("Create", mock.Anything, mock.AnythingOfType("*circle.Circle")).Return(nil).Once()
 		circleRepo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil).Once()
 
-		c, err := circleSvc.Create(nil, organizer.ID.String(), circle.CreateCircleInput{
+		c, err := circleSvc.Create(context.TODO(), organizer.ID.String(), circle.CreateCircleInput{
 			Name:               "Lifecycle Test Circle",
 			CircleType:         circle.CircleTypePublic,
 			PayoutType:         circle.PayoutTypeRandom,
@@ -83,7 +84,7 @@ func TestCircleLifecycle(t *testing.T) {
 		circleRepo.On("FindMemberByCircleAndUser", mock.Anything, circleID, member1.ID).Return(nil, nil).Once()
 		circleRepo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil).Once()
 
-		err := circleSvc.Join(nil, circleID.String(), member1.ID.String(), "")
+		err := circleSvc.Join(context.TODO(), circleID.String(), member1.ID.String(), "")
 		assert.NoError(t, err)
 		circleRepo.AssertExpectations(t)
 	})
@@ -92,7 +93,7 @@ func TestCircleLifecycle(t *testing.T) {
 		contribRepo.On("FindByTxnHash", mock.Anything, "txn-lc-001").Return(nil, nil).Once()
 		contribRepo.On("Create", mock.Anything, mock.AnythingOfType("*contribution.Contribution")).Return(nil).Once()
 
-		c, err := contribSvc.Record(nil, contribution.RecordInput{
+		c, err := contribSvc.Record(context.TODO(), contribution.RecordInput{
 			CircleID:    uuid.New().String(),
 			UserID:      organizer.ID.String(),
 			RoundNumber: 1,
@@ -112,7 +113,7 @@ func TestCircleLifecycle(t *testing.T) {
 		payoutRepo.On("ListByCircle", mock.Anything, circleID, 1, 100).Return([]payout.Payout{}, 0, nil).Once()
 		payoutRepo.On("Create", mock.Anything, mock.AnythingOfType("*payout.Payout")).Return(nil).Once()
 
-		p, err := payoutSvc.Record(nil, payout.RecordInput{
+		p, err := payoutSvc.Record(context.TODO(), payout.RecordInput{
 			CircleID:    circleID.String(),
 			RecipientID: member1.ID.String(),
 			RoundNumber: 1,
@@ -131,7 +132,7 @@ func TestCircleLifecycle(t *testing.T) {
 	t.Run("Step6_VerifyUserMoiScore", func(t *testing.T) {
 		userRepo.On("FindByID", mock.Anything, organizer.ID).Return(organizer, nil).Once()
 
-		resp, err := userSvc.GetMoiScore(nil, organizer.ID.String())
+		resp, err := userSvc.GetMoiScore(context.TODO(), organizer.ID.String())
 		assert.NoError(t, err)
 		assert.NotNil(t, resp)
 		assert.Equal(t, organizer.MoiScore, resp.Score)
@@ -152,7 +153,7 @@ func TestCircleLifecycle_FullCircle(t *testing.T) {
 
 	circleRepo.On("Create", mock.Anything, mock.AnythingOfType("*circle.Circle")).Return(nil).Once()
 	circleRepo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil).Once()
-	c, err := circleSvc.Create(nil, org.ID.String(), circle.CreateCircleInput{
+	c, err := circleSvc.Create(context.TODO(), org.ID.String(), circle.CreateCircleInput{
 		Name: "Full Circle", CircleType: circle.CircleTypePublic,
 		PayoutType: circle.PayoutTypeRandom, ContributionAmount: 50,
 		Currency: circle.CurrencyXLM, Frequency: circle.FrequencyDaily,
@@ -169,7 +170,7 @@ func TestCircleLifecycle_FullCircle(t *testing.T) {
 	circleRepo.On("GetMemberCount", mock.Anything, circleID).Return(2, nil).Once()
 	circleRepo.On("FindMemberByCircleAndUser", mock.Anything, circleID, m2.ID).Return(nil, nil).Once()
 	circleRepo.On("CreateMember", mock.Anything, mock.AnythingOfType("*circle.CircleMember")).Return(nil).Once()
-	err = circleSvc.Join(nil, circleID.String(), m2.ID.String(), "")
+	err = circleSvc.Join(context.TODO(), circleID.String(), m2.ID.String(), "")
 	assert.NoError(t, err)
 
 	circleRepo.On("FindByID", mock.Anything, circleID).Return(
@@ -178,7 +179,7 @@ func TestCircleLifecycle_FullCircle(t *testing.T) {
 	).Once()
 	circleRepo.On("GetMemberCount", mock.Anything, circleID).Return(3, nil).Once()
 	m3 := helpers.NewTestUser("GM3FULL1234567890ABCDEF1234567890ABCDEF")
-	err = circleSvc.Join(nil, circleID.String(), m3.ID.String(), "")
+	err = circleSvc.Join(context.TODO(), circleID.String(), m3.ID.String(), "")
 	assert.Error(t, err)
 	assert.Equal(t, circle.ErrCircleFull, err)
 	circleRepo.AssertExpectations(t)

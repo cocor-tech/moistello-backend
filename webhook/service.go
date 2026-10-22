@@ -19,6 +19,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// requestIDKey is the private context key under which a request ID is carried
+// into dispatch. A private type keeps it from colliding with other packages'
+// context values.
+type requestIDKey struct{}
+
 type WebhookRegistration struct {
 	ID        string `json:"id"`
 	UserID    string `json:"user_id"`
@@ -275,7 +280,7 @@ func (d *Dispatcher) DispatchPayload(ctx context.Context, payload interface{}, m
 		return fmt.Errorf("failed to marshal webhook payload: %w", err)
 	}
 
-	reqID, _ := ctx.Value("requestID").(string)
+	reqID, _ := ctx.Value(requestIDKey{}).(string)
 
 	for _, wh := range webhooks {
 		d.wg.Add(1)
