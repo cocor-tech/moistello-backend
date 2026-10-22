@@ -154,12 +154,12 @@ func TestOpenAPISpec_SchemaConsistency(t *testing.T) {
 			}
 			// POST, PUT, PATCH should have requestBody
 			if op != pathItem.Get && op != pathItem.Delete {
-				if op.RequestBody == nil || len(op.RequestBody) == 0 {
+				if len(op.RequestBody) == 0 {
 					missingSchemas = append(missingSchemas, fmt.Sprintf("%s: missing requestBody", path))
 				}
 			}
 			// All operations should have responses
-			if op.Responses == nil || len(op.Responses) == 0 {
+			if len(op.Responses) == 0 {
 				missingSchemas = append(missingSchemas, fmt.Sprintf("%s: missing responses", path))
 			}
 		}
