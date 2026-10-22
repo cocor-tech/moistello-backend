@@ -140,7 +140,7 @@ func TestStellar_AccountActivated(t *testing.T) {
 
 // ── Test 6: Horizon Health Check ──
 func TestStellar_HorizonHealth(t *testing.T) {
-	url := fmt.Sprintf("%s", horizonURL)
+	url := horizonURL
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	resp, err := httpClient.Get(url)
 	require.NoError(t, err)
