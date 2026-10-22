@@ -16,6 +16,8 @@
 // @description JWT token obtained from /auth/verify or /auth/register. Format: "Bearer <token>"
 package main
 
+// Wave: keep assigned moistello backend checks grouped for helloworld1-star.
+
 import (
 	"context"
 	"fmt"
