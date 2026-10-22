@@ -72,6 +72,121 @@ func newTestProcessor(
 	}
 }
 
+func TestNewEventProcessorAndSetContractVersionResolver(t *testing.T) {
+	circleRepo := &circleMocks.Repository{}
+	contribRepo := &contribMocks.Repository{}
+	payoutRepo := &payoutMocks.Repository{}
+	repRepo := &reputationMocks.Repository{}
+	userRepo := &userMocks.Repository{}
+	resolver := StaticContractVersions{"contract": "version"}
+
+	p := NewEventProcessor(nil, nil, circleRepo, contribRepo, payoutRepo, repRepo, userRepo)
+	p.SetContractVersionResolver(resolver)
+
+	assert.Same(t, circleRepo, p.circleRepo)
+	assert.Same(t, contribRepo, p.contribRepo)
+	assert.Same(t, payoutRepo, p.payoutRepo)
+	assert.Same(t, repRepo, p.reputationRepo)
+	assert.Same(t, userRepo, p.userRepo)
+	assert.Equal(t, resolver, p.versions)
+}
+
+func TestProcessTransaction_CreateAccountBroadcast(t *testing.T) {
+	p := NewEventProcessor(nil, nil, nil, nil, nil, nil, nil)
+	var gotCircleID string
+	var gotPayload map[string]any
+	p.SetWebSocketBroadcast(func(circleID string, data any) {
+		gotCircleID = circleID
+		gotPayload = data.(map[string]any)
+	})
+
+	txn := &Transaction{
+		Hash:   "tx-create-account",
+		Ledger: 42,
+		Operations: []Operation{{
+			Type:          "create_account",
+			SourceAccount: "GNEWACCOUNT",
+		}},
+	}
+
+	err := p.ProcessTransaction(context.Background(), txn)
+	assert.NoError(t, err)
+	assert.Equal(t, "GNEWACCOUNT", gotCircleID)
+	assert.Equal(t, "tx-create-account", gotPayload["hash"])
+	assert.Equal(t, "GNEWACCOUNT", gotPayload["account"])
+	assert.Equal(t, int64(42), gotPayload["ledger"])
+}
+
+func TestGetTreasuryFeesSummary(t *testing.T) {
+	t.Run("without database", func(t *testing.T) {
+		total, count, err := (&EventProcessor{}).GetTreasuryFeesSummary(context.Background(), "circle-1")
+		assert.NoError(t, err)
+		assert.Zero(t, total)
+		assert.Zero(t, count)
+	})
+
+	t.Run("circle filter", func(t *testing.T) {
+		db, sqlMock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+		p := &EventProcessor{db: sqlx.NewDb(db, "sqlmock")}
+
+		sqlMock.ExpectQuery("WHERE circle_id = \\$1").
+			WithArgs("circle-1").
+			WillReturnRows(sqlmock.NewRows([]string{"total", "count"}).AddRow(12.5, 2))
+		total, count, err := p.GetTreasuryFeesSummary(context.Background(), "circle-1")
+		assert.NoError(t, err)
+		assert.Equal(t, 12.5, total)
+		assert.Equal(t, 2, count)
+		assert.NoError(t, sqlMock.ExpectationsWereMet())
+	})
+
+	t.Run("all circles", func(t *testing.T) {
+		db, sqlMock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+		p := &EventProcessor{db: sqlx.NewDb(db, "sqlmock")}
+
+		sqlMock.ExpectQuery("FROM treasury_fees").
+			WillReturnRows(sqlmock.NewRows([]string{"total", "count"}).AddRow(0, 0))
+		total, count, err := p.GetTreasuryFeesSummary(context.Background(), "")
+		assert.NoError(t, err)
+		assert.Zero(t, total)
+		assert.Zero(t, count)
+		assert.NoError(t, sqlMock.ExpectationsWereMet())
+	})
+
+	t.Run("query error", func(t *testing.T) {
+		db, sqlMock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+		p := &EventProcessor{db: sqlx.NewDb(db, "sqlmock")}
+		dbErr := errors.New("database unavailable")
+
+		sqlMock.ExpectQuery("SELECT COALESCE").WillReturnError(dbErr)
+		total, count, err := p.GetTreasuryFeesSummary(context.Background(), "")
+		assert.ErrorIs(t, err, dbErr)
+		assert.Zero(t, total)
+		assert.Zero(t, count)
+		assert.NoError(t, sqlMock.ExpectationsWereMet())
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		db, sqlMock, err := sqlmock.New()
+		assert.NoError(t, err)
+		defer db.Close()
+		p := &EventProcessor{db: sqlx.NewDb(db, "sqlmock")}
+
+		sqlMock.ExpectQuery("SELECT COALESCE").
+			WillReturnRows(sqlmock.NewRows([]string{"total", "count"}).AddRow("not-a-number", 3))
+		total, count, err := p.GetTreasuryFeesSummary(context.Background(), "")
+		assert.Error(t, err)
+		assert.Zero(t, total)
+		assert.Zero(t, count)
+		assert.NoError(t, sqlMock.ExpectationsWereMet())
+	})
+}
+
 func testCircle(contractID string) *circle.Circle {
 	return &circle.Circle{
 		ID:         uuid.New(),
