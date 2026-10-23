@@ -147,7 +147,7 @@ func TestDispatchPayload_DetachedBackgroundContext(t *testing.T) {
 	d := NewDispatcher(repo, WithTimeout(2*time.Second))
 
 	// Create a context and cancel it IMMEDIATELY
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "requestID", "req-test-999"))
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), requestIDKey{}, "req-test-999"))
 	cancel() // cancelled before / as dispatch occurs
 
 	err := d.DispatchPayload(ctx, map[string]string{"event": "user.created"}, 1)

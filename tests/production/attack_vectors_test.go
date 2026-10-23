@@ -339,38 +339,6 @@ func (g *GovernanceSim) Unpause(caller string) error {
 }
 
 // ---------------------------------------------------------------------------
-// Reputation Simulation Helpers
-//
-// These helpers simulate the on-chain MOI score calculation to verify
-// invariant enforcement (cap at 1000, floor at 0, etc.).
-// ---------------------------------------------------------------------------
-
-func simulationAddPoints(current, points int) int {
-	result := current + points
-	if result > 1000 {
-		return 1000
-	}
-	return result
-}
-
-func simulationSubtractPoints(current, points int) int {
-	result := current - points
-	if result < 0 {
-		return 0
-	}
-	return result
-}
-
-func simulationInactivityDecay(current, daysInactive int) int {
-	// Each day of inactivity subtracts 2 points (proportional decay)
-	decay := daysInactive * 2
-	if decay > current {
-		return 0
-	}
-	return current - decay
-}
-
-// ---------------------------------------------------------------------------
 // Circle Simulation Helpers
 //
 // Simulate tier-based enforcement and reentrancy protection.

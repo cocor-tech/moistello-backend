@@ -117,6 +117,10 @@ func (cb *CircuitBreaker) afterRequest(failed bool) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
+	if failed {
+		cb.lastFailureTime = time.Now()
+	}
+
 	switch cb.state {
 	case CircuitClosed:
 		if failed {
@@ -168,6 +172,7 @@ func (cb *CircuitBreaker) Stats() map[string]interface{} {
 		"state":           cb.state.String(),
 		"failures":        cb.failures,
 		"successes":       cb.successes,
+		"lastFailureTime": cb.lastFailureTime,
 		"lastStateChange": cb.lastStateChange,
 		"name":            cb.name,
 	}
@@ -180,5 +185,6 @@ func (cb *CircuitBreaker) Reset() {
 	cb.failures = 0
 	cb.successes = 0
 	cb.halfOpenReqs = 0
+	cb.lastFailureTime = time.Time{}
 	cb.mu.Unlock()
 }

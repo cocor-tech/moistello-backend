@@ -99,10 +99,7 @@ func (s *Simulator) SimulateTransaction(ctx context.Context, tx *Transaction) (*
 
 // ApplyResources applies the resource estimates from simulation to the transaction
 func (s *Simulator) ApplyResources(tx *Transaction, result *SimulationResult) *Transaction {
-	costFactor := int64(result.Cost.CPUInstructions/10000 + result.Cost.MemoryBytes/100)
-	if costFactor > 1000 {
-		costFactor = 1000
-	}
+	costFactor := ResourceCostFactor(result.Cost.CPUInstructions, result.Cost.MemoryBytes)
 	tx.Fee = tx.Fee * costFactor
 	if tx.Fee < 100 {
 		tx.Fee = 100

@@ -58,7 +58,12 @@ var ErrNoDatabase = fmt.Errorf("indexer: no database handle")
 // collisions between distinct circles are not a practical concern -- and a
 // collision would only over-serialise two circles, never allow a lost update.
 func circleLockKey(circleID uuid.UUID) int64 {
-	return int64(binary.BigEndian.Uint64(circleID[:8]) &^ (1 << 63))
+	key := binary.BigEndian.Uint64(circleID[:8]) &^ (uint64(1) << 63)
+	const maxInt64 = uint64(^uint64(0) >> 1)
+	if key > maxInt64 {
+		return int64(maxInt64)
+	}
+	return int64(key)
 }
 
 // RoundAdvance reports whether a contribution completed a round and moved the
