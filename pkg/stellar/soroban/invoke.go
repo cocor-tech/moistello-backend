@@ -85,13 +85,7 @@ func (c *ContractInvoker) InvokeFunction(ctx context.Context, method string, arg
 
 // applyResources applies simulation resource estimates to the transaction fee.
 func (c *ContractInvoker) applyResources(tx *stellar.Transaction, result *stellar.SimulationResult) *stellar.Transaction {
-	costFactor := int64(result.Cost.CPUInstructions/10000 + result.Cost.MemoryBytes/100)
-	if costFactor == 0 {
-		costFactor = 1
-	}
-	if costFactor > 1000 {
-		costFactor = 1000
-	}
+	costFactor := stellar.ResourceCostFactor(result.Cost.CPUInstructions, result.Cost.MemoryBytes)
 	tx.Fee = tx.Fee * costFactor
 	if tx.Fee < 100 {
 		tx.Fee = 100
