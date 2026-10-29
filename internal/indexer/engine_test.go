@@ -106,3 +106,45 @@ func TestEngine_Poll_CursorLagMetric_UpdatesOnStaleCursor(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 600, testutil.ToFloat64(metrics.CursorLagSeconds), 2)
 }
+
+func TestNewEngineAndMetrics(t *testing.T) {
+	mockDB, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db := sqlx.NewDb(mockDB, "sqlmock")
+
+	engine := NewEngine(
+		config.IndexerConfig{PollInterval: time.Hour},
+		db, nil, nil, nil, nil, &Reconciler{interval: time.Hour}, nil,
+	)
+	require.NotNil(t, engine)
+	assert.NotNil(t, engine.history)
+	assert.NotNil(t, engine.chain)
+	assert.NotNil(t, engine.dedup)
+	assert.NotNil(t, engine.stopCh)
+	assert.Same(t, engine.metrics, engine.Metrics())
+	t.Cleanup(func() {
+		metrics := engine.metrics
+		prometheus.DefaultRegisterer.Unregister(metrics.EventsProcessed)
+		prometheus.DefaultRegisterer.Unregister(metrics.PollErrors)
+		prometheus.DefaultRegisterer.Unregister(metrics.ProcessErrors)
+		prometheus.DefaultRegisterer.Unregister(metrics.LastLedger)
+		prometheus.DefaultRegisterer.Unregister(metrics.ReconcilerRuns)
+		prometheus.DefaultRegisterer.Unregister(metrics.DedupSize)
+		prometheus.DefaultRegisterer.Unregister(metrics.CursorLagSeconds)
+		prometheus.DefaultRegisterer.Unregister(metrics.UnknownContractEvents)
+		prometheus.DefaultRegisterer.Unregister(metrics.ReorgsDetected)
+		prometheus.DefaultRegisterer.Unregister(metrics.DeadLettered)
+		prometheus.DefaultRegisterer.Unregister(metrics.ContractVersionUnknown)
+		prometheus.DefaultRegisterer.Unregister(metrics.Events.Received)
+		prometheus.DefaultRegisterer.Unregister(metrics.Events.Decoded)
+		prometheus.DefaultRegisterer.Unregister(metrics.Events.Failed)
+		prometheus.DefaultRegisterer.Unregister(metrics.Events.DLQ)
+		prometheus.DefaultRegisterer.Unregister(metrics.Events.DecodeSkipped)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, engine.Start(ctx))
+	cancel()
+	engine.Stop()
+	assert.NotNil(t, engine.stopCh)
+}
