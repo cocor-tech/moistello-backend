@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,57 @@ import (
 
 	"github.com/moistello/backend/internal/domain/circle"
 )
+
+func TestOutboxRepository_Methods(t *testing.T) {
+	mockDB, sqlMock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+
+	repo := circle.NewOutboxRepository(sqlx.NewDb(mockDB, "sqlmock"))
+	ctx := context.Background()
+	event := &circle.OutboxEvent{
+		ID:            uuid.New(),
+		AggregateType: "circle",
+		AggregateID:   uuid.New(),
+		EventType:     "CircleStatusChanged",
+		Payload:       json.RawMessage(`{"status":"active"}`),
+		Status:        circle.OutboxStatusPending,
+		CreatedAt:     time.Now().UTC(),
+	}
+
+	sqlMock.ExpectExec("INSERT INTO outbox_events").
+		WithArgs(event.ID, event.AggregateType, event.AggregateID, event.EventType, event.Payload, event.Status, event.RetryCount, event.CreatedAt).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	require.NoError(t, repo.Save(ctx, nil, event))
+
+	sqlMock.ExpectQuery("SELECT id, aggregate_type, aggregate_id, event_type, payload, status, retry_count, created_at, processed_at").
+		WithArgs(10).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "aggregate_type", "aggregate_id", "event_type", "payload", "status", "retry_count", "created_at", "processed_at"}).
+			AddRow(event.ID, event.AggregateType, event.AggregateID, event.EventType, []byte(event.Payload), event.Status, event.RetryCount, event.CreatedAt, nil))
+	events, err := repo.FetchPending(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, event.ID, events[0].ID)
+
+	sqlMock.ExpectExec("UPDATE outbox_events SET status = 'published'").
+		WithArgs(event.ID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	require.NoError(t, repo.MarkPublished(ctx, event.ID))
+
+	sqlMock.ExpectExec("UPDATE outbox_events SET status = 'failed'").
+		WithArgs(event.ID, 2).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	require.NoError(t, repo.MarkFailed(ctx, event.ID, 2))
+
+	cutoff := time.Now().UTC()
+	sqlMock.ExpectExec("DELETE FROM outbox_events").
+		WithArgs(cutoff).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	deleted, err := repo.DeletePublished(ctx, cutoff)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, deleted)
+	assert.NoError(t, sqlMock.ExpectationsWereMet())
+}
 
 type mockOutboxRepo struct {
 	mock.Mock
