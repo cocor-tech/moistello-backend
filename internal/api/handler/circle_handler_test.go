@@ -15,6 +15,10 @@ import (
 	"github.com/moistello/backend/internal/api/handler"
 	"github.com/moistello/backend/internal/domain/circle"
 	circleMocks "github.com/moistello/backend/internal/domain/circle/mocks"
+	"github.com/moistello/backend/internal/domain/contribution"
+	contribMocks "github.com/moistello/backend/internal/domain/contribution/mocks"
+	"github.com/moistello/backend/internal/domain/payout"
+	payoutMocks "github.com/moistello/backend/internal/domain/payout/mocks"
 	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/moistello/backend/pkg/validator"
 )
@@ -706,3 +710,87 @@ func TestCircleHandler_AuctionBid_Success(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"bidAmount":50`)
 	repo.AssertExpectations(t)
 }
+
+func TestCircleHandler_GetRounds_AppendsAndSortsRoundsDeterministically(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	circleRepo := new(circleMocks.Repository)
+	contribRepo := new(contribMocks.Repository)
+	payoutRepo := new(payoutMocks.Repository)
+
+	circleSvc := circle.NewService(circleRepo, nil, circle.Dependencies{})
+	contribSvc := contribution.NewService(contribRepo, nil, nil, nil, "", circleSvc)
+	payoutSvc := payout.NewService(payoutRepo, nil, nil, circleSvc)
+
+	cid := uuid.New()
+	c := &circle.Circle{
+		ID:           cid,
+		Name:         "Rounds Circle",
+		Status:       circle.CircleStatusActive,
+		CurrentRound: 3,
+		MaxMembers:   4,
+	}
+
+	contribs := []contribution.Contribution{
+		{ID: uuid.New(), CircleID: cid, RoundNumber: 3, Amount: 100},
+		{ID: uuid.New(), CircleID: cid, RoundNumber: 1, Amount: 100},
+	}
+	payouts := []payout.Payout{
+		{ID: uuid.New(), CircleID: cid, RoundNumber: 2, Amount: 400},
+		{ID: uuid.New(), CircleID: cid, RoundNumber: 1, Amount: 400},
+	}
+
+	circleRepo.On("FindByID", mock.Anything, cid).Return(c, nil)
+	contribRepo.On("ListByCircle", mock.Anything, cid, 1, 20).Return(contribs, 2, nil)
+	payoutRepo.On("ListByCircle", mock.Anything, cid, 1, 20).Return(payouts, 2, nil)
+
+	snap1 := &circle.RoundConfigSnapshot{ID: uuid.New(), CircleID: cid, RoundNumber: 1, ConfigHash: "hash-r1"}
+	circleRepo.On("GetRoundConfigSnapshot", mock.Anything, cid, 1).Return(snap1, nil)
+	circleRepo.On("GetRoundConfigSnapshot", mock.Anything, cid, 2).Return(nil, apperrors.ErrNotFound)
+	circleRepo.On("GetRoundConfigSnapshot", mock.Anything, cid, 3).Return(nil, apperrors.ErrNotFound)
+
+	h := handler.NewCircleHandler(circleSvc, nil, contribSvc, payoutSvc)
+	r := gin.New()
+	r.GET("/circles/:id/rounds", h.GetRounds)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/circles/"+cid.String()+"/rounds", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			CurrentRound int              `json:"currentRound"`
+			TotalMembers int              `json:"totalMembers"`
+			Rounds       []map[string]any `json:"rounds"`
+		} `json:"data"`
+	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.Equal(t, 3, resp.Data.CurrentRound)
+	assert.Equal(t, 4, resp.Data.TotalMembers)
+	if assert.Len(t, resp.Data.Rounds, 3) {
+		assert.Equal(t, float64(1), resp.Data.Rounds[0]["roundNumber"])
+		assert.Equal(t, float64(2), resp.Data.Rounds[1]["roundNumber"])
+		assert.Equal(t, float64(3), resp.Data.Rounds[2]["roundNumber"])
+
+		r1Contribs, ok := resp.Data.Rounds[0]["contributions"].([]any)
+		assert.True(t, ok)
+		assert.Len(t, r1Contribs, 1)
+		assert.NotNil(t, resp.Data.Rounds[0]["payout"])
+		assert.NotNil(t, resp.Data.Rounds[0]["configSnapshot"])
+
+		assert.NotNil(t, resp.Data.Rounds[1]["payout"])
+		r3Contribs, ok := resp.Data.Rounds[2]["contributions"].([]any)
+		assert.True(t, ok)
+		assert.Len(t, r3Contribs, 1)
+	}
+
+	circleRepo.AssertExpectations(t)
+	contribRepo.AssertExpectations(t)
+	payoutRepo.AssertExpectations(t)
+}
+
