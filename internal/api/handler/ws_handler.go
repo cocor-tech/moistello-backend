@@ -23,6 +23,14 @@ func WithCircleService(svc circle.Service) Option {
 	}
 }
 
+// WithMaxMessageSize configures the maximum incoming message size in bytes
+// enforced on each WebSocket connection created by the handler.
+func WithMaxMessageSize(limit int64) Option {
+	return func(h *WebSocketHandler) {
+		h.maxMessageSize = limit
+	}
+}
+
 type circleSubscriptionAuthorizer struct {
 	service circle.Service
 }
@@ -41,8 +49,9 @@ func (a *circleSubscriptionAuthorizer) CanSubscribe(ctx context.Context, circleI
 // WebSocketHandler handles HTTP-to-WebSocket upgrades and manages client
 // connections via the Hub.
 type WebSocketHandler struct {
-	hub      *ws.Hub
-	upgrader websocket.Upgrader
+	hub            *ws.Hub
+	upgrader       websocket.Upgrader
+	maxMessageSize int64
 }
 
 // NewWebSocketHandler creates a new WebSocketHandler backed by the given Hub.
@@ -91,6 +100,9 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	}
 
 	client := ws.NewClient(h.hub, conn, userID)
+	if h.maxMessageSize > 0 {
+		client.SetMaxMessageSize(h.maxMessageSize)
+	}
 	h.hub.Register(client)
 
 	go client.WritePump()

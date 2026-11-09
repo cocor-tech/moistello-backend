@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,12 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
+	// MaxMessageSize is the default maximum incoming WebSocket message size in bytes.
+	MaxMessageSize int64 = maxMessageSize
+
+	// CloseMessageTooBigReason is sent in the close frame when a peer exceeds the per-connection message size limit.
+	CloseMessageTooBigReason = "message exceeds maximum size"
+
 	// Send channel buffer size.
 	sendBufferSize = 256
 
@@ -36,15 +43,17 @@ const (
 // Client represents a single WebSocket connection. It is created when a
 // client connects and destroyed when the connection is closed.
 type Client struct {
-	ID          string
-	UserID      string
-	Hub         *Hub
-	Conn        *websocket.Conn
-	Send        chan []byte
-	missedPings atomic.Int32
-	mu          sync.Mutex
-	closing     chan struct{}
-	closeOnce   sync.Once
+	ID             string
+	UserID         string
+	Hub            *Hub
+	Conn           *websocket.Conn
+	Send           chan []byte
+	missedPings    atomic.Int32
+	maxMessageSize atomic.Int64
+	disconnected   atomic.Bool
+	mu             sync.Mutex
+	closing        chan struct{}
+	closeOnce      sync.Once
 
 	// reconnectAfter is the backoff hint (nanoseconds) sent in the close
 	// frame on shutdown; zero means pick a default jittered delay.
@@ -55,13 +64,38 @@ type Client struct {
 // NewClient creates a new Client bound to the given Hub and WebSocket
 // connection. The userID identifies the authenticated user.
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
-	return &Client{
+	c := &Client{
 		ID:      uuid.New().String(),
 		UserID:  userID,
 		Hub:     hub,
 		Conn:    conn,
 		Send:    make(chan []byte, sendBufferSize),
 		closing: make(chan struct{}),
+	}
+	c.maxMessageSize.Store(maxMessageSize)
+	if conn != nil {
+		conn.SetReadLimit(maxMessageSize)
+	}
+	return c
+}
+
+// MaxMessageSize returns the per-connection maximum incoming message size in bytes.
+func (c *Client) MaxMessageSize() int64 {
+	if limit := c.maxMessageSize.Load(); limit > 0 {
+		return limit
+	}
+	return maxMessageSize
+}
+
+// SetMaxMessageSize configures the maximum incoming message size in bytes for
+// this connection. Values <= 0 reset the connection to the default MaxMessageSize.
+func (c *Client) SetMaxMessageSize(limit int64) {
+	if limit <= 0 {
+		limit = maxMessageSize
+	}
+	c.maxMessageSize.Store(limit)
+	if c.Conn != nil {
+		c.Conn.SetReadLimit(limit)
 	}
 }
 
@@ -93,6 +127,7 @@ func (c *Client) Close() {
 // Clients built without NewClient (no Conn) are handled safely.
 func (c *Client) Disconnect() {
 	c.closeOnce.Do(func() {
+		c.disconnected.Store(true)
 		if c.Conn != nil {
 			c.logError("disconnect", c.Conn.Close())
 		}
@@ -106,10 +141,13 @@ func (c *Client) Disconnect() {
 // and reason (e.g., CloseCircleMembershipRevoked).
 func (c *Client) Kick(code int, reason string) {
 	c.closeOnce.Do(func() {
+		c.disconnected.Store(true)
 		if c.Conn != nil {
+			c.mu.Lock()
 			c.logError("set close deadline", c.Conn.SetWriteDeadline(time.Now().Add(writeWait)))
 			c.logError("write close message", c.Conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(code, reason)))
+			c.mu.Unlock()
 			c.logError("close", c.Conn.Close())
 		}
 		if c.closing != nil {
@@ -129,7 +167,7 @@ func (c *Client) ReadPump() {
 		c.logError("close after read", c.Conn.Close())
 	}()
 
-	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadLimit(c.MaxMessageSize())
 	if err := c.Conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
 		log.Warn().Err(err).Str("clientID", c.ID).Msg("failed to set websocket read deadline")
 		return
@@ -144,6 +182,15 @@ func (c *Client) ReadPump() {
 	for {
 		_, msgBytes, err := c.Conn.ReadMessage()
 		if err != nil {
+			if errors.Is(err, websocket.ErrReadLimit) {
+				log.Warn().
+					Err(err).
+					Str("clientID", c.ID).
+					Int64("maxMessageSize", c.MaxMessageSize()).
+					Msg("websocket message exceeded per-connection size limit")
+				c.Disconnect()
+				break
+			}
 			if websocket.IsUnexpectedCloseError(
 				err,
 				websocket.CloseGoingAway,
@@ -175,7 +222,11 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case <-c.closing:
+			if c.disconnected.Load() {
+				return
+			}
 			// Server is shutting down: tell the peer to reconnect elsewhere.
+			c.mu.Lock()
 			c.logError("set shutdown deadline", c.Conn.SetWriteDeadline(time.Now().Add(writeWait)))
 			delay := time.Duration(c.reconnectAfter.Load())
 			if delay <= 0 {
@@ -183,21 +234,27 @@ func (c *Client) WritePump() {
 			}
 			c.logError("write shutdown message", c.Conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseGoingAway, shutdownCloseReason(delay))))
+			c.mu.Unlock()
 			return
 		case msg, ok := <-c.Send:
+			c.mu.Lock()
 			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				c.mu.Unlock()
 				log.Warn().Err(err).Str("clientID", c.ID).Msg("websocket write error")
 				return
 			}
 			if !ok {
 				// Hub closed the Send channel — close the connection
 				c.logError("write empty close message", c.Conn.WriteMessage(websocket.CloseMessage, []byte{}))
+				c.mu.Unlock()
 				return
 			}
 			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				c.mu.Unlock()
 				log.Warn().Err(err).Str("clientID", c.ID).Msg("websocket write error")
 				return
 			}
+			c.mu.Unlock()
 		case <-ticker.C:
 			if c.missedPings.Load() >= maxMissedPings {
 				metrics.WSStaleConnectionsClosedTotal.Inc()
@@ -207,12 +264,16 @@ func (c *Client) WritePump() {
 			}
 			c.missedPings.Add(1)
 
+			c.mu.Lock()
 			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				c.mu.Unlock()
 				return
 			}
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				c.mu.Unlock()
 				return
 			}
+			c.mu.Unlock()
 		}
 	}
 }
@@ -249,6 +310,19 @@ func (c *Client) sendError(message string) {
 //   - "subscribe": joins a circle room (requires "circleId" field)
 //   - "unsubscribe": leaves a circle room (requires "circleId" field)
 func (c *Client) handleMessage(data []byte) {
+	if limit := c.MaxMessageSize(); int64(len(data)) > limit {
+		log.Warn().
+			Str("clientID", c.ID).
+			Int("size", len(data)).
+			Int64("maxMessageSize", limit).
+			Msg("websocket message exceeded per-connection size limit")
+		c.sendError(CloseMessageTooBigReason)
+		if c.Conn != nil {
+			c.Kick(websocket.CloseMessageTooBig, CloseMessageTooBigReason)
+		}
+		return
+	}
+
 	var msg map[string]any
 	if err := json.Unmarshal(data, &msg); err != nil {
 		log.Debug().Err(err).Str("clientID", c.ID).Msg("invalid websocket message")
