@@ -122,3 +122,55 @@ func TestValidateOffline_Succeeds(t *testing.T) {
 	err = cfg.ValidateOffline()
 	require.NoError(t, err)
 }
+
+func TestValidateSecrets_FailsFastOnMissingSecrets(t *testing.T) {
+	cfg := &config.Config{}
+	err := cfg.ValidateSecrets()
+	require.Error(t, err)
+	errStr := err.Error()
+	require.Contains(t, errStr, "Missing required secrets")
+	require.Contains(t, errStr, "Auth.JWTPrivateKeyPEM")
+	require.Contains(t, errStr, "Auth.JWTPublicKeyPEM")
+	require.Contains(t, errStr, "Auth.AdminAPIKey")
+	require.Contains(t, errStr, "Security.WalletPepper")
+	require.Contains(t, errStr, "Security.EncryptionKey")
+	require.Contains(t, errStr, "Stellar.MasterSecretKey")
+	require.Contains(t, errStr, "Redis.Password")
+	require.Contains(t, errStr, "Database.URL")
+	require.Contains(t, errStr, "YellowCard.WebhookSecret")
+}
+
+func TestValidateSecrets_RejectsNonHexAndWrongLengthSecrets(t *testing.T) {
+	hexKey := hex.EncodeToString([]byte("12345678901234567890123456789012"))
+	cfg := &config.Config{}
+	cfg.Auth.JWTPrivateKeyPEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBALs=\n-----END RSA PRIVATE KEY-----"
+	cfg.Auth.JWTPublicKeyPEM = "-----BEGIN RSA PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBALs=\n-----END RSA PUBLIC KEY-----"
+	cfg.Auth.AdminAPIKey = "not-a-valid-hex-admin-key-with-non-hex-letters"
+	cfg.Security.WalletPepper = "short"
+	cfg.Security.EncryptionKey = hexKey
+	cfg.Stellar.MasterSecretKey = "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	cfg.Redis.Password = "redis-password-123456"
+	cfg.Database.URL = "postgres://localhost:5432/db"
+	cfg.YellowCard.WebhookSecret = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+
+	err := cfg.ValidateSecrets()
+	require.Error(t, err)
+	errStr := err.Error()
+	require.Contains(t, errStr, "Auth.AdminAPIKey must be 32-byte hex")
+	require.Contains(t, errStr, "Security.WalletPepper must be 32-byte hex")
+	require.Contains(t, errStr, "YellowCard.WebhookSecret must be 32-byte hex")
+}
+
+func TestLoad_RejectsPlaceholderSecretsAndPartialPreviousJWTKeys(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("MOISTELLO_WALLET_PEPPER", "changeme")
+	t.Setenv("JWT_PREVIOUS_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBALs=\n-----END RSA PRIVATE KEY-----")
+	t.Setenv("JWT_PREVIOUS_PUBLIC_KEY", "")
+
+	cfg, err := config.Load("")
+	require.Error(t, err)
+	require.Nil(t, cfg)
+	errStr := err.Error()
+	require.Contains(t, errStr, "security.wallet_pepper must not use a placeholder value")
+	require.Contains(t, errStr, "auth.jwt_previous_private_key_pem and auth.jwt_previous_public_key_pem must both be set")
+}

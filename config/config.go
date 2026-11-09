@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -345,6 +344,9 @@ func newViper() *viper.Viper {
 
 func Load(path string) (*Config, error) {
 	v := newViper()
+	if trimmedPath := strings.TrimSpace(path); trimmedPath != "" && trimmedPath != "." {
+		v.AddConfigPath(trimmedPath)
+	}
 
 	setDefault(v, "server.port", 1100)
 	setDefault(v, "server.host", "0.0.0.0")
@@ -556,13 +558,16 @@ func Load(path string) (*Config, error) {
 	cfg.Auth.JWTPublicKeyPEM = collectRequiredText(&errs, cfg.Auth.JWTPublicKeyPEM, cfg.Auth.JWTPublicKeyPath, "auth.jwt_public_key_pem", "auth.jwt_public_key_path")
 	if cfg.Auth.JWTPreviousPrivateKeyPEM == "" && cfg.Auth.JWTPreviousPrivateKeyPath != "" {
 		if content, err := readConfiguredFile(cfg.Auth.JWTPreviousPrivateKeyPath); err == nil {
-			cfg.Auth.JWTPreviousPrivateKeyPEM = string(content)
+			cfg.Auth.JWTPreviousPrivateKeyPEM = strings.TrimSpace(string(content))
 		}
 	}
 	if cfg.Auth.JWTPreviousPublicKeyPEM == "" && cfg.Auth.JWTPreviousPublicKeyPath != "" {
 		if content, err := readConfiguredFile(cfg.Auth.JWTPreviousPublicKeyPath); err == nil {
-			cfg.Auth.JWTPreviousPublicKeyPEM = string(content)
+			cfg.Auth.JWTPreviousPublicKeyPEM = strings.TrimSpace(string(content))
 		}
+	}
+	if (cfg.Auth.JWTPreviousPrivateKeyPEM != "") != (cfg.Auth.JWTPreviousPublicKeyPEM != "") {
+		errs = append(errs, "config: auth.jwt_previous_private_key_pem and auth.jwt_previous_public_key_pem must both be set when configuring previous JWT keys")
 	}
 
 	if cfg.Security.EncryptionKey != "" {
@@ -608,59 +613,6 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func loadDotEnv() {
-	for _, candidate := range []string{".env", ".env.local", "config/.env"} {
-		if err := loadEnvFile(candidate); err != nil {
-			panic(fmt.Errorf("config: loading %s: %w", candidate, err))
-		}
-	}
-}
-
-func loadEnvFile(path string) (err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing %s: %w", path, closeErr)
-		}
-	}()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" {
-			continue
-		}
-		if len(value) >= 2 {
-			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
-				value = value[1 : len(value)-1]
-			}
-		}
-		if _, exists := os.LookupEnv(key); exists {
-			continue
-		}
-		if err := os.Setenv(key, value); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
-
 func mustBindEnv(v *viper.Viper, key string, envNames ...string) {
 	args := append([]string{key}, envNames...)
 	if err := v.BindEnv(args...); err != nil {
@@ -672,17 +624,33 @@ func setDefault(v *viper.Viper, key string, value any) {
 	v.SetDefault(key, value)
 }
 
+func isPlaceholderSecret(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "changeme", "change-me", "change_me", "replace-me", "replace_me", "your-secret-here", "your_secret_here", "placeholder", "todo", "fixme":
+		return true
+	default:
+		return false
+	}
+}
+
 func collectRequiredString(errs *[]string, field, value, hint string) string {
 	val := strings.TrimSpace(value)
 	if val == "" {
 		*errs = append(*errs, fmt.Sprintf("config: %s is required (%s)", field, hint))
+		return ""
+	}
+	if isPlaceholderSecret(val) {
+		*errs = append(*errs, fmt.Sprintf("config: %s must not use a placeholder value (%s)", field, hint))
 	}
 	return val
 }
 
 func collectRequiredText(errs *[]string, current, path, field, pathField string) string {
-	if strings.TrimSpace(current) != "" {
-		return strings.TrimSpace(current)
+	if trimmed := strings.TrimSpace(current); trimmed != "" {
+		if isPlaceholderSecret(trimmed) {
+			*errs = append(*errs, fmt.Sprintf("config: %s must not use a placeholder value", field))
+		}
+		return trimmed
 	}
 	if strings.TrimSpace(path) == "" {
 		*errs = append(*errs, fmt.Sprintf("config: %s is required (set it directly or configure %s)", field, pathField))
@@ -693,28 +661,15 @@ func collectRequiredText(errs *[]string, current, path, field, pathField string)
 		*errs = append(*errs, fmt.Sprintf("config: reading %s from %q: %v", field, path, err))
 		return ""
 	}
-	return strings.TrimSpace(string(data))
-}
-
-func requireString(field, value, hint string) string {
-	if strings.TrimSpace(value) == "" {
-		panic(fmt.Errorf("config: %s is required (%s)", field, hint))
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		*errs = append(*errs, fmt.Sprintf("config: %s is required (file %q is empty)", field, path))
+		return ""
 	}
-	return strings.TrimSpace(value)
-}
-
-func loadRequiredText(current, path, field, pathField string) string {
-	if strings.TrimSpace(current) != "" {
-		return current
+	if isPlaceholderSecret(trimmed) {
+		*errs = append(*errs, fmt.Sprintf("config: %s must not use a placeholder value", field))
 	}
-	if strings.TrimSpace(path) == "" {
-		panic(fmt.Errorf("config: %s is required (set it directly or configure %s)", field, pathField))
-	}
-	data, err := readConfiguredFile(path)
-	if err != nil {
-		panic(fmt.Errorf("config: reading %s from %q: %w", field, path, err))
-	}
-	return strings.TrimSpace(string(data))
+	return trimmed
 }
 
 // readConfiguredFile is the single file-read boundary for key material. The
@@ -726,19 +681,6 @@ func readConfiguredFile(path string) ([]byte, error) {
 	}
 	// #nosec G304 -- this path is operator-controlled configuration, never request input.
 	return os.ReadFile(path)
-}
-
-func validateHexKey(value string) {
-	raw, err := hex.DecodeString(strings.TrimSpace(value))
-	if err != nil || len(raw) != 32 {
-		panic(fmt.Errorf("config: security.encryption_key must be a 32-byte hex string"))
-	}
-}
-
-func validateDuration(name string, ok bool) {
-	if !ok {
-		panic(fmt.Errorf("config: %s must be greater than zero", name))
-	}
 }
 
 func checkMainnetIssues(cfg *Config) []string {
@@ -772,12 +714,6 @@ func checkMainnetIssues(cfg *Config) []string {
 	return nil
 }
 
-func validateMainnetConfig(cfg *Config) {
-	if issues := checkMainnetIssues(cfg); len(issues) > 0 {
-		panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
-	}
-}
-
 // ValidateSecrets performs pre-deploy validation that all required secrets are present.
 // Call this before any sensitive operations to fail fast with clear error messages.
 func (c *Config) ValidateSecrets() error {
@@ -797,44 +733,55 @@ func (c *Config) ValidateSecrets() error {
 	}
 
 	var missing []string
+	var invalid []string
 	for _, req := range required {
-		if strings.TrimSpace(req.value) == "" {
+		trimmed := strings.TrimSpace(req.value)
+		if trimmed == "" {
 			missing = append(missing, req.name)
+		} else if isPlaceholderSecret(trimmed) {
+			invalid = append(invalid, fmt.Sprintf("[SECURITY CRITICAL] %s must not use a placeholder value", req.name))
 		}
 	}
 
 	if len(missing) > 0 {
-		return fmt.Errorf(
+		invalid = append([]string{fmt.Sprintf(
 			"[SECURITY CRITICAL] Missing required secrets — deploy blocked: %v. See docs/ops/SECRETS-RUNBOOK.md",
 			missing,
-		)
+		)}, invalid...)
 	}
 
 	// Validate format of hex keys
-	if err := validateHexKeyFormat("Security.EncryptionKey", c.Security.EncryptionKey); err != nil {
-		return err
+	hexKeys := []struct {
+		name  string
+		value string
+	}{
+		{"Security.EncryptionKey", c.Security.EncryptionKey},
+		{"Security.WalletPepper", c.Security.WalletPepper},
+		{"Auth.AdminAPIKey", c.Auth.AdminAPIKey},
+		{"Auth.AdminAPIKeySecondary", c.Auth.AdminAPIKeySecondary},
+		{"YellowCard.WebhookSecret", c.YellowCard.WebhookSecret},
 	}
-	if err := validateHexKeyFormat("Security.WalletPepper", c.Security.WalletPepper); err != nil {
-		return err
-	}
-	if err := validateHexKeyFormat("Auth.AdminAPIKey", c.Auth.AdminAPIKey); err != nil {
-		return err
-	}
-	if c.Auth.AdminAPIKeySecondary != "" {
-		if err := validateHexKeyFormat("Auth.AdminAPIKeySecondary", c.Auth.AdminAPIKeySecondary); err != nil {
-			return err
+	for _, hk := range hexKeys {
+		if strings.TrimSpace(hk.value) != "" {
+			if err := validateHexKeyFormat(hk.name, hk.value); err != nil {
+				invalid = append(invalid, err.Error())
+			}
 		}
-	}
-	if err := validateHexKeyFormat("YellowCard.WebhookSecret", c.YellowCard.WebhookSecret); err != nil {
-		return err
 	}
 
 	// Validate JWT keys are PEM format
-	if !strings.HasPrefix(strings.TrimSpace(c.Auth.JWTPrivateKeyPEM), "-----BEGIN") {
-		return fmt.Errorf("[SECURITY CRITICAL] Auth.JWTPrivateKeyPEM must be PEM format (-----BEGIN...)")
+	if priv := strings.TrimSpace(c.Auth.JWTPrivateKeyPEM); priv != "" && !strings.HasPrefix(priv, "-----BEGIN") {
+		invalid = append(invalid, "[SECURITY CRITICAL] Auth.JWTPrivateKeyPEM must be PEM format (-----BEGIN...)")
 	}
-	if !strings.HasPrefix(strings.TrimSpace(c.Auth.JWTPublicKeyPEM), "-----BEGIN") {
-		return fmt.Errorf("[SECURITY CRITICAL] Auth.JWTPublicKeyPEM must be PEM format (-----BEGIN...)")
+	if pub := strings.TrimSpace(c.Auth.JWTPublicKeyPEM); pub != "" && !strings.HasPrefix(pub, "-----BEGIN") {
+		invalid = append(invalid, "[SECURITY CRITICAL] Auth.JWTPublicKeyPEM must be PEM format (-----BEGIN...)")
+	}
+
+	if len(invalid) == 1 {
+		return fmt.Errorf("%s", invalid[0])
+	}
+	if len(invalid) > 1 {
+		return fmt.Errorf("%s", strings.Join(invalid, "; "))
 	}
 
 	return nil
@@ -893,14 +840,12 @@ func validatePEMKey(name, pemStr string) error {
 // validateHexKeyFormat ensures a secret is 32-byte hex (64 hex chars).
 func validateHexKeyFormat(name, value string) error {
 	trimmed := strings.TrimSpace(value)
-	if !strings.HasPrefix(trimmed, "-----BEGIN") && len(trimmed) > 0 {
-		// Only validate hex keys (not PEM keys like JWT keys)
-		if !strings.ContainsAny(strings.ToLower(trimmed), "ghijklmnopqrstuvwxyz") {
-			raw, err := hex.DecodeString(trimmed)
-			if err != nil || len(raw) != 32 {
-				return fmt.Errorf("[SECURITY CRITICAL] %s must be 32-byte hex (got %d chars)", name, len(trimmed))
-			}
-		}
+	if trimmed == "" || strings.HasPrefix(trimmed, "-----BEGIN") {
+		return nil
+	}
+	raw, err := hex.DecodeString(trimmed)
+	if err != nil || len(raw) != 32 {
+		return fmt.Errorf("[SECURITY CRITICAL] %s must be 32-byte hex (got %d chars)", name, len(trimmed))
 	}
 	return nil
 }
