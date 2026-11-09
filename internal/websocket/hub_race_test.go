@@ -185,3 +185,51 @@ func TestHub_ConcurrentStatsReads(t *testing.T) {
 	assert.Equal(t, 0, c)
 	assert.GreaterOrEqual(t, r, 0)
 }
+
+// TestClient_ConcurrentStateAccess verifies that Client methods and state
+// transitions (MissedPings, ResetMissedPings, handleMessage, Close, Disconnect,
+// Kick) are safe when invoked concurrently across goroutines.
+func TestClient_ConcurrentStateAccess(t *testing.T) {
+	hub := NewHub()
+	client := NewClient(hub, nil, "user-race")
+	hub.Register(client)
+	defer hub.Unregister(client)
+
+	const workers = 20
+	const iterations = 50
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				client.missedPings.Add(1)
+				_ = client.MissedPings()
+				if i%3 == 0 {
+					client.ResetMissedPings()
+				}
+				client.handleMessage([]byte(`{"type":"ping"}`))
+				client.handleMessage([]byte(fmt.Sprintf(`{"type":"subscribe","circleId":"circle-%d"}`, id%4)))
+				client.handleMessage([]byte(fmt.Sprintf(`{"type":"unsubscribe","circleId":"circle-%d"}`, id%4)))
+
+				select {
+				case <-client.Send:
+				default:
+				}
+			}
+			switch id % 3 {
+			case 0:
+				client.Close()
+			case 1:
+				client.Disconnect()
+			case 2:
+				client.Kick(CloseCircleMembershipRevoked, ReasonCircleMembershipRevoked)
+			}
+		}(w)
+	}
+
+	wg.Wait()
+	assert.GreaterOrEqual(t, client.MissedPings(), int32(0))
+}
+
