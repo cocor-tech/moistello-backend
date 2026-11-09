@@ -202,6 +202,8 @@ func TestOnMemberJoined_UserNotFound(t *testing.T) {
 
 	err := p.onMemberJoined(context.Background(), ev)
 	assert.NoError(t, err) // graceful skip
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +235,8 @@ func TestOnContributionReceived_Success(t *testing.T) {
 
 	err := p.onContributionReceived(context.Background(), ev)
 	assert.NoError(t, err)
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 	assert.NoError(t, dbm.ExpectationsWereMet())
 }
 
@@ -265,6 +269,8 @@ func TestOnPayoutExecuted_Success(t *testing.T) {
 
 	err := p.onPayoutExecuted(context.Background(), ev)
 	assert.NoError(t, err)
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 	assert.NoError(t, dbm.ExpectationsWereMet())
 }
 
@@ -292,6 +298,8 @@ func TestOnLateReported_Success(t *testing.T) {
 
 	err := p.onLateReported(context.Background(), ev)
 	assert.NoError(t, err)
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +647,8 @@ func TestOnContributionReceived_Reprocessed_IsNoOp(t *testing.T) {
 
 	assert.NoError(t, p.onContributionReceived(context.Background(), ev))
 	assert.Zero(t, c.TotalContributions, "aggregate must not change on replay")
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 	assert.NoError(t, dbm.ExpectationsWereMet(), "the circle row must never be touched on a replay")
 }
 
@@ -668,6 +678,8 @@ func TestOnPayoutExecuted_Reprocessed_IsNoOp(t *testing.T) {
 
 	assert.NoError(t, p.onPayoutExecuted(context.Background(), ev))
 	assert.Equal(t, 2, c.CurrentRound, "round must not move on replay")
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 	assert.NoError(t, dbm.ExpectationsWereMet(), "the circle row must never be touched on a replay")
 }
 
@@ -689,6 +701,8 @@ func TestOnMemberJoined_Reprocessed_IsNoOp(t *testing.T) {
 	})
 
 	assert.NoError(t, p.onMemberJoined(context.Background(), ev))
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 func TestEventRecorded(t *testing.T) {
