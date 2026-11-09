@@ -3,8 +3,11 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -14,8 +17,9 @@ import (
 )
 
 const (
-	defaultIdempotencyTTL = 24 * time.Hour
-	idempotencyProcessing = "processing"
+	defaultIdempotencyTTL   = 24 * time.Hour
+	idempotencyProcessing   = "processing"
+	maxIdempotencyKeyLength = 255
 )
 
 // idempotencyRecord is what gets stored in Redis once the original request
@@ -25,6 +29,30 @@ type idempotencyRecord struct {
 	StatusCode  int    `json:"statusCode"`
 	Body        []byte `json:"body"`
 	ContentType string `json:"contentType"`
+	RequestHash string `json:"requestHash,omitempty"`
+}
+
+func isMutatingMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func hashRequestBody(c *gin.Context) (string, error) {
+	if c.Request == nil || c.Request.Body == nil {
+		sum := sha256.Sum256(nil)
+		return hex.EncodeToString(sum[:]), nil
+	}
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return "", err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	sum := sha256.Sum256(bodyBytes)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // bodyCapture tees everything written to the real gin.ResponseWriter into an
@@ -59,10 +87,32 @@ func (w *bodyCapture) WriteString(s string) (int, error) {
 // AuthMiddleware so the user ID is available on the context.
 func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request != nil && !isMutatingMethod(c.Request.Method) {
+			c.Next()
+			return
+		}
+
 		key := IdempotencyKeyHeader(c)
 
 		if key == "" {
 			c.Next()
+			return
+		}
+
+		if len(key) > maxIdempotencyKeyLength {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "idempotency key exceeds maximum length of 255 characters",
+			})
+			return
+		}
+
+		reqHash, err := hashRequestBody(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "failed to read request body",
+			})
 			return
 		}
 
@@ -87,7 +137,7 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		}
 
 		if !set {
-			if !tryReplay(c, ctx, redisClient, redisKey) {
+			if !tryReplay(c, ctx, redisClient, redisKey, reqHash) {
 				c.AbortWithStatusJSON(http.StatusConflict, gin.H{
 					"success": false,
 					"error":   "idempotency key already used or request in progress",
@@ -99,12 +149,29 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		capture := &bodyCapture{ResponseWriter: c.Writer, body: &bytes.Buffer{}}
 		c.Writer = capture
 
+		completed := false
+		defer func() {
+			if !completed {
+				redisClient.Del(ctx, redisKey)
+			}
+		}()
+
 		c.Next()
+		completed = true
+
+		statusCode := c.Writer.Status()
+		if statusCode >= http.StatusInternalServerError {
+			// Do not cache transient 5xx responses so the caller can retry
+			// with the same Idempotency-Key.
+			redisClient.Del(ctx, redisKey)
+			return
+		}
 
 		record := idempotencyRecord{
-			StatusCode:  c.Writer.Status(),
+			StatusCode:  statusCode,
 			Body:        capture.body.Bytes(),
 			ContentType: c.Writer.Header().Get("Content-Type"),
+			RequestHash: reqHash,
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {
@@ -121,8 +188,9 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 // "processing" placeholder (or the lookup fails/races with expiry), the
 // original request is still in flight or indeterminate and the caller
 // should get 409. If it holds a cached response, that response is written
-// back verbatim and true is returned.
-func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, redisKey string) bool {
+// back verbatim and true is returned. If the cached record has a different
+// request body hash, 422 Unprocessable Entity is written and true is returned.
+func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, redisKey, reqHash string) bool {
 	cached, err := redisClient.Get(ctx, redisKey).Result()
 	if err != nil || cached == idempotencyProcessing {
 		return false
@@ -131,6 +199,14 @@ func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, r
 	var record idempotencyRecord
 	if err := json.Unmarshal([]byte(cached), &record); err != nil {
 		return false
+	}
+
+	if record.RequestHash != "" && reqHash != "" && record.RequestHash != reqHash {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"success": false,
+			"error":   "idempotency key already used with different request payload",
+		})
+		return true
 	}
 
 	c.Header("Idempotency-Replayed", "true")
