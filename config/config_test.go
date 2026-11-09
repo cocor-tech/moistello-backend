@@ -122,3 +122,16 @@ func TestValidateOffline_Succeeds(t *testing.T) {
 	err = cfg.ValidateOffline()
 	require.NoError(t, err)
 }
+
+func TestLoad_RejectsInvalidHexKeyAndMainnetCutoverDefaults(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("ENCRYPTION_KEY", "not-a-valid-32-byte-hex-key")
+	t.Setenv("MOISTELLO_STELLAR_NETWORK", "mainnet")
+
+	cfg, err := config.Load("")
+	require.Error(t, err)
+	require.Nil(t, cfg)
+	require.Contains(t, err.Error(), "config: security.encryption_key must be a 32-byte hex string")
+	require.Contains(t, err.Error(), "mainnet cutover guard")
+}
+
