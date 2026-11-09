@@ -337,3 +337,34 @@ func TestAuthService_RotateSigningKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, userID.String(), claims1AfterRotate.UserID)
 }
+
+func TestAuthService_RotateSessionOnPrivilegeChange_PreventsSessionFixation(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	privPEM, pubPEM := generateTestRSAKeys(t)
+	svc, err := auth.NewService(rdb, 5*time.Minute, 15*time.Minute, 7*24*time.Hour, privPEM, pubPEM)
+	require.NoError(t, err)
+
+	userID := uuid.New()
+	ctx := context.Background()
+
+	initialPair, err := svc.CreateSession(ctx, userID, "user", 15*time.Minute, "browser")
+	require.NoError(t, err)
+
+	rotatedPair, err := svc.RotateSessionOnPrivilegeChange(ctx, userID, "admin", 15*time.Minute, "browser")
+	require.NoError(t, err)
+	assert.NotEqual(t, initialPair.AccessToken, rotatedPair.AccessToken)
+	assert.NotEqual(t, initialPair.RefreshToken, rotatedPair.RefreshToken)
+	assert.NotEqual(t, initialPair.CSRFToken, rotatedPair.CSRFToken)
+
+	// Old refresh token must be invalid after privilege change.
+	_, err = svc.RefreshToken(ctx, initialPair.RefreshToken)
+	assert.Error(t, err)
+
+	// Rotated access token carries the new role.
+	claims, err := svc.ValidateJWT(rotatedPair.AccessToken)
+	require.NoError(t, err)
+	assert.Equal(t, "admin", claims.Role)
+}

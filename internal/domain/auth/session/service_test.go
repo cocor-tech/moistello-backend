@@ -408,6 +408,55 @@ func TestServiceRevokeAll_ReportsRedisFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "listing sessions for revoke")
 }
 
+func TestServiceCreate_RevokesPreExistingSessionsWhenRoleChanges(t *testing.T) {
+	svc, mr, _ := newTestService(t)
+	uid := uuid.New()
+
+	userPhone := mustCreate(t, svc, uid, "phone")
+	userLaptop := mustCreate(t, svc, uid, "laptop")
+	assert.True(t, mr.Exists(testSessionKey(userPhone.RefreshToken)))
+	assert.True(t, mr.Exists(testSessionKey(userLaptop.RefreshToken)))
+
+	// Promoting the user to "admin" must invalidate all pre-existing "user"
+	// sessions to prevent session fixation across privilege changes (#459).
+	adminPair, err := svc.Create(t.Context(), uid, "admin", testAccessTTL, "desktop")
+	require.NoError(t, err)
+	assert.NotEqual(t, userPhone.RefreshToken, adminPair.RefreshToken)
+	assert.NotEqual(t, userLaptop.RefreshToken, adminPair.RefreshToken)
+
+	assert.False(t, mr.Exists(testSessionKey(userPhone.RefreshToken)), "pre-promotion session must be revoked")
+	assert.False(t, mr.Exists(testSessionKey(userLaptop.RefreshToken)), "pre-promotion session must be revoked")
+	assert.True(t, mr.Exists(testSessionKey(adminPair.RefreshToken)), "new admin session must be active")
+
+	members, err := mr.SMembers(testIndexKey(uid))
+	require.NoError(t, err)
+	assert.Equal(t, []string{sha256Hash(adminPair.RefreshToken)}, members)
+}
+
+func TestServiceRotateOnPrivilegeChange_InvalidatesOldSessionsAndMintsNewSession(t *testing.T) {
+	svc, mr, jwt := newTestService(t)
+	uid := uuid.New()
+
+	oldSession := mustCreate(t, svc, uid, "phone")
+	require.True(t, mr.Exists(testSessionKey(oldSession.RefreshToken)))
+
+	rotated, err := svc.RotateOnPrivilegeChange(t.Context(), uid, "admin", testAccessTTL, "phone")
+	require.NoError(t, err)
+	assert.NotEqual(t, oldSession.RefreshToken, rotated.RefreshToken)
+	assert.NotEqual(t, oldSession.AccessToken, rotated.AccessToken)
+	assert.NotEqual(t, oldSession.CSRFToken, rotated.CSRFToken)
+
+	assert.False(t, mr.Exists(testSessionKey(oldSession.RefreshToken)), "old session must be deleted on privilege change")
+	assert.True(t, mr.Exists(testSessionKey(rotated.RefreshToken)), "rotated session must exist")
+	require.Len(t, jwt.calls, 2)
+	assert.Equal(t, "admin", jwt.calls[1].role)
+
+	// Attempting to refresh with the old pre-privilege-change refresh token must fail.
+	replayed, err := svc.Refresh(t.Context(), oldSession.RefreshToken, testAccessTTL)
+	assert.Nil(t, replayed)
+	assert.ErrorIs(t, err, ErrTokenExpired)
+}
+
 // ── GenerateJWT ──
 
 func TestServiceGenerateJWT_DelegatesToTheJWTService(t *testing.T) {

@@ -48,6 +48,14 @@ func (m *mockAuthService) CreateSession(ctx context.Context, userID uuid.UUID, r
 	return args.Get(0).(*auth.TokenPair), args.Error(1)
 }
 
+func (m *mockAuthService) RotateSessionOnPrivilegeChange(ctx context.Context, userID uuid.UUID, newRole string, sessionTTL time.Duration, deviceInfo string) (*auth.TokenPair, error) {
+	args := m.Called(ctx, userID, newRole, sessionTTL, deviceInfo)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*auth.TokenPair), args.Error(1)
+}
+
 func (m *mockAuthService) GenerateJWTWithTTL(userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error) {
 	args := m.Called(userID, walletAddress, role, ttl)
 	return args.String(0), args.Error(1)
@@ -287,4 +295,57 @@ func TestAuthHandler_Logout(t *testing.T) {
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), `"success":true`)
+}
+
+func TestAuthHandler_ChangePassword_RevokesAllSessionsAndRotatesTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockAuthSvc := new(mockAuthService)
+	mockUserRepo := new(userMocks.Repository)
+	userSvc := user.NewService(mockUserRepo, nil)
+
+	uid := uuid.New()
+	oldHash, err := auth.HashPassword("oldpassword123")
+	assert.NoError(t, err)
+
+	u := &user.User{
+		ID:            uid,
+		WalletAddress: "GABC...",
+		Role:          user.RoleUser,
+	}
+	u.PasswordHash.String = oldHash
+	u.PasswordHash.Valid = true
+
+	mockUserRepo.On("FindByID", mock.Anything, uid).Return(u, nil)
+	mockUserRepo.On("Update", mock.Anything, mock.AnythingOfType("*user.User")).Return(nil)
+	mockAuthSvc.On("RevokeAllSessions", mock.Anything, uid.String(), "").Return(nil)
+	mockAuthSvc.On("CreateSession", mock.Anything, uid, "user", 240*time.Minute, mock.AnythingOfType("string")).Return(&auth.TokenPair{
+		AccessToken:  "rotated-access-token",
+		RefreshToken: "rotated-refresh-token",
+		CSRFToken:    "rotated-csrf-token",
+	}, nil)
+
+	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", uid.String())
+		c.Next()
+	})
+	r.POST("/auth/password/change", h.ChangePassword)
+
+	body, _ := json.Marshal(map[string]string{
+		"oldPassword": "oldpassword123",
+		"newPassword": "newpassword456",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/auth/password/change", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "rotated-access-token")
+	assert.Contains(t, w.Body.String(), "rotated-refresh-token")
+	assert.Contains(t, w.Body.String(), "rotated-csrf-token")
+	mockAuthSvc.AssertExpectations(t)
+	mockUserRepo.AssertExpectations(t)
 }

@@ -28,6 +28,7 @@ type Service interface {
 	GenerateNonce(ctx context.Context, walletAddress string) (*Nonce, error)
 	VerifySignature(ctx context.Context, walletAddress, signature string) (bool, error)
 	CreateSession(ctx context.Context, userID uuid.UUID, role string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error)
+	RotateSessionOnPrivilegeChange(ctx context.Context, userID uuid.UUID, newRole string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error)
 	ValidateSession(ctx context.Context, refreshToken string) (*uuid.UUID, error)
 	GenerateJWT(userID uuid.UUID, walletAddress, role string) (string, error)
 	GenerateJWTWithTTL(userID uuid.UUID, walletAddress, role string, ttl time.Duration) (string, error)
@@ -120,6 +121,18 @@ func (s *authService) VerifySignature(ctx context.Context, walletAddress, signat
 
 func (s *authService) CreateSession(ctx context.Context, userID uuid.UUID, role string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error) {
 	pair, err := s.sessionService.Create(ctx, userID, role, sessionTTL, deviceInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &TokenPair{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		CSRFToken:    pair.CSRFToken,
+	}, nil
+}
+
+func (s *authService) RotateSessionOnPrivilegeChange(ctx context.Context, userID uuid.UUID, newRole string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error) {
+	pair, err := s.sessionService.RotateOnPrivilegeChange(ctx, userID, newRole, sessionTTL, deviceInfo)
 	if err != nil {
 		return nil, err
 	}

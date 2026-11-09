@@ -17,6 +17,7 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, userID uuid.UUID, role string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error)
+	RotateOnPrivilegeChange(ctx context.Context, userID uuid.UUID, newRole string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error)
 	Validate(ctx context.Context, refreshToken string) (*uuid.UUID, error)
 	Refresh(ctx context.Context, refreshToken string, accessTTL time.Duration) (*TokenPair, error)
 	List(ctx context.Context, userID string, currentTokenHash string) ([]SessionInfo, error)
@@ -85,7 +86,32 @@ func (s *service) Create(ctx context.Context, userID uuid.UUID, role string, ses
 	csrfKey := fmt.Sprintf("csrf:%x", sha256.Sum256([]byte(accessToken)))
 	userSessionsKey := fmt.Sprintf("user:sessions:%s", userIDStr)
 
+	// Prevent session fixation across privilege changes (#459): if any existing
+	// session for this user carries a different role, revoke all pre-existing
+	// sessions before registering the new session.
+	var staleHashes []string
+	if existingHashes, err := s.redis.SMembers(ctx, userSessionsKey).Result(); err == nil && len(existingHashes) > 0 {
+		roleChanged := false
+		for _, h := range existingHashes {
+			if data, err := s.redis.Get(ctx, fmt.Sprintf("session:%s", h)).Result(); err == nil {
+				if SessionRole(data) != role {
+					roleChanged = true
+					break
+				}
+			}
+		}
+		if roleChanged {
+			staleHashes = existingHashes
+		}
+	}
+
 	pipe := s.redis.TxPipeline()
+	for _, h := range staleHashes {
+		pipe.Del(ctx, fmt.Sprintf("session:%s", h))
+	}
+	if len(staleHashes) > 0 {
+		pipe.Del(ctx, userSessionsKey)
+	}
 	pipe.Set(ctx, sessionKey, sessionData, s.refreshTTL)
 	pipe.Set(ctx, csrfKey, csrfToken, sessionTTL)
 	pipe.SAdd(ctx, userSessionsKey, tokenHash)
@@ -103,6 +129,16 @@ func (s *service) Create(ctx context.Context, userID uuid.UUID, role string, ses
 		RefreshToken: refreshToken,
 		CSRFToken:    csrfToken,
 	}, nil
+}
+
+// RotateOnPrivilegeChange invalidates every pre-existing session for userID and
+// issues a fresh session bound to newRole so that no pre-transition session ID
+// or refresh token can be reused after a privilege change (#459).
+func (s *service) RotateOnPrivilegeChange(ctx context.Context, userID uuid.UUID, newRole string, sessionTTL time.Duration, deviceInfo string) (*TokenPair, error) {
+	if err := s.RevokeAll(ctx, userID.String(), ""); err != nil {
+		return nil, fmt.Errorf("revoking existing sessions on privilege change: %w", err)
+	}
+	return s.Create(ctx, userID, newRole, sessionTTL, deviceInfo)
 }
 
 func (s *service) Validate(ctx context.Context, refreshToken string) (*uuid.UUID, error) {

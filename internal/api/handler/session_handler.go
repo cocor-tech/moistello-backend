@@ -208,16 +208,29 @@ func (h *SessionHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	currentHash := ""
-	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+	ctx := c.Request.Context()
+	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") && h.redisClient != nil {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		currentHash = fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+		if expiry, err := middleware.ExtractTokenExpiry(token); err == nil {
+			middleware.BlocklistToken(ctx, h.redisClient, token, expiry)
+		}
+		tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+		h.redisClient.Del(ctx, "csrf:"+tokenHash)
 	}
-	_ = h.authService.RevokeAllSessions(c.Request.Context(), userID, currentHash)
+
+	// Invalidate all existing sessions and issue a rotated session to prevent
+	// session fixation across credential/privilege transitions (#459).
+	_ = h.authService.RevokeAllSessions(ctx, userID, "")
+	resp := gin.H{"success": true, "message": "password changed and other sessions revoked"}
+	if pair, err := h.authService.CreateSession(ctx, u.ID, string(u.Role), sessionTTLFromUser(u), deviceInfoFromContext(c)); err == nil && pair != nil {
+		resp["token"] = pair.AccessToken
+		resp["refreshToken"] = pair.RefreshToken
+		resp["csrfToken"] = pair.CSRFToken
+	}
 
 	log.Info().Str("userID", userID).Str("event", "auth.password_changed.sessions_revoked").Msg("password changed, all other sessions invalidated")
 
-	response.OK(c, gin.H{"success": true, "message": "password changed and other sessions revoked"})
+	response.OK(c, resp)
 }
 
 func sha256HashForLogout(s string) string {
