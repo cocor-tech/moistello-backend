@@ -1,0 +1,7 @@
+DROP INDEX IF EXISTS idx_audit_log_action_created_covering;
+DROP INDEX IF EXISTS idx_audit_log_resource_type_created_covering;
+DROP INDEX IF EXISTS idx_audit_log_actor_created_covering;
+DROP INDEX IF EXISTS idx_audit_log_created_id_covering;
+DROP INDEX IF EXISTS idx_notifications_user_search_covering;
+DROP INDEX IF EXISTS idx_notifications_user_unread_created_covering;
+DROP INDEX IF EXISTS idx_notifications_user_created_covering;

@@ -111,3 +111,29 @@ func TestMigrationsFS_AllFilesReadableAndNonEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestMigrationsFS_NotificationAndAuditCoveringIndexes(t *testing.T) {
+	upBytes, err := MigrationsFS.ReadFile("migrations/052_add_notification_and_audit_covering_indexes.up.sql")
+	require.NoError(t, err)
+	upSQL := string(upBytes)
+
+	downBytes, err := MigrationsFS.ReadFile("migrations/052_add_notification_and_audit_covering_indexes.down.sql")
+	require.NoError(t, err)
+	downSQL := string(downBytes)
+
+	expectedIndexes := []string{
+		"idx_notifications_user_created_covering",
+		"idx_notifications_user_unread_created_covering",
+		"idx_notifications_user_search_covering",
+		"idx_audit_log_created_id_covering",
+		"idx_audit_log_actor_created_covering",
+		"idx_audit_log_resource_type_created_covering",
+		"idx_audit_log_action_created_covering",
+	}
+
+	for _, idx := range expectedIndexes {
+		assert.Contains(t, upSQL, "CREATE INDEX IF NOT EXISTS "+idx, "up migration must create %s", idx)
+		assert.Contains(t, downSQL, "DROP INDEX IF EXISTS "+idx, "down migration must drop %s", idx)
+	}
+	assert.Contains(t, upSQL, "INCLUDE (")
+}
