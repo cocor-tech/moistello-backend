@@ -2,7 +2,6 @@
 /target/
 **/*.go.bk
 *.pem
-.env
 !config/config.yaml
 config/keys/
 node_modules/
@@ -11,3 +10,4 @@ node_modules/
 /tmp/
 *.prod.yml
 /indexer
+config.bat
