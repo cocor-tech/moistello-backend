@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/moistello/backend/internal/api/handler"
+	"github.com/moistello/backend/internal/domain/auth"
 	totpdomain "github.com/moistello/backend/internal/domain/totp"
 	"github.com/moistello/backend/internal/domain/user"
 	userMocks "github.com/moistello/backend/internal/domain/user/mocks"
@@ -35,6 +36,10 @@ type totpFixture struct {
 }
 
 func newTOTPFixture(t *testing.T) *totpFixture {
+	return newTOTPFixtureWithAuth(t, nil)
+}
+
+func newTOTPFixtureWithAuth(t *testing.T, authSvc auth.Service) *totpFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	email := "jane@example.com"
@@ -43,7 +48,7 @@ func newTOTPFixture(t *testing.T) *totpFixture {
 	repo.On("FindByID", mock.Anything, u.ID).Return(u, nil)
 	repo.On("Update", mock.Anything, mock.AnythingOfType("*user.User")).Return(nil)
 
-	h := handler.NewAuthHandler(nil, user.NewService(repo, nil), nil, totpdomain.NewService(), nil, nil, nil, repo)
+	h := handler.NewAuthHandler(authSvc, user.NewService(repo, nil), nil, totpdomain.NewService(), nil, nil, nil, repo)
 	r := gin.New()
 	r.Use(func(c *gin.Context) { c.Set("userID", u.ID.String()); c.Next() })
 	r.POST("/auth/totp/enroll", h.EnrollTOTP)
@@ -246,4 +251,28 @@ func TestTOTP_RequiresAuthenticatedUser(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "/auth/totp/enroll", nil)
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// #459: turning MFA on or off changes the account's assurance level, so the
+// session that did it is replaced rather than carried across the change.
+func TestTOTP_EnableAndDisable_RotateTheSession(t *testing.T) {
+	authSvc := new(mockAuthService)
+	f := newTOTPFixtureWithAuth(t, authSvc)
+	authSvc.On("RevokeAllSessions", mock.Anything, f.user.ID.String(), "").Return(nil).Twice()
+	authSvc.On("CreateSession", mock.Anything, f.user.ID, "user", mock.Anything, mock.Anything).
+		Return(&auth.TokenPair{AccessToken: "fresh-access", RefreshToken: "fresh-refresh", CSRFToken: "fresh-csrf"}, nil).Twice()
+
+	secret := f.enroll()
+	code, data := f.post("/auth/totp/enable", gin.H{"code": currentCode(t, secret)})
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "fresh-access", data["token"])
+	assert.Equal(t, "fresh-refresh", data["refreshToken"])
+	assert.Equal(t, "fresh-csrf", data["csrfToken"])
+	recovery := data["recoveryCodes"].([]any)
+
+	code, data = f.post("/auth/totp/disable", gin.H{"recoveryCode": recovery[0]})
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "fresh-access", data["token"])
+
+	authSvc.AssertExpectations(t)
 }

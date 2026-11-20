@@ -52,6 +52,10 @@ func (h *SessionHandler) Refresh(c *gin.Context) {
 		response.Unauthorized(c, "invalid refresh token")
 		return
 	}
+	if !h.sessionMatchesCurrentRole(c, tokenPair) {
+		response.Unauthorized(c, "session was invalidated by an account change; sign in again")
+		return
+	}
 	response.OK(c, gin.H{"token": tokenPair.AccessToken, "refreshToken": tokenPair.RefreshToken, "csrfToken": tokenPair.CSRFToken})
 }
 
@@ -156,14 +160,14 @@ func (h *SessionHandler) RevokeSessionByID(c *gin.Context) {
 	response.OK(c, gin.H{"success": true})
 }
 
-// @Summary Change password and revoke other sessions
-// @Description Updates user password and revokes all other active sessions for account takeover defense.
+// @Summary Change password and rotate the session
+// @Description Updates the password, revokes every session (including the calling one) and returns a replacement token pair, so no session from before the change survives it.
 // @Tags Authentication
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param body body object true "Change password payload"
-// @Success 200 {object} response.Envelope{data=object{success=bool}}
+// @Success 200 {object} response.Envelope{data=object{success=bool,token=string,refreshToken=string,csrfToken=string}}
 // @Failure 400 {object} response.Envelope
 // @Failure 401 {object} response.Envelope
 // @Router /auth/password/change [post]
@@ -208,16 +212,44 @@ func (h *SessionHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	currentHash := ""
-	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		currentHash = fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+	resp := gin.H{"success": true, "message": "password changed; every session was replaced"}
+	newSessionRotator(h.authService, h.redisClient).rotate(c, u, resp)
+
+	log.Info().Str("userID", userID).Str("event", "auth.password_changed.sessions_revoked").Msg("password changed, all sessions invalidated")
+
+	response.OK(c, resp)
+}
+
+// sessionMatchesCurrentRole reports whether a freshly refreshed session still
+// carries the user's current role. Sessions copy the role they were created
+// with, so a promotion or demotion would otherwise never reach a session
+// minted before it (#459). On a mismatch every session is revoked so the user
+// signs in again at the new privilege level.
+func (h *SessionHandler) sessionMatchesCurrentRole(c *gin.Context, pair *auth.TokenPair) bool {
+	claims, err := h.authService.ValidateJWT(pair.AccessToken)
+	if err != nil {
+		return false
 	}
-	_ = h.authService.RevokeAllSessions(c.Request.Context(), userID, currentHash)
+	u, err := h.userService.GetByID(c.Request.Context(), claims.UserID)
+	if err != nil {
+		return false
+	}
+	if claims.Role == currentRole(u) {
+		return true
+	}
 
-	log.Info().Str("userID", userID).Str("event", "auth.password_changed.sessions_revoked").Msg("password changed, all other sessions invalidated")
-
-	response.OK(c, gin.H{"success": true, "message": "password changed and other sessions revoked"})
+	ctx := c.Request.Context()
+	if err := h.authService.RevokeAllSessions(ctx, claims.UserID, ""); err != nil {
+		log.Error().Err(err).Str("userID", claims.UserID).Msg("role change: failed to revoke existing sessions")
+	}
+	if h.redisClient != nil {
+		if expiry, err := middleware.ExtractTokenExpiry(pair.AccessToken); err == nil {
+			middleware.BlocklistToken(ctx, h.redisClient, pair.AccessToken, expiry)
+		}
+	}
+	log.Warn().Str("userID", claims.UserID).Str("sessionRole", claims.Role).Str("currentRole", currentRole(u)).
+		Str("security_event", "session.role_mismatch").Msg("refresh refused: session predates a role change")
+	return false
 }
 
 func sha256HashForLogout(s string) string {

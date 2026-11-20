@@ -39,11 +39,13 @@ func NewAuthHandler(authSvc auth.Service, userSvc user.Service, walletSvc wallet
 	if emailSvc != nil {
 		verificationSvc.WithEmailSender(func(address, code string) error { return emailSvc.SendOTP(context.Background(), address, code) }, nil)
 	}
+	totpH := NewTOTPEnrollmentHandler(userSvc, userRepo, totpSvc)
+	totpH.sessions = newSessionRotator(authSvc, redisClient)
 	return &AuthHandler{
 		WalletAuthHandler:     NewWalletAuthHandler(authSvc, userSvc),
 		SessionHandler:        NewSessionHandler(authSvc, userSvc, redisClient),
 		RegistrationHandler:   NewRegistrationHandler(authSvc, userRepo, verificationSvc, walletSvc),
-		TOTPEnrollmentHandler: NewTOTPEnrollmentHandler(userSvc, userRepo, totpSvc),
+		TOTPEnrollmentHandler: totpH,
 		EmailChangeHandler:    NewEmailChangeHandler(userSvc, userRepo, verificationSvc, redisClient),
 	}
 }
