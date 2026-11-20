@@ -3,8 +3,12 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +20,10 @@ import (
 const (
 	defaultIdempotencyTTL = 24 * time.Hour
 	idempotencyProcessing = "processing"
+
+	// MaxIdempotencyKeyLength bounds client-supplied keys, which are embedded
+	// in the Redis key.
+	MaxIdempotencyKeyLength = 255
 )
 
 // idempotencyRecord is what gets stored in Redis once the original request
@@ -25,6 +33,9 @@ type idempotencyRecord struct {
 	StatusCode  int    `json:"statusCode"`
 	Body        []byte `json:"body"`
 	ContentType string `json:"contentType"`
+	// Fingerprint identifies the request the key was first used for, so reusing
+	// the key for a different request is refused instead of replayed.
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // bodyCapture tees everything written to the real gin.ResponseWriter into an
@@ -45,14 +56,21 @@ func (w *bodyCapture) WriteString(s string) (int, error) {
 }
 
 // IdempotencyMiddleware prevents race conditions and request replay by checking
-// for Idempotency-Key or X-Idempotency-Key request headers. It uses an atomic
-// Redis SET NX operation to claim the key so only one concurrent request with
-// a given key actually runs the handler — every other concurrent request with
-// the same key gets 409 Conflict while the original is still in flight.
+// for Idempotency-Key or X-Idempotency-Key request headers on mutating requests
+// (POST, PUT, PATCH, DELETE). It uses an atomic Redis SET NX operation to claim
+// the key so only one concurrent request with a given key actually runs the
+// handler — every other concurrent request with the same key gets 409 Conflict
+// while the original is still in flight.
 //
 // Once the original request completes, its response is cached in Redis. A
-// later (non-concurrent) request that reuses the same key gets that cached
-// response replayed verbatim instead of re-running the handler.
+// later request that reuses the same key gets that cached response replayed
+// verbatim instead of re-running the handler — provided it is the same
+// request. Reusing a key with a different target or body gets 422 (#462):
+// replaying the first response would tell the client an operation it never
+// ran had succeeded.
+//
+// Responses that mean the request was turned away before it ran (429, 503) are
+// not cached, so the client's retry with the same key is executed.
 //
 // Keys are scoped per authenticated user (via GetUserID) so two different
 // users can never collide on the same idempotency key. Must run after
@@ -61,8 +79,31 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := IdempotencyKeyHeader(c)
 
-		if key == "" {
+		// Reads are idempotent by definition; caching them would serve stale data.
+		if key == "" || !methodCarriesBody(c.Request.Method) {
 			c.Next()
+			return
+		}
+		if len(key) > MaxIdempotencyKeyLength {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Idempotency-Key must be at most %d characters", MaxIdempotencyKeyLength),
+			})
+			return
+		}
+
+		fingerprint, err := requestFingerprint(c)
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				// BodyLimit writes its typed 413 once this middleware returns.
+				c.Abort()
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "could not read request body",
+			})
 			return
 		}
 
@@ -87,12 +128,7 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 		}
 
 		if !set {
-			if !tryReplay(c, ctx, redisClient, redisKey) {
-				c.AbortWithStatusJSON(http.StatusConflict, gin.H{
-					"success": false,
-					"error":   "idempotency key already used or request in progress",
-				})
-			}
+			replayOrReject(c, ctx, redisClient, redisKey, fingerprint)
 			return
 		}
 
@@ -101,10 +137,16 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 
 		c.Next()
 
+		if status := c.Writer.Status(); status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
+			redisClient.Del(ctx, redisKey)
+			return
+		}
+
 		record := idempotencyRecord{
 			StatusCode:  c.Writer.Status(),
 			Body:        capture.body.Bytes(),
 			ContentType: c.Writer.Header().Get("Content-Type"),
+			Fingerprint: fingerprint,
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {
@@ -117,20 +159,47 @@ func IdempotencyMiddleware(redisClient *redis.Client) gin.HandlerFunc {
 	}
 }
 
-// tryReplay looks up an existing idempotency key. If it still holds the
-// "processing" placeholder (or the lookup fails/races with expiry), the
-// original request is still in flight or indeterminate and the caller
-// should get 409. If it holds a cached response, that response is written
-// back verbatim and true is returned.
-func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, redisKey string) bool {
+// requestFingerprint hashes the concrete request target and body, then puts the
+// body back for the handler. The target matters because the Redis key carries
+// only the route pattern: one key sent to two different circles is two
+// different requests.
+func requestFingerprint(c *gin.Context) (string, error) {
+	var body []byte
+	if c.Request.Body != nil {
+		b, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			return "", err
+		}
+		body = b
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	target := append([]byte(c.Request.URL.RequestURI()), 0)
+	sum := sha256.Sum256(append(target, body...))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// replayOrReject answers a request whose key is already claimed: 409 while the
+// original is still in flight (or its record is unreadable), 422 when the key
+// was first used for a different request, otherwise the original response
+// replayed verbatim.
+func replayOrReject(c *gin.Context, ctx context.Context, redisClient *redis.Client, redisKey, fingerprint string) {
+	var record idempotencyRecord
 	cached, err := redisClient.Get(ctx, redisKey).Result()
-	if err != nil || cached == idempotencyProcessing {
-		return false
+	if err != nil || cached == idempotencyProcessing || json.Unmarshal([]byte(cached), &record) != nil {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"success": false,
+			"error":   "idempotency key already used or request in progress",
+		})
+		return
 	}
 
-	var record idempotencyRecord
-	if err := json.Unmarshal([]byte(cached), &record); err != nil {
-		return false
+	// Records written before fingerprinting carry none; replay them as before.
+	if record.Fingerprint != "" && record.Fingerprint != fingerprint {
+		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
+			"success": false,
+			"error":   "Idempotency-Key was already used for a different request",
+		})
+		return
 	}
 
 	c.Header("Idempotency-Replayed", "true")
@@ -140,7 +209,6 @@ func tryReplay(c *gin.Context, ctx context.Context, redisClient *redis.Client, r
 	}
 	c.Data(record.StatusCode, contentType, record.Body)
 	c.Abort()
-	return true
 }
 
 // IdempotencyKeyHeader returns the request's idempotency key (Idempotency-Key,
