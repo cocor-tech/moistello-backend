@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,8 +24,9 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer.
-	maxMessageSize = 4096
+	// DefaultMaxMessageSize is the largest inbound frame a peer may send unless
+	// server.websocket_max_message_size overrides it.
+	DefaultMaxMessageSize = 4096
 
 	// Send channel buffer size.
 	sendBufferSize = 256
@@ -50,18 +52,28 @@ type Client struct {
 	// frame on shutdown; zero means pick a default jittered delay.
 	reconnectAfter atomic.Int64
 	subscribeLimit tokenBucket
+	maxMessageSize int64
 }
 
 // NewClient creates a new Client bound to the given Hub and WebSocket
 // connection. The userID identifies the authenticated user.
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 	return &Client{
-		ID:      uuid.New().String(),
-		UserID:  userID,
-		Hub:     hub,
-		Conn:    conn,
-		Send:    make(chan []byte, sendBufferSize),
-		closing: make(chan struct{}),
+		ID:             uuid.New().String(),
+		UserID:         userID,
+		Hub:            hub,
+		Conn:           conn,
+		Send:           make(chan []byte, sendBufferSize),
+		closing:        make(chan struct{}),
+		maxMessageSize: DefaultMaxMessageSize,
+	}
+}
+
+// SetMaxMessageSize sets the per-connection inbound frame limit in bytes. It
+// must be called before ReadPump starts; non-positive values are ignored.
+func (c *Client) SetMaxMessageSize(size int64) {
+	if size > 0 {
+		c.maxMessageSize = size
 	}
 }
 
@@ -123,13 +135,16 @@ func (c *Client) Kick(code int, reason string) {
 // The application runs ReadPump in a per-connection goroutine. It ensures
 // there is at most one reader on a connection by executing all reads from
 // this goroutine. When the connection is closed, the client is unregistered.
+//
+// A frame larger than the connection's limit (#461) makes gorilla close the
+// socket with 1009 (message too big) before the payload is buffered.
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Hub.Unregister(c)
 		c.logError("close after read", c.Conn.Close())
 	}()
 
-	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadLimit(c.maxMessageSize)
 	if err := c.Conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
 		log.Warn().Err(err).Str("clientID", c.ID).Msg("failed to set websocket read deadline")
 		return
@@ -144,7 +159,11 @@ func (c *Client) ReadPump() {
 	for {
 		_, msgBytes, err := c.Conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(
+			if errors.Is(err, websocket.ErrReadLimit) {
+				metrics.WSOversizedMessagesTotal.Inc()
+				log.Warn().Str("clientID", c.ID).Str("userID", c.UserID).Int64("limitBytes", c.maxMessageSize).
+					Msg("closing websocket: inbound message exceeds per-connection size limit")
+			} else if websocket.IsUnexpectedCloseError(
 				err,
 				websocket.CloseGoingAway,
 				websocket.CloseAbnormalClosure,

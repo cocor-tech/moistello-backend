@@ -41,8 +41,9 @@ func (a *circleSubscriptionAuthorizer) CanSubscribe(ctx context.Context, circleI
 // WebSocketHandler handles HTTP-to-WebSocket upgrades and manages client
 // connections via the Hub.
 type WebSocketHandler struct {
-	hub      *ws.Hub
-	upgrader websocket.Upgrader
+	hub            *ws.Hub
+	upgrader       websocket.Upgrader
+	maxMessageSize int64
 }
 
 // NewWebSocketHandler creates a new WebSocketHandler backed by the given Hub.
@@ -66,11 +67,22 @@ func NewWebSocketHandler(hub *ws.Hub, allowedOrigins []string, opts ...Option) *
 				return false
 			},
 		},
+		maxMessageSize: ws.DefaultMaxMessageSize,
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
 	return h
+}
+
+// WithMaxMessageSize sets the largest inbound frame, in bytes, a connection may
+// send (#461). Non-positive values keep ws.DefaultMaxMessageSize.
+func WithMaxMessageSize(size int64) Option {
+	return func(h *WebSocketHandler) {
+		if size > 0 {
+			h.maxMessageSize = size
+		}
+	}
 }
 
 // HandleWebSocket upgrades an authenticated HTTP connection to a WebSocket and
@@ -91,6 +103,7 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	}
 
 	client := ws.NewClient(h.hub, conn, userID)
+	client.SetMaxMessageSize(h.maxMessageSize)
 	h.hub.Register(client)
 
 	go client.WritePump()

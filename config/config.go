@@ -65,6 +65,10 @@ type ServerConfig struct {
 	// by the Gin route pattern (e.g. "/v1/wallets/withdraw"). Use it for
 	// endpoints that legitimately accept larger payloads than the default.
 	MaxBodyBytesRoutes map[string]int64 `mapstructure:"max_body_bytes_routes"`
+	// WebSocketMaxMessageSize caps each inbound WebSocket frame, per connection
+	// (#461). A larger frame closes the socket with 1009. Zero falls back to
+	// websocket.DefaultMaxMessageSize (4 KB).
+	WebSocketMaxMessageSize int64 `mapstructure:"websocket_max_message_size"`
 }
 
 type DatabaseConfig struct {
@@ -472,6 +476,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.shutdown_timeout", "30s")
 	v.SetDefault("server.max_body_bytes", 4*1024*1024)
 	v.SetDefault("server.max_body_bytes_routes", map[string]int64{})
+	v.SetDefault("server.websocket_max_message_size", 4096)
 	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
 	// must be set explicitly. An empty URL will cause a clear startup failure rather than
 	// silently connecting with plaintext credentials and SSL disabled.
