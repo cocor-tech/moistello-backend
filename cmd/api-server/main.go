@@ -409,7 +409,7 @@ func main() {
 
 	jwtPublicKey := []byte(cfg.Auth.JWTPublicKeyPEM)
 
-	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins)
+	wsH := handler.NewWebSocketHandler(wsHub, cfg.CORS.AllowedOrigins, handler.WithMaxMessageSize(cfg.Server.WebSocketMaxMessageSize))
 	go wsHub.StartMembershipAuditor(context.Background(), 30*time.Second)
 
 	authH := handler.NewAuthHandler(authSvc, userSvc, walletSvc, totpSvc, verificationSvc, emailSvc, redisClient, userRepo)

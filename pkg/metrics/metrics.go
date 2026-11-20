@@ -91,4 +91,9 @@ var (
 		Name: "moistello_websocket_slow_clients_disconnected_total",
 		Help: "Total slow WebSocket clients disconnected due to backpressure overflow",
 	})
+
+	WSOversizedMessagesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "moistello_websocket_oversized_messages_total",
+		Help: "Total WebSocket connections closed for sending a frame over the per-connection size limit",
+	})
 )

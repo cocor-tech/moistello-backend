@@ -25,6 +25,7 @@ type TOTPEnrollmentHandler struct {
 	userService user.Service
 	userRepo    user.Repository
 	totp        *totp.Service
+	sessions    *sessionRotator
 }
 
 // NewTOTPEnrollmentHandler builds the TOTP enrollment handler.
@@ -88,13 +89,13 @@ func (h *TOTPEnrollmentHandler) EnrollTOTP(c *gin.Context) {
 }
 
 // @Summary Enable TOTP
-// @Description Confirms the pending enrollment with a code from the authenticator app, turns TOTP on and returns the recovery codes. Each recovery code works exactly once and is only shown here.
+// @Description Confirms the pending enrollment with a code from the authenticator app, turns TOTP on and returns the recovery codes. Each recovery code works exactly once and is only shown here. Every existing session is revoked and a replacement token pair is returned.
 // @Tags Authentication
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param body body object true "Current code" { "code": "123456" }
-// @Success 200 {object} response.Envelope{data=object{enabled=bool,recoveryCodes=array}}
+// @Success 200 {object} response.Envelope{data=object{enabled=bool,recoveryCodes=array,token=string,refreshToken=string,csrfToken=string}}
 // @Failure 400 {object} response.Envelope "No pending enrollment or wrong code"
 // @Failure 409 {object} response.Envelope "TOTP already enabled"
 // @Router /auth/totp/enable [post]
@@ -135,7 +136,9 @@ func (h *TOTPEnrollmentHandler) EnableTOTP(c *gin.Context) {
 		return
 	}
 
-	response.OK(c, gin.H{"enabled": true, "recoveryCodes": plainCodes(codes)})
+	resp := gin.H{"enabled": true, "recoveryCodes": plainCodes(codes)}
+	h.sessions.rotate(c, u, resp)
+	response.OK(c, resp)
 }
 
 // @Summary Verify a TOTP or recovery code
@@ -167,13 +170,13 @@ func (h *TOTPEnrollmentHandler) VerifyTOTP(c *gin.Context) {
 }
 
 // @Summary Disable TOTP
-// @Description Turns TOTP off after a current code or a recovery code proves possession. The secret and all recovery codes are discarded.
+// @Description Turns TOTP off after a current code or a recovery code proves possession. The secret and all recovery codes are discarded. Every existing session is revoked and a replacement token pair is returned.
 // @Tags Authentication
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param body body object true "Code or recovery code" { "code": "123456", "recoveryCode": "ABCD-EFGH-JKLM" }
-// @Success 200 {object} response.Envelope{data=object{enabled=bool}}
+// @Success 200 {object} response.Envelope{data=object{enabled=bool,token=string,refreshToken=string,csrfToken=string}}
 // @Failure 400 {object} response.Envelope "TOTP not enabled or wrong code"
 // @Router /auth/totp/disable [post]
 func (h *TOTPEnrollmentHandler) DisableTOTP(c *gin.Context) {
@@ -188,7 +191,9 @@ func (h *TOTPEnrollmentHandler) DisableTOTP(c *gin.Context) {
 		response.InternalError(c, "failed to disable TOTP")
 		return
 	}
-	response.OK(c, gin.H{"enabled": false})
+	resp := gin.H{"enabled": false}
+	h.sessions.rotate(c, u, resp)
+	response.OK(c, resp)
 }
 
 // @Summary Rotate recovery codes
