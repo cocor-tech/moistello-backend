@@ -1,7 +1,9 @@
 package circle
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
+	pkgRand "math/rand"
 
 	"github.com/moistello/backend/pkg/money"
 )
@@ -11,10 +13,18 @@ func RandomOrder(seed int64, memberCount int) []int {
 	for i := range order {
 		order[i] = i
 	}
-	rng := rand.New(rand.NewSource(seed))
-	rng.Shuffle(len(order), func(i, j int) {
+	// Fisher-Yates shuffle using crypto/rand for secure random numbers
+	for i := len(order) - 1; i > 0; i-- {
+		max := big.NewInt(int64(i + 1))
+		nBig, err := rand.Int(rand.Reader, max)
+		var j int
+		if err != nil {
+			j = pkgRand.Intn(i + 1)
+		} else {
+			j = int(nBig.Int64())
+		}
 		order[i], order[j] = order[j], order[i]
-	})
+	}
 	return order
 }
 

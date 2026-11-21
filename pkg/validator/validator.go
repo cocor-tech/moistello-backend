@@ -32,7 +32,7 @@ func registerCommon(v *validator.Validate) {
 		}
 		return name
 	})
-	v.RegisterValidation("slug", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("slug", func(fl validator.FieldLevel) bool {
 		return regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(fl.Field().String())
 	})
 }
