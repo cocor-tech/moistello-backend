@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -888,10 +887,6 @@ func (s *circleService) SubmitAuctionBid(ctx context.Context, circleID, userID s
 	}
 
 	return bid, nil
-}
-
-func ceilFloat(f float64) float64 {
-	return math.Ceil(f*100) / 100
 }
 
 func (s *circleService) ProcessMissedContributions(ctx context.Context, circleID string, roundNumber int) error {
