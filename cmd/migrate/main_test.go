@@ -108,6 +108,13 @@ func TestMigrationIdempotencyAndRollback(t *testing.T) {
 	})
 }
 
+func TestRunMainValidationFailure(t *testing.T) {
+	err := run(Options{Direction: "invalid"}, ".")
+	if err == nil {
+		t.Fatal("expected error for invalid direction options, got nil")
+	}
+}
+
 func TestMigrationTargeting(t *testing.T) {
 	db := openTestDB(t)
 
