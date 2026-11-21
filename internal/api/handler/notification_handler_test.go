@@ -20,6 +20,9 @@ import (
 type fakeNotificationService struct {
 	bulkArchiveFn func(ctx context.Context, userID string, ids []string, archived bool) ([]string, error)
 	searchFn      func(ctx context.Context, userID string, f notification.SearchFilter, page, limit int) ([]notification.Notification, int, error)
+	listFn        func(ctx context.Context, userID string, page, limit int, unreadOnly bool) ([]notification.Notification, int, error)
+	markReadFn    func(ctx context.Context, id, userID string) error
+	markAllReadFn func(ctx context.Context, userID string) error
 }
 
 func (s *fakeNotificationService) Search(ctx context.Context, userID string, f notification.SearchFilter, page, limit int) ([]notification.Notification, int, error) {
@@ -33,15 +36,24 @@ func (s *fakeNotificationService) Create(context.Context, notification.CreateInp
 	return nil, nil
 }
 
-func (s *fakeNotificationService) List(context.Context, string, int, int, bool) ([]notification.Notification, int, error) {
+func (s *fakeNotificationService) List(ctx context.Context, userID string, page, limit int, unreadOnly bool) ([]notification.Notification, int, error) {
+	if s.listFn != nil {
+		return s.listFn(ctx, userID, page, limit, unreadOnly)
+	}
 	return nil, 0, nil
 }
 
-func (s *fakeNotificationService) MarkRead(context.Context, string, string) error {
+func (s *fakeNotificationService) MarkRead(ctx context.Context, id, userID string) error {
+	if s.markReadFn != nil {
+		return s.markReadFn(ctx, id, userID)
+	}
 	return nil
 }
 
-func (s *fakeNotificationService) MarkAllRead(context.Context, string) error {
+func (s *fakeNotificationService) MarkAllRead(ctx context.Context, userID string) error {
+	if s.markAllReadFn != nil {
+		return s.markAllReadFn(ctx, userID)
+	}
 	return nil
 }
 
