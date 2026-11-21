@@ -45,7 +45,11 @@ jobs:
           restore-keys: |
             go-build-${{ runner.os }}-
       - name: Run unit tests
-        run: go test ./... -race -count=1 -short
+         run: go test ./... -race -count=1 -short
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   integration-test:
     name: Integration Tests
