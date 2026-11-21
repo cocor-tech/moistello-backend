@@ -43,6 +43,15 @@ func (f *fakeInviteService) Revoke(ctx context.Context, code, userID string) err
 	return f.revokeFn(ctx, code, userID)
 }
 
+// Validate and Accept satisfy invite.Service. These handler tests do not
+// exercise the redeem flow, so they are no-ops here.
+func (f *fakeInviteService) Validate(context.Context, string) (*invite.Invite, error) {
+	return nil, nil
+}
+func (f *fakeInviteService) Accept(context.Context, string, string) (*invite.Invite, error) {
+	return nil, nil
+}
+
 // ─── Router helper ───────────────────────────────────────────────────────────
 
 func setupInviteRouter(svc invite.Service) *gin.Engine {
