@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -665,17 +666,19 @@ func (h *CircleHandler) GetRounds(c *gin.Context) {
 	for roundNum := range roundMap {
 		roundNumbers = append(roundNumbers, roundNum)
 	}
+	sort.Ints(roundNumbers)
 
-	for roundNum, entry := range roundMap {
+	for _, roundNum := range roundNumbers {
+		entry := roundMap[roundNum]
 		configSnapshot, err := h.circleService.QueryRoundConfig(c.Request.Context(), circleID, roundNum)
 		if err == nil && configSnapshot != nil {
 			entry["configSnapshot"] = configSnapshot
 		}
 	}
 
-	rounds := make([]map[string]any, 0, len(roundMap))
-	for _, v := range roundMap {
-		rounds = append(rounds, v)
+	rounds := make([]map[string]any, 0, len(roundNumbers))
+	for _, roundNum := range roundNumbers {
+		rounds = append(rounds, roundMap[roundNum])
 	}
 
 	response.OKWithMeta(c, gin.H{
