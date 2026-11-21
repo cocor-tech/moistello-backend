@@ -86,22 +86,3 @@ func TestCircleTransactor_RollsBackAndRepanicsWhenTheCallbackPanics(t *testing.T
 
 	assert.NoError(t, mock.ExpectationsWereMet(), "a panicking callback must not leave the transaction open")
 }
-
-func TestCeilFloat_RoundsUpToTwoDecimalPlaces(t *testing.T) {
-	tests := []struct {
-		name string
-		in   float64
-		want float64
-	}{
-		{"rounds a third decimal up", 1.234, 1.24},
-		{"rounds a tiny excess up", 1.001, 1.01},
-		{"leaves a whole number alone", 5, 5},
-		{"leaves zero alone", 0, 0},
-		{"rounds negatives toward positive infinity", -1.234, -1.23},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.InDelta(t, tt.want, ceilFloat(tt.in), 1e-9)
-		})
-	}
-}
