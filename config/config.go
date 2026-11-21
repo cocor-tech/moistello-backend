@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -608,58 +607,6 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func loadDotEnv() {
-	for _, candidate := range []string{".env", ".env.local", "config/.env"} {
-		if err := loadEnvFile(candidate); err != nil {
-			panic(fmt.Errorf("config: loading %s: %w", candidate, err))
-		}
-	}
-}
-
-func loadEnvFile(path string) (err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing %s: %w", path, closeErr)
-		}
-	}()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" {
-			continue
-		}
-		if len(value) >= 2 {
-			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
-				value = value[1 : len(value)-1]
-			}
-		}
-		if _, exists := os.LookupEnv(key); exists {
-			continue
-		}
-		if err := os.Setenv(key, value); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
 
 func mustBindEnv(v *viper.Viper, key string, envNames ...string) {
 	args := append([]string{key}, envNames...)
@@ -696,26 +643,6 @@ func collectRequiredText(errs *[]string, current, path, field, pathField string)
 	return strings.TrimSpace(string(data))
 }
 
-func requireString(field, value, hint string) string {
-	if strings.TrimSpace(value) == "" {
-		panic(fmt.Errorf("config: %s is required (%s)", field, hint))
-	}
-	return strings.TrimSpace(value)
-}
-
-func loadRequiredText(current, path, field, pathField string) string {
-	if strings.TrimSpace(current) != "" {
-		return current
-	}
-	if strings.TrimSpace(path) == "" {
-		panic(fmt.Errorf("config: %s is required (set it directly or configure %s)", field, pathField))
-	}
-	data, err := readConfiguredFile(path)
-	if err != nil {
-		panic(fmt.Errorf("config: reading %s from %q: %w", field, path, err))
-	}
-	return strings.TrimSpace(string(data))
-}
 
 // readConfiguredFile is the single file-read boundary for key material. The
 // path is supplied by an operator through configuration, not by a request;
@@ -728,18 +655,6 @@ func readConfiguredFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func validateHexKey(value string) {
-	raw, err := hex.DecodeString(strings.TrimSpace(value))
-	if err != nil || len(raw) != 32 {
-		panic(fmt.Errorf("config: security.encryption_key must be a 32-byte hex string"))
-	}
-}
-
-func validateDuration(name string, ok bool) {
-	if !ok {
-		panic(fmt.Errorf("config: %s must be greater than zero", name))
-	}
-}
 
 func checkMainnetIssues(cfg *Config) []string {
 	const (
@@ -772,11 +687,6 @@ func checkMainnetIssues(cfg *Config) []string {
 	return nil
 }
 
-func validateMainnetConfig(cfg *Config) {
-	if issues := checkMainnetIssues(cfg); len(issues) > 0 {
-		panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
-	}
-}
 
 // ValidateSecrets performs pre-deploy validation that all required secrets are present.
 // Call this before any sensitive operations to fail fast with clear error messages.
