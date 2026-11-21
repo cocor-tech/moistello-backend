@@ -25,6 +25,12 @@ import (
 // the equivalent logic with pure Go assertions.
 // ---------------------------------------------------------------------------
 
+var tierMatrix = map[UserTier]tierConfig{
+	TierBasic:    {MaxMembers: 10, MaxContribution: 100, CollateralRequired: 50},
+	TierVerified: {MaxMembers: 30, MaxContribution: 500, CollateralRequired: 100},
+	TierPremium:  {MaxMembers: 100, MaxContribution: 5000, CollateralRequired: 200},
+}
+
 type VoteType string
 
 const (
@@ -338,11 +344,11 @@ func (g *GovernanceSim) Unpause(caller string) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 // Circle Simulation Helpers
 //
 // Simulate tier-based enforcement and reentrancy protection.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 type UserTier string
 
@@ -356,12 +362,6 @@ type tierConfig struct {
 	MaxMembers         int
 	MaxContribution    float64
 	CollateralRequired float64
-}
-
-var tierMatrix = map[UserTier]tierConfig{
-	TierBasic:    {MaxMembers: 10, MaxContribution: 100, CollateralRequired: 50},
-	TierVerified: {MaxMembers: 30, MaxContribution: 500, CollateralRequired: 100},
-	TierPremium:  {MaxMembers: 100, MaxContribution: 5000, CollateralRequired: 200},
 }
 
 // ReentrancyGuard is a simple non-reentrant mutex for testing.
