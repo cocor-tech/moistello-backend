@@ -234,6 +234,8 @@ func TestOnContributionReceived_Success(t *testing.T) {
 	err := p.onContributionReceived(context.Background(), ev)
 	assert.NoError(t, err)
 	assert.NoError(t, dbm.ExpectationsWereMet())
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +268,8 @@ func TestOnPayoutExecuted_Success(t *testing.T) {
 	err := p.onPayoutExecuted(context.Background(), ev)
 	assert.NoError(t, err)
 	assert.NoError(t, dbm.ExpectationsWereMet())
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 // ---------------------------------------------------------------------------
@@ -640,6 +644,8 @@ func TestOnContributionReceived_Reprocessed_IsNoOp(t *testing.T) {
 	assert.NoError(t, p.onContributionReceived(context.Background(), ev))
 	assert.Zero(t, c.TotalContributions, "aggregate must not change on replay")
 	assert.NoError(t, dbm.ExpectationsWereMet(), "the circle row must never be touched on a replay")
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 func TestOnPayoutExecuted_Reprocessed_IsNoOp(t *testing.T) {
@@ -669,6 +675,8 @@ func TestOnPayoutExecuted_Reprocessed_IsNoOp(t *testing.T) {
 	assert.NoError(t, p.onPayoutExecuted(context.Background(), ev))
 	assert.Equal(t, 2, c.CurrentRound, "round must not move on replay")
 	assert.NoError(t, dbm.ExpectationsWereMet(), "the circle row must never be touched on a replay")
+	cRepo.AssertExpectations(t)
+	uRepo.AssertExpectations(t)
 }
 
 func TestOnMemberJoined_Reprocessed_IsNoOp(t *testing.T) {
