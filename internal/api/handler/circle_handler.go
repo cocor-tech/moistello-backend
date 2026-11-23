@@ -668,14 +668,17 @@ func (h *CircleHandler) GetRounds(c *gin.Context) {
 	}
 	sort.Ints(roundNumbers)
 
-	rounds := make([]map[string]any, 0, len(roundNumbers))
 	for _, roundNum := range roundNumbers {
 		entry := roundMap[roundNum]
 		configSnapshot, err := h.circleService.QueryRoundConfig(c.Request.Context(), circleID, roundNum)
 		if err == nil && configSnapshot != nil {
 			entry["configSnapshot"] = configSnapshot
 		}
-		rounds = append(rounds, entry)
+	}
+
+	rounds := make([]map[string]any, 0, len(roundNumbers))
+	for _, roundNum := range roundNumbers {
+		rounds = append(rounds, roundMap[roundNum])
 	}
 
 	response.OKWithMeta(c, gin.H{
