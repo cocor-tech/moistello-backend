@@ -185,3 +185,36 @@ func TestHub_ConcurrentStatsReads(t *testing.T) {
 	assert.Equal(t, 0, c)
 	assert.GreaterOrEqual(t, r, 0)
 }
+
+// TestClient_ConcurrentStateAccess verifies that Client state operations
+// (missedPings, sendError, Close, Disconnect, Kick) are race-free under -race.
+func TestClient_ConcurrentStateAccess(t *testing.T) {
+	hub := NewHub()
+	client := NewClient(hub, nil, "user-1")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			client.missedPings.Add(1)
+			_ = client.MissedPings()
+			if id%2 == 0 {
+				client.ResetMissedPings()
+			}
+			client.sendError("test")
+			switch id % 3 {
+			case 0:
+				client.Close()
+			case 1:
+				client.Disconnect()
+			default:
+				client.Kick(1000, "done")
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	client.ResetMissedPings()
+	assert.Equal(t, int32(0), client.MissedPings())
+}
