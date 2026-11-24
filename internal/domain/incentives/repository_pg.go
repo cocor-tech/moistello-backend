@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -21,7 +22,7 @@ func NewRepository(db *sqlx.DB) Repository {
 	return NewPostgresRepository(db)
 }
 
-func (r *postgresRepository) Transact(ctx context.Context, fn func(repo Repository) error) error {
+func (r *postgresRepository) Transact(ctx context.Context, fn func(repo Repository) error) (err error) {
 	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
@@ -29,7 +30,7 @@ func (r *postgresRepository) Transact(ctx context.Context, fn func(repo Reposito
 	defer func() {
 		if p := recover(); p != nil {
 			_ = tx.Rollback()
-			panic(p)
+			err = fmt.Errorf("panic in incentives transaction: %v", p)
 		} else if err != nil {
 			_ = tx.Rollback()
 		}

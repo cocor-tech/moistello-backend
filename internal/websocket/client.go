@@ -44,7 +44,6 @@ type Client struct {
 	Conn        *websocket.Conn
 	Send        chan []byte
 	missedPings atomic.Int32
-	mu          sync.Mutex
 	closing     chan struct{}
 	closeOnce   sync.Once
 

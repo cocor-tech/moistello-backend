@@ -37,7 +37,7 @@ func withTransaction(ctx context.Context, db *sqlx.DB, level sql.IsolationLevel,
 	defer func() {
 		if p := recover(); p != nil {
 			tracing.EndSpan(span, fmt.Errorf("panic in transaction: %v", p), start)
-			panic(p)
+			err = fmt.Errorf("panic in transaction callback: %v", p)
 		}
 		tracing.EndSpan(span, err, start)
 	}()
@@ -51,13 +51,13 @@ func withTransaction(ctx context.Context, db *sqlx.DB, level sql.IsolationLevel,
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
-			panic(p)
+			_ = tx.Rollback()
+			err = fmt.Errorf("panic in transaction callback: %v", p)
 		}
 	}()
 
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 

@@ -115,7 +115,7 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	hasFailure := false
 
 	// 1. PostgreSQL check
-	postgresStatus := h.checkPostgres(timeout)
+	postgresStatus := h.checkPostgres(c.Request.Context(), timeout)
 	deps["postgres"] = postgresStatus
 	if postgresStatus.Status != "healthy" {
 		allHealthy = false
@@ -123,7 +123,7 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	}
 
 	// 2. Redis check
-	redisStatus := h.checkRedis(timeout)
+	redisStatus := h.checkRedis(c.Request.Context(), timeout)
 	deps["redis"] = redisStatus
 	if redisStatus.Status != "healthy" {
 		allHealthy = false
@@ -131,14 +131,14 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	}
 
 	// 3. Stellar RPC check
-	stellarRPCStatus := h.checkStellarRPC(timeout)
+	stellarRPCStatus := h.checkStellarRPC(c.Request.Context(), timeout)
 	deps["stellar_rpc"] = stellarRPCStatus
 	if stellarRPCStatus.Status != "healthy" {
 		allHealthy = false
 	}
 
 	// 4. Horizon check
-	horizonStatus := h.checkHorizon(timeout)
+	horizonStatus := h.checkHorizon(c.Request.Context(), timeout)
 	deps["horizon"] = horizonStatus
 	if horizonStatus.Status != "healthy" {
 		allHealthy = false
@@ -207,13 +207,13 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	deps := make(map[string]DependencyStatus)
 	allHealthy := true
 
-	postgresStatus := h.checkPostgres(timeout)
+	postgresStatus := h.checkPostgres(c.Request.Context(), timeout)
 	deps["postgres"] = postgresStatus
 	if postgresStatus.Status != "healthy" {
 		allHealthy = false
 	}
 
-	redisStatus := h.checkRedis(timeout)
+	redisStatus := h.checkRedis(c.Request.Context(), timeout)
 	deps["redis"] = redisStatus
 	if redisStatus.Status != "healthy" {
 		allHealthy = false
@@ -225,13 +225,13 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 		allHealthy = false
 	}
 
-	stellarRPCStatus := h.checkStellarRPC(timeout)
+	stellarRPCStatus := h.checkStellarRPC(c.Request.Context(), timeout)
 	deps["stellar_rpc"] = stellarRPCStatus
 	if stellarRPCStatus.Status != "healthy" {
 		allHealthy = false
 	}
 
-	horizonStatus := h.checkHorizon(timeout)
+	horizonStatus := h.checkHorizon(c.Request.Context(), timeout)
 	deps["horizon"] = horizonStatus
 	if horizonStatus.Status != "healthy" {
 		allHealthy = false
@@ -250,11 +250,11 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	})
 }
 
-func (h *HealthHandler) checkPostgres(timeout time.Duration) DependencyStatus {
+func (h *HealthHandler) checkPostgres(parent context.Context, timeout time.Duration) DependencyStatus {
 	if h.db == nil {
 		return DependencyStatus{Status: "unhealthy", Message: "database instance not initialized"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -272,11 +272,11 @@ func (h *HealthHandler) checkPostgres(timeout time.Duration) DependencyStatus {
 	}
 }
 
-func (h *HealthHandler) checkRedis(timeout time.Duration) DependencyStatus {
+func (h *HealthHandler) checkRedis(parent context.Context, timeout time.Duration) DependencyStatus {
 	if h.redis == nil {
 		return DependencyStatus{Status: "unhealthy", Message: "redis instance not initialized"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -304,11 +304,11 @@ func (h *HealthHandler) checkRabbitMQ() DependencyStatus {
 	return DependencyStatus{Status: "healthy", Message: "connected"}
 }
 
-func (h *HealthHandler) checkStellarRPC(timeout time.Duration) DependencyStatus {
+func (h *HealthHandler) checkStellarRPC(parent context.Context, timeout time.Duration) DependencyStatus {
 	if h.sorobanRPCURL == "" {
 		return DependencyStatus{Status: "unhealthy", Message: "soroban_rpc_url not configured"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	payload := []byte(`{"jsonrpc":"2.0","id":1,"method":"getHealth"}`)
@@ -345,11 +345,11 @@ func (h *HealthHandler) checkStellarRPC(timeout time.Duration) DependencyStatus 
 	}
 }
 
-func (h *HealthHandler) checkHorizon(timeout time.Duration) DependencyStatus {
+func (h *HealthHandler) checkHorizon(parent context.Context, timeout time.Duration) DependencyStatus {
 	if h.horizonURL == "" {
 		return DependencyStatus{Status: "unhealthy", Message: "horizon_url not configured"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", h.horizonURL, nil)
