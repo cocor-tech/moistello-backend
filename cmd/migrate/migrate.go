@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -467,14 +466,6 @@ func Run(db *sql.DB, opts Options) (err error) {
 		return runMigrationsDown(ctx, conn, opts)
 	default:
 		return fmt.Errorf("unknown direction %q: use 'up' or 'down'", opts.Direction)
-	}
-}
-
-// closeInto closes c and joins any close error into *errp, so a failed close
-// surfaces from the caller instead of being silently dropped.
-func closeInto(c io.Closer, what string, errp *error) {
-	if cerr := c.Close(); cerr != nil {
-		*errp = errors.Join(*errp, fmt.Errorf("closing %s: %w", what, cerr))
 	}
 }
 

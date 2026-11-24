@@ -26,15 +26,18 @@ type stubIncentivesService struct {
 	lastMatchUser   string
 	lastMatchAmount float64
 
-	lastUserID        string
-	lastClaimID       string
-	claimErr          error
-	userIncentives    []incentives.Incentive
-	userIncentivesErr error
-	pendingIncentives []incentives.Incentive
-	pendingErr        error
-	summary           *incentives.UserIncentiveSummary
-	summaryErr        error
+	recordContributionStreak   *incentives.SavingsStreak
+	recordContributionErr      error
+	lastRecordContributionUser string
+
+	grantStreakBonusIncentive *incentives.Incentive
+	grantStreakBonusErr       error
+	lastGrantStreakUser       string
+
+	grantFirstDepositIncentive  *incentives.Incentive
+	grantFirstDepositErr        error
+	lastGrantFirstDepositUser   string
+	lastGrantFirstDepositAmount float64
 }
 
 func (s *stubIncentivesService) GenerateReferralCode(context.Context, string) (string, error) {
@@ -57,14 +60,18 @@ func (s *stubIncentivesService) CalculateContributionMatch(_ context.Context, us
 func (s *stubIncentivesService) GrantContributionMatch(context.Context, string, string, float64) (*incentives.Incentive, error) {
 	return nil, nil
 }
-func (s *stubIncentivesService) GrantFirstDepositBonus(context.Context, string, float64) (*incentives.Incentive, error) {
-	return nil, nil
+func (s *stubIncentivesService) GrantFirstDepositBonus(_ context.Context, userID string, depositAmount float64) (*incentives.Incentive, error) {
+	s.lastGrantFirstDepositUser = userID
+	s.lastGrantFirstDepositAmount = depositAmount
+	return s.grantFirstDepositIncentive, s.grantFirstDepositErr
 }
-func (s *stubIncentivesService) RecordContribution(context.Context, string) (*incentives.SavingsStreak, error) {
-	return nil, nil
+func (s *stubIncentivesService) RecordContribution(_ context.Context, userID string) (*incentives.SavingsStreak, error) {
+	s.lastRecordContributionUser = userID
+	return s.recordContributionStreak, s.recordContributionErr
 }
-func (s *stubIncentivesService) GrantStreakBonus(context.Context, string) (*incentives.Incentive, error) {
-	return nil, nil
+func (s *stubIncentivesService) GrantStreakBonus(_ context.Context, userID string) (*incentives.Incentive, error) {
+	s.lastGrantStreakUser = userID
+	return s.grantStreakBonusIncentive, s.grantStreakBonusErr
 }
 func (s *stubIncentivesService) ClaimIncentive(_ context.Context, userID, incentiveID string) error {
 	s.lastUserID, s.lastClaimID = userID, incentiveID
@@ -218,231 +225,289 @@ func TestIncentivesHandler_CalculateContributionMatch(t *testing.T) {
 	}
 }
 
-const incentivesTestUserID = "user-123"
-
-// incentivesEnvelope is the part of response.Envelope these tests assert on.
-type incentivesEnvelope[T any] struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Data    T      `json:"data"`
-}
-
-// serveIncentivesAsUser runs one request through h with user_id set, the context key IncentivesHandler reads.
-func serveIncentivesAsUser(h gin.HandlerFunc, method, route, target string) *httptest.ResponseRecorder {
-	r := gin.New()
-	r.Handle(method, route, func(c *gin.Context) { c.Set("user_id", incentivesTestUserID) }, h)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(method, target, nil))
-	return w
-}
-
-func decodeIncentivesEnvelope[T any](t *testing.T, w *httptest.ResponseRecorder) incentivesEnvelope[T] {
-	t.Helper()
-	var resp incentivesEnvelope[T]
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp), "body: %s", w.Body.String())
-	return resp
-}
-
-func TestIncentivesHandler_ClaimIncentive(t *testing.T) {
+func TestIncentivesHandler_RecordContribution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	validID := uuid.NewString()
 
-	tests := []struct {
-		name        string
-		incentiveID string
-		serviceErr  error
-		wantStatus  int
-		wantMessage string
-		wantCalled  bool
-	}{
-		{
-			name:        "happy path claims incentive for caller",
-			incentiveID: validID,
-			wantStatus:  http.StatusOK,
-			wantMessage: "Incentive claimed successfully",
-			wantCalled:  true,
-		},
-		{
-			name:        "non-UUID incentive ID returns 400 without calling service",
-			incentiveID: "not-a-uuid",
-			wantStatus:  http.StatusBadRequest,
-			wantMessage: "Invalid incentive ID",
-			wantCalled:  false,
-		},
-		{
-			name:        "service error returns 400",
-			incentiveID: validID,
-			serviceErr:  errors.New("incentive already claimed"),
-			wantStatus:  http.StatusBadRequest,
-			wantMessage: "Failed to claim incentive",
-			wantCalled:  true,
-		},
+	streakID := uuid.New()
+	userUUID := uuid.New()
+	expectedStreak := &incentives.SavingsStreak{
+		ID:            streakID,
+		UserID:        userUUID,
+		CurrentStreak: 5,
+		LongestStreak: 10,
+		BonusTier:     2,
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			svc := &stubIncentivesService{claimErr: tc.serviceErr}
-			h := handler.NewIncentivesHandler(svc)
-
-			w := serveIncentivesAsUser(h.ClaimIncentive, http.MethodPost, "/incentives/:id/claim", "/incentives/"+tc.incentiveID+"/claim")
-
-			require.Equal(t, tc.wantStatus, w.Code)
-			resp := decodeIncentivesEnvelope[map[string]string](t, w)
-			if tc.wantStatus == http.StatusOK {
-				assert.True(t, resp.Success)
-				assert.Equal(t, tc.wantMessage, resp.Data["message"])
-			} else {
-				assert.False(t, resp.Success)
-				assert.Equal(t, tc.wantMessage, resp.Message)
-			}
-			if tc.wantCalled {
-				assert.Equal(t, incentivesTestUserID, svc.lastUserID)
-				assert.Equal(t, tc.incentiveID, svc.lastClaimID)
-			} else {
-				assert.Empty(t, svc.lastClaimID)
-			}
-		})
-	}
-}
-
-func TestIncentivesHandler_GetUserIncentives(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	pending := incentives.Incentive{ID: uuid.New(), Status: incentives.IncentiveStatusPending, Amount: 5}
-	claimed := incentives.Incentive{ID: uuid.New(), Status: incentives.IncentiveStatusClaimed, Amount: 10}
-
 	tests := []struct {
-		name        string
-		query       string
-		serviceErr  error
-		wantStatus  int
-		wantMessage string
-		want        []incentives.Incentive
+		name         string
+		authUserID   string
+		streakResult *incentives.SavingsStreak
+		serviceErr   error
+		wantStatus   int
+		wantCalled   bool
+		wantErrMsg   string
 	}{
 		{
-			name:       "happy path returns all incentives",
-			wantStatus: http.StatusOK,
-			want:       []incentives.Incentive{pending, claimed},
+			name:         "happy path records contribution and returns streak",
+			authUserID:   userUUID.String(),
+			streakResult: expectedStreak,
+			wantStatus:   http.StatusOK,
+			wantCalled:   true,
 		},
 		{
-			name:       "status filter keeps only matching incentives",
-			query:      "?status=claimed",
-			wantStatus: http.StatusOK,
-			want:       []incentives.Incentive{claimed},
-		},
-		{
-			name:        "service error returns 500",
-			serviceErr:  errors.New("db unavailable"),
-			wantStatus:  http.StatusInternalServerError,
-			wantMessage: "Failed to get incentives",
+			name:       "service error returns 500",
+			authUserID: userUUID.String(),
+			serviceErr: errors.New("database connection failed"),
+			wantStatus: http.StatusInternalServerError,
+			wantCalled: true,
+			wantErrMsg: "Failed to record contribution",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &stubIncentivesService{
-				userIncentives:    []incentives.Incentive{pending, claimed},
-				userIncentivesErr: tc.serviceErr,
+				recordContributionStreak: tc.streakResult,
+				recordContributionErr:    tc.serviceErr,
 			}
 			h := handler.NewIncentivesHandler(svc)
 
-			w := serveIncentivesAsUser(h.GetUserIncentives, http.MethodGet, "/incentives", "/incentives"+tc.query)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				if tc.authUserID != "" {
+					c.Set("user_id", tc.authUserID)
+				}
+				c.Next()
+			})
+			r.POST("/incentives/contribution", h.RecordContribution)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/incentives/contribution", nil)
+			r.ServeHTTP(w, req)
 
 			require.Equal(t, tc.wantStatus, w.Code)
-			assert.Equal(t, incentivesTestUserID, svc.lastUserID)
-			resp := decodeIncentivesEnvelope[[]incentives.Incentive](t, w)
-			assert.Equal(t, tc.wantStatus == http.StatusOK, resp.Success)
-			assert.Equal(t, tc.want, resp.Data)
-			assert.Equal(t, tc.wantMessage, resp.Message)
+			if tc.wantCalled {
+				assert.Equal(t, tc.authUserID, svc.lastRecordContributionUser)
+			}
+			if tc.wantStatus == http.StatusOK {
+				var resp struct {
+					Data incentives.SavingsStreak `json:"data"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				assert.Equal(t, streakID, resp.Data.ID)
+				assert.Equal(t, userUUID, resp.Data.UserID)
+				assert.Equal(t, 5, resp.Data.CurrentStreak)
+				assert.Equal(t, 10, resp.Data.LongestStreak)
+				assert.Equal(t, 2, resp.Data.BonusTier)
+			} else {
+				var errResp struct {
+					Message string `json:"message"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
+				assert.Contains(t, errResp.Message, tc.wantErrMsg)
+			}
 		})
 	}
 }
 
-func TestIncentivesHandler_GetPendingIncentives(t *testing.T) {
+func TestIncentivesHandler_GrantStreakBonus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	pending := []incentives.Incentive{{ID: uuid.New(), Status: incentives.IncentiveStatusPending, Amount: 5}}
+
+	incentiveID := uuid.New()
+	userUUID := uuid.New()
+	expectedIncentive := &incentives.Incentive{
+		ID:       incentiveID,
+		UserID:   userUUID,
+		Type:     incentives.IncentiveTypeSavingsStreak,
+		Status:   incentives.IncentiveStatusPending,
+		Amount:   25.0,
+		Currency: "USDC",
+	}
 
 	tests := []struct {
-		name        string
-		serviceErr  error
-		wantStatus  int
-		wantMessage string
-		want        []incentives.Incentive
+		name            string
+		authUserID      string
+		incentiveResult *incentives.Incentive
+		serviceErr      error
+		wantStatus      int
+		wantCalled      bool
+		wantErrMsg      string
 	}{
 		{
-			name:       "happy path returns pending incentives",
-			wantStatus: http.StatusOK,
-			want:       pending,
+			name:            "happy path grants streak bonus and returns incentive",
+			authUserID:      userUUID.String(),
+			incentiveResult: expectedIncentive,
+			wantStatus:      http.StatusOK,
+			wantCalled:      true,
 		},
 		{
-			name:        "service error returns 500",
-			serviceErr:  errors.New("db unavailable"),
-			wantStatus:  http.StatusInternalServerError,
-			wantMessage: "Failed to get pending incentives",
+			name:       "service error returns 400",
+			authUserID: userUUID.String(),
+			serviceErr: errors.New("streak bonus criteria not met"),
+			wantStatus: http.StatusBadRequest,
+			wantCalled: true,
+			wantErrMsg: "Failed to grant streak bonus",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &stubIncentivesService{pendingIncentives: pending, pendingErr: tc.serviceErr}
+			svc := &stubIncentivesService{
+				grantStreakBonusIncentive: tc.incentiveResult,
+				grantStreakBonusErr:       tc.serviceErr,
+			}
 			h := handler.NewIncentivesHandler(svc)
 
-			w := serveIncentivesAsUser(h.GetPendingIncentives, http.MethodGet, "/incentives/pending", "/incentives/pending")
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				if tc.authUserID != "" {
+					c.Set("user_id", tc.authUserID)
+				}
+				c.Next()
+			})
+			r.POST("/incentives/streak-bonus", h.GrantStreakBonus)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/incentives/streak-bonus", nil)
+			r.ServeHTTP(w, req)
 
 			require.Equal(t, tc.wantStatus, w.Code)
-			assert.Equal(t, incentivesTestUserID, svc.lastUserID)
-			resp := decodeIncentivesEnvelope[[]incentives.Incentive](t, w)
-			assert.Equal(t, tc.wantStatus == http.StatusOK, resp.Success)
-			assert.Equal(t, tc.want, resp.Data)
-			assert.Equal(t, tc.wantMessage, resp.Message)
+			if tc.wantCalled {
+				assert.Equal(t, tc.authUserID, svc.lastGrantStreakUser)
+			}
+			if tc.wantStatus == http.StatusOK {
+				var resp struct {
+					Data incentives.Incentive `json:"data"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				assert.Equal(t, incentiveID, resp.Data.ID)
+				assert.Equal(t, userUUID, resp.Data.UserID)
+				assert.Equal(t, incentives.IncentiveTypeSavingsStreak, resp.Data.Type)
+				assert.Equal(t, 25.0, resp.Data.Amount)
+				assert.Equal(t, "USDC", resp.Data.Currency)
+			} else {
+				var errResp struct {
+					Message string `json:"message"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
+				assert.Contains(t, errResp.Message, tc.wantErrMsg)
+			}
 		})
 	}
 }
 
-func TestIncentivesHandler_GetUserSummary(t *testing.T) {
+func TestIncentivesHandler_GrantFirstDepositBonus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	summary := &incentives.UserIncentiveSummary{
-		TotalEarned:   120,
-		TotalClaimed:  100,
-		PendingAmount: 20,
-		ReferralCount: 3,
-		CurrentStreak: 4,
-		LongestStreak: 6,
-		BonusTier:     2,
+
+	incentiveID := uuid.New()
+	userUUID := uuid.New()
+	expectedIncentive := &incentives.Incentive{
+		ID:       incentiveID,
+		UserID:   userUUID,
+		Type:     incentives.IncentiveTypeFirstDeposit,
+		Status:   incentives.IncentiveStatusPending,
+		Amount:   10.0,
+		Currency: "USDC",
 	}
 
 	tests := []struct {
-		name        string
-		serviceErr  error
-		wantStatus  int
-		wantMessage string
-		want        *incentives.UserIncentiveSummary
+		name            string
+		body            string
+		incentiveResult *incentives.Incentive
+		serviceErr      error
+		wantStatus      int
+		wantCalled      bool
+		wantUserID      string
+		wantDepositAmt  float64
+		wantErrMsg      string
 	}{
 		{
-			name:       "happy path returns summary",
-			wantStatus: http.StatusOK,
-			want:       summary,
+			name:            "happy path grants first deposit bonus",
+			body:            `{"userId":"` + userUUID.String() + `","depositAmount":150.0}`,
+			incentiveResult: expectedIncentive,
+			wantStatus:      http.StatusOK,
+			wantCalled:      true,
+			wantUserID:      userUUID.String(),
+			wantDepositAmt:  150.0,
 		},
 		{
-			name:        "service error returns 500",
-			serviceErr:  errors.New("db unavailable"),
-			wantStatus:  http.StatusInternalServerError,
-			wantMessage: "Failed to get user summary",
+			name:       "invalid JSON body returns 400",
+			body:       `{malformed-json`,
+			wantStatus: http.StatusBadRequest,
+			wantCalled: false,
+			wantErrMsg: "Invalid request body",
+		},
+		{
+			name:       "missing userId returns 400",
+			body:       `{"depositAmount":150.0}`,
+			wantStatus: http.StatusBadRequest,
+			wantCalled: false,
+			wantErrMsg: "Invalid request body",
+		},
+		{
+			name:       "zero depositAmount returns 400",
+			body:       `{"userId":"` + userUUID.String() + `","depositAmount":0}`,
+			wantStatus: http.StatusBadRequest,
+			wantCalled: false,
+			wantErrMsg: "Invalid request body",
+		},
+		{
+			name:       "negative depositAmount returns 400",
+			body:       `{"userId":"` + userUUID.String() + `","depositAmount":-50.0}`,
+			wantStatus: http.StatusBadRequest,
+			wantCalled: false,
+			wantErrMsg: "Invalid request body",
+		},
+		{
+			name:           "service error returns 400",
+			body:           `{"userId":"` + userUUID.String() + `","depositAmount":100.0}`,
+			serviceErr:     errors.New("user has already received first deposit bonus"),
+			wantStatus:     http.StatusBadRequest,
+			wantCalled:     true,
+			wantUserID:     userUUID.String(),
+			wantDepositAmt: 100.0,
+			wantErrMsg:     "Failed to grant first deposit bonus",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &stubIncentivesService{summary: summary, summaryErr: tc.serviceErr}
+			svc := &stubIncentivesService{
+				grantFirstDepositIncentive: tc.incentiveResult,
+				grantFirstDepositErr:       tc.serviceErr,
+			}
 			h := handler.NewIncentivesHandler(svc)
 
-			w := serveIncentivesAsUser(h.GetUserSummary, http.MethodGet, "/incentives/summary", "/incentives/summary")
+			r := gin.New()
+			r.POST("/incentives/first-deposit", h.GrantFirstDepositBonus)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/incentives/first-deposit", bytes.NewBufferString(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
 
 			require.Equal(t, tc.wantStatus, w.Code)
-			assert.Equal(t, incentivesTestUserID, svc.lastUserID)
-			resp := decodeIncentivesEnvelope[*incentives.UserIncentiveSummary](t, w)
-			assert.Equal(t, tc.wantStatus == http.StatusOK, resp.Success)
-			assert.Equal(t, tc.want, resp.Data)
-			assert.Equal(t, tc.wantMessage, resp.Message)
+			if tc.wantCalled {
+				assert.Equal(t, tc.wantUserID, svc.lastGrantFirstDepositUser)
+				assert.Equal(t, tc.wantDepositAmt, svc.lastGrantFirstDepositAmount)
+			}
+			if tc.wantStatus == http.StatusOK {
+				var resp struct {
+					Data incentives.Incentive `json:"data"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				assert.Equal(t, incentiveID, resp.Data.ID)
+				assert.Equal(t, userUUID, resp.Data.UserID)
+				assert.Equal(t, incentives.IncentiveTypeFirstDeposit, resp.Data.Type)
+				assert.Equal(t, 10.0, resp.Data.Amount)
+				assert.Equal(t, "USDC", resp.Data.Currency)
+			} else {
+				var errResp struct {
+					Message string `json:"message"`
+				}
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
+				assert.Contains(t, errResp.Message, tc.wantErrMsg)
+			}
 		})
 	}
 }

@@ -286,3 +286,42 @@ func TestCircleHandler_GetMembers_CursorPagination_250Members(t *testing.T) {
 	assert.Len(t, page3.Data.Members, 50)
 	assert.False(t, page3.Meta.HasMore)
 }
+
+func TestCircleHandler_GetRounds_ReturnsSortedRoundsByRoundNumber(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	circleID := uuid.New()
+	contribs := []contribution.Contribution{
+		{ID: uuid.New(), CircleID: circleID, UserID: uuid.New(), RoundNumber: 3, Amount: 50},
+		{ID: uuid.New(), CircleID: circleID, UserID: uuid.New(), RoundNumber: 1, Amount: 50},
+	}
+	payouts := []payout.Payout{
+		{ID: uuid.New(), CircleID: circleID, RoundNumber: 2, Amount: 100},
+	}
+
+	h := handler.NewCircleHandler(
+		&stubCircleService{circle: &circle.Circle{ID: circleID, CurrentRound: 3, MaxMembers: 4}},
+		nil,
+		&stubContribService{contribs: contribs, total: 2},
+		&stubPayoutService{payouts: payouts, total: 1},
+	)
+	r := gin.New()
+	r.GET("/circles/:id/rounds", h.GetRounds)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/circles/"+circleID.String()+"/rounds", nil)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body struct {
+		Data struct {
+			Rounds []map[string]any `json:"rounds"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data.Rounds, 3)
+	assert.Equal(t, float64(1), body.Data.Rounds[0]["roundNumber"])
+	assert.Equal(t, float64(2), body.Data.Rounds[1]["roundNumber"])
+	assert.Equal(t, float64(3), body.Data.Rounds[2]["roundNumber"])
+}
