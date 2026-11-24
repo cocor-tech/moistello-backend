@@ -73,17 +73,21 @@ func (s *stubIncentivesService) GrantStreakBonus(_ context.Context, userID strin
 	s.lastGrantStreakUser = userID
 	return s.grantStreakBonusIncentive, s.grantStreakBonusErr
 }
-func (s *stubIncentivesService) ClaimIncentive(context.Context, string, string) error {
-	return nil
+func (s *stubIncentivesService) ClaimIncentive(_ context.Context, userID, incentiveID string) error {
+	s.lastUserID, s.lastClaimID = userID, incentiveID
+	return s.claimErr
 }
-func (s *stubIncentivesService) GetUserIncentives(context.Context, string) ([]incentives.Incentive, error) {
-	return nil, nil
+func (s *stubIncentivesService) GetUserIncentives(_ context.Context, userID string) ([]incentives.Incentive, error) {
+	s.lastUserID = userID
+	return s.userIncentives, s.userIncentivesErr
 }
-func (s *stubIncentivesService) GetPendingIncentives(context.Context, string) ([]incentives.Incentive, error) {
-	return nil, nil
+func (s *stubIncentivesService) GetPendingIncentives(_ context.Context, userID string) ([]incentives.Incentive, error) {
+	s.lastUserID = userID
+	return s.pendingIncentives, s.pendingErr
 }
-func (s *stubIncentivesService) GetUserSummary(context.Context, string) (*incentives.UserIncentiveSummary, error) {
-	return nil, nil
+func (s *stubIncentivesService) GetUserSummary(_ context.Context, userID string) (*incentives.UserIncentiveSummary, error) {
+	s.lastUserID = userID
+	return s.summary, s.summaryErr
 }
 func (s *stubIncentivesService) GetIncentives(context.Context, string) ([]incentives.Incentive, error) {
 	return nil, nil
