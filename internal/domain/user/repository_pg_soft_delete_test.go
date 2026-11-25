@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
+	"github.com/moistello/backend/pkg/apperrors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -263,4 +266,129 @@ func splitColumns(s string) []string {
 		}
 	}
 	return out
+}
+
+func TestCreate(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		repo, mock, cleanup := newTestRepo(t)
+		defer cleanup()
+		mock.ExpectExec("INSERT INTO users").WillReturnResult(sqlmock.NewResult(0, 1))
+		require.NoError(t, repo.Create(context.Background(), &User{ID: uuid.New()}))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("unique violation", func(t *testing.T) {
+		repo, mock, cleanup := newTestRepo(t)
+		defer cleanup()
+		mock.ExpectExec("INSERT INTO users").WillReturnError(&pq.Error{Code: pq.ErrorCode("23505")})
+		err := repo.Create(context.Background(), &User{ID: uuid.New()})
+		require.ErrorIs(t, err, apperrors.ErrConflict)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		repo, mock, cleanup := newTestRepo(t)
+		defer cleanup()
+		writeErr := errors.New("database unavailable")
+		mock.ExpectExec("INSERT INTO users").WillReturnError(writeErr)
+		err := repo.Create(context.Background(), &User{ID: uuid.New()})
+		require.ErrorIs(t, err, writeErr)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+func TestUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rows    int64
+		dbErr   error
+		wantErr error
+	}{
+		{name: "success", rows: 1},
+		{name: "missing user", rows: 0, wantErr: ErrUserNotFound},
+		{name: "database error", dbErr: errors.New("write failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, mock, cleanup := newTestRepo(t)
+			defer cleanup()
+			expectation := mock.ExpectExec("UPDATE users SET email")
+			if tc.dbErr != nil {
+				expectation.WillReturnError(tc.dbErr)
+			} else {
+				expectation.WillReturnResult(sqlmock.NewResult(0, tc.rows))
+			}
+			err := repo.Update(context.Background(), &User{ID: uuid.New()})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else if tc.dbErr != nil {
+				require.ErrorIs(t, err, tc.dbErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestUpdateMoiScore(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rows    int64
+		dbErr   error
+		wantErr error
+	}{
+		{name: "success", rows: 1},
+		{name: "missing user", rows: 0, wantErr: ErrUserNotFound},
+		{name: "database error", dbErr: errors.New("write failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, mock, cleanup := newTestRepo(t)
+			defer cleanup()
+			id := uuid.New()
+			expectation := mock.ExpectExec("UPDATE users SET moi_score")
+			if tc.dbErr != nil {
+				expectation.WithArgs(75, id).WillReturnError(tc.dbErr)
+			} else {
+				expectation.WithArgs(75, id).WillReturnResult(sqlmock.NewResult(0, tc.rows))
+			}
+			err := repo.UpdateMoiScore(context.Background(), id, 75)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else if tc.dbErr != nil {
+				require.ErrorIs(t, err, tc.dbErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestClaimNextName(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		repo, mock, cleanup := newTestRepo(t)
+		defer cleanup()
+		mock.ExpectQuery("UPDATE user_name_counter").WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(17))
+		value, err := repo.ClaimNextName(context.Background())
+		require.NoError(t, err)
+		assert.EqualValues(t, 17, value)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		repo, mock, cleanup := newTestRepo(t)
+		defer cleanup()
+		queryErr := errors.New("counter unavailable")
+		mock.ExpectQuery("UPDATE user_name_counter").WillReturnError(queryErr)
+		_, err := repo.ClaimNextName(context.Background())
+		require.ErrorIs(t, err, queryErr)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+func TestIsUniqueViolation(t *testing.T) {
+	assert.False(t, isUniqueViolation(nil))
+	assert.True(t, isUniqueViolation(&pq.Error{Code: pq.ErrorCode("23505")}))
+	assert.False(t, isUniqueViolation(&pq.Error{Code: pq.ErrorCode("23503")}))
+	assert.False(t, isUniqueViolation(errors.New("not a postgres error")))
 }
