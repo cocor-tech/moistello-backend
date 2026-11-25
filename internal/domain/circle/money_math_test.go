@@ -20,6 +20,23 @@ func TestPayoutPool_ExactInStroops(t *testing.T) {
 	assert.Equal(t, 0.0, CalculatePayout(math.NaN(), 3, 1, 0))
 }
 
+func TestPayoutHelpers(t *testing.T) {
+	order := RandomOrder(42, 8)
+	assert.Equal(t, order, RandomOrder(42, 8))
+	assert.ElementsMatch(t, []int{0, 1, 2, 3, 4, 5, 6, 7}, order)
+	assert.Empty(t, RandomOrder(42, 0))
+
+	winner, bid := AuctionWinner(map[string]float64{"alice": 10, "bob": 25, "carol": 15})
+	assert.Equal(t, "bob", winner)
+	assert.Equal(t, 25.0, bid)
+	winner, bid = AuctionWinner(map[string]float64{})
+	assert.Empty(t, winner)
+	assert.Zero(t, bid)
+
+	assert.Equal(t, "bob", VoteTally(map[string]int{"alice": 2, "bob": 5, "carol": 3}))
+	assert.Empty(t, VoteTally(map[string]int{}))
+}
+
 func TestLateFee_RoundsToNearestStroop(t *testing.T) {
 	fee, err := LateFee(money.MustFromString("100"), 2.5)
 	require.NoError(t, err)
