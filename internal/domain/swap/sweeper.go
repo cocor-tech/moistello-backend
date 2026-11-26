@@ -93,7 +93,9 @@ func (s *Sweeper) run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			s.SweepOnce(ctx)
+			if _, _, err := s.SweepOnce(ctx); err != nil {
+				log.Error().Err(err).Msg("swap sweep periodic pass failed")
+			}
 		case <-ctx.Done():
 			return
 		case <-s.stopCh:

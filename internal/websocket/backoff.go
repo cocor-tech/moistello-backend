@@ -1,8 +1,9 @@
 package websocket
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,7 +47,14 @@ func reconnectSpread(clients int) time.Duration {
 
 // reconnectDelay picks a random delay in [reconnectMinDelay, reconnectMinDelay+spread).
 func reconnectDelay(spread time.Duration) time.Duration {
-	return reconnectMinDelay + time.Duration(rand.Int63n(int64(spread)))
+	if spread <= 0 {
+		return reconnectMinDelay
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(spread)))
+	if err != nil {
+		return reconnectMinDelay
+	}
+	return reconnectMinDelay + time.Duration(n.Int64())
 }
 
 // shutdownCloseReason builds the close-frame reason carrying the backoff hint.
