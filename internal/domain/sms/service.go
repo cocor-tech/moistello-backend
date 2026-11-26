@@ -100,8 +100,14 @@ func (s *Service) Send(ctx context.Context, to, body string) error {
 			}
 		}
 
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		respBody, readErr := io.ReadAll(resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("failed to close Twilio response body")
+		}
+		if readErr != nil {
+			lastErr = fmt.Errorf("reading Twilio response (attempt %d/%d): %w", attempt, maxAttempts, readErr)
+			continue
+		}
 
 		if resp.StatusCode < 300 {
 			log.Info().Str("to", to).Msg("sms sent via twilio")
