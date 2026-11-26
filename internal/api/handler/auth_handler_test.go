@@ -189,9 +189,12 @@ func TestAuthHandler_Refresh_Success(t *testing.T) {
 	mockUserRepo := new(userMocks.Repository)
 	userSvc := user.NewService(mockUserRepo, nil)
 
+	uid := uuid.New()
 	mockAuthSvc.On("RefreshToken", mock.Anything, "refresh-token").Return(
 		&auth.TokenPair{AccessToken: "new-jwt", RefreshToken: "new-refresh"}, nil,
 	)
+	mockAuthSvc.On("ValidateJWT", "new-jwt").Return(&auth.JWTCustomClaims{UserID: uid.String(), Role: "user"}, nil)
+	mockUserRepo.On("FindByID", mock.Anything, uid).Return(&user.User{ID: uid, Role: user.RoleUser}, nil)
 
 	h := handler.NewAuthHandler(mockAuthSvc, userSvc, nil, nil, nil, nil, nil, nil)
 	r := gin.New()

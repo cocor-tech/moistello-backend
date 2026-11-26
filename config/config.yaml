@@ -15,6 +15,9 @@ server:
   #   max_body_bytes_routes:
   #     "/v1/wallets/withdraw": 1048576
   max_body_bytes_routes: {}
+  # Largest inbound WebSocket frame a single connection may send. A bigger
+  # frame closes that connection with status 1009 (message too big).
+  websocket_max_message_size: 4096
   # Time to keep serving after readiness flips to not-ready, so load
   # balancers stop routing here before the listener closes. Set it to your
   # platform's endpoint propagation time (a few seconds on Kubernetes).
