@@ -239,7 +239,8 @@ func routeExistsInSpec(spec *OpenAPISpec, path string, method string) bool {
 	pathItem, ok := spec.Paths[specPath]
 	if !ok {
 		// Try with trailing slash
-		if ok = (spec.Paths[specPath+"/"] != OpenAPISpec{}.Paths[specPath]); ok {
+		if len(spec.Paths[specPath+"/"]) > 0 {
+			ok = true
 			pathItem = spec.Paths[specPath+"/"]
 		} else {
 			return false
