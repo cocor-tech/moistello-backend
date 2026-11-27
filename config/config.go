@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,10 +64,6 @@ type ServerConfig struct {
 	// by the Gin route pattern (e.g. "/v1/wallets/withdraw"). Use it for
 	// endpoints that legitimately accept larger payloads than the default.
 	MaxBodyBytesRoutes map[string]int64 `mapstructure:"max_body_bytes_routes"`
-	// WebSocketMaxMessageSize caps each inbound WebSocket frame, per connection
-	// (#461). A larger frame closes the socket with 1009. Zero falls back to
-	// websocket.DefaultMaxMessageSize (4 KB).
-	WebSocketMaxMessageSize int64 `mapstructure:"websocket_max_message_size"`
 }
 
 type DatabaseConfig struct {
@@ -476,7 +471,6 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.shutdown_timeout", "30s")
 	v.SetDefault("server.max_body_bytes", 4*1024*1024)
 	v.SetDefault("server.max_body_bytes_routes", map[string]int64{})
-	v.SetDefault("server.websocket_max_message_size", 4096)
 	// No default DATABASE_URL: the env var DATABASE_URL (mapped to MOISTELLO_DATABASE_URL)
 	// must be set explicitly. An empty URL will cause a clear startup failure rather than
 	// silently connecting with plaintext credentials and SSL disabled.
@@ -613,63 +607,7 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func loadDotEnv() {
-	for _, candidate := range []string{".env", ".env.local", "config/.env"} {
-		if err := loadEnvFile(candidate); err != nil {
-			panic(fmt.Errorf("config: loading %s: %w", candidate, err))
-		}
-	}
-}
 
-func loadEnvFile(path string) (err error) {
-	cleanPath := filepath.Clean(path)
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("invalid path traversal: %s", path)
-	}
-	// #nosec G304 -- path is validated to prevent path traversal and restricted to known safe dotfiles.
-	f, err := os.Open(cleanPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing %s: %w", path, closeErr)
-		}
-	}()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" {
-			continue
-		}
-		if len(value) >= 2 {
-			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
-				value = value[1 : len(value)-1]
-			}
-		}
-		if _, exists := os.LookupEnv(key); exists {
-			continue
-		}
-		if err := os.Setenv(key, value); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
-}
 func mustBindEnv(v *viper.Viper, key string, envNames ...string) {
 	args := append([]string{key}, envNames...)
 	if err := v.BindEnv(args...); err != nil {
@@ -705,6 +643,7 @@ func collectRequiredText(errs *[]string, current, path, field, pathField string)
 	return strings.TrimSpace(string(data))
 }
 
+
 // readConfiguredFile is the single file-read boundary for key material. The
 // path is supplied by an operator through configuration, not by a request;
 // keeping the read here makes that trust boundary explicit for static tools.
@@ -715,6 +654,7 @@ func readConfiguredFile(path string) ([]byte, error) {
 	// #nosec G304 -- this path is operator-controlled configuration, never request input.
 	return os.ReadFile(path)
 }
+
 
 func checkMainnetIssues(cfg *Config) []string {
 	const (
@@ -746,6 +686,7 @@ func checkMainnetIssues(cfg *Config) []string {
 	}
 	return nil
 }
+
 
 // ValidateSecrets performs pre-deploy validation that all required secrets are present.
 // Call this before any sensitive operations to fail fast with clear error messages.
