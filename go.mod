@@ -1,6 +1,7 @@
 module github.com/moistello/backend
 
 go 1.27.2
+toolchain go1.27.2
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -65,7 +66,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
