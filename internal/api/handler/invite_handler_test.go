@@ -54,6 +54,12 @@ func (f *fakeInviteService) Accept(context.Context, string, string) (*invite.Inv
 
 // ─── Router helper ───────────────────────────────────────────────────────────
 
+func TestNewInviteHandler(t *testing.T) {
+	svc := &fakeInviteService{}
+	h := handler.NewInviteHandler(svc)
+	assert.NotNil(t, h)
+}
+
 func setupInviteRouter(svc invite.Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	h := handler.NewInviteHandler(svc)

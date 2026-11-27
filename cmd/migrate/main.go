@@ -20,23 +20,32 @@ func main() {
 	flag.Parse()
 
 	opts := Options{Direction: *direction, To: *to, Count: *count}
+	if err := run(opts, "."); err != nil {
+		// Entrypoint handles startup failure gracefully
+		logger.Init("info", "json")
+		log.Fatal().Err(err).Msg("migration execution failed")
+	}
+}
+
+func run(opts Options, configPath string) error {
 	if err := opts.Validate(); err != nil {
-		log.Fatal().Err(err).Msg("invalid migration options")
+		return err
 	}
 
-	cfg, err := config.Load(".")
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load config")
+		return err
 	}
 	logger.Init(cfg.Logging.Level, cfg.Logging.Format)
 
 	db, err := sql.Open("postgres", cfg.Database.URL)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open database connection")
+		return err
 	}
 	defer logClose(db, "database connection")
 
 	if err := Run(db, opts); err != nil {
-		log.Fatal().Err(err).Msgf("migration %s failed", opts.Direction)
+		return err
 	}
+	return nil
 }
