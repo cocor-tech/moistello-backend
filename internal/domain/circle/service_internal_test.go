@@ -86,3 +86,4 @@ func TestCircleTransactor_RollsBackAndRepanicsWhenTheCallbackPanics(t *testing.T
 
 	assert.NoError(t, mock.ExpectationsWereMet(), "a panicking callback must not leave the transaction open")
 }
+
