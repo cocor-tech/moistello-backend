@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bufio"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -671,7 +670,6 @@ func loadEnvFile(path string) (err error) {
 	}
 	return scanner.Err()
 }
-
 func mustBindEnv(v *viper.Viper, key string, envNames ...string) {
 	args := append([]string{key}, envNames...)
 	if err := v.BindEnv(args...); err != nil {
@@ -707,27 +705,6 @@ func collectRequiredText(errs *[]string, current, path, field, pathField string)
 	return strings.TrimSpace(string(data))
 }
 
-func requireString(field, value, hint string) string {
-	if strings.TrimSpace(value) == "" {
-		panic(fmt.Errorf("config: %s is required (%s)", field, hint))
-	}
-	return strings.TrimSpace(value)
-}
-
-func loadRequiredText(current, path, field, pathField string) string {
-	if strings.TrimSpace(current) != "" {
-		return current
-	}
-	if strings.TrimSpace(path) == "" {
-		panic(fmt.Errorf("config: %s is required (set it directly or configure %s)", field, pathField))
-	}
-	data, err := readConfiguredFile(path)
-	if err != nil {
-		panic(fmt.Errorf("config: reading %s from %q: %w", field, path, err))
-	}
-	return strings.TrimSpace(string(data))
-}
-
 // readConfiguredFile is the single file-read boundary for key material. The
 // path is supplied by an operator through configuration, not by a request;
 // keeping the read here makes that trust boundary explicit for static tools.
@@ -737,19 +714,6 @@ func readConfiguredFile(path string) ([]byte, error) {
 	}
 	// #nosec G304 -- this path is operator-controlled configuration, never request input.
 	return os.ReadFile(path)
-}
-
-func validateHexKey(value string) {
-	raw, err := hex.DecodeString(strings.TrimSpace(value))
-	if err != nil || len(raw) != 32 {
-		panic(fmt.Errorf("config: security.encryption_key must be a 32-byte hex string"))
-	}
-}
-
-func validateDuration(name string, ok bool) {
-	if !ok {
-		panic(fmt.Errorf("config: %s must be greater than zero", name))
-	}
 }
 
 func checkMainnetIssues(cfg *Config) []string {
@@ -781,12 +745,6 @@ func checkMainnetIssues(cfg *Config) []string {
 		return issues
 	}
 	return nil
-}
-
-func validateMainnetConfig(cfg *Config) {
-	if issues := checkMainnetIssues(cfg); len(issues) > 0 {
-		panic(fmt.Errorf("mainnet cutover guard: mainnet mode requires all fields to differ from testnet defaults: %v", issues))
-	}
 }
 
 // ValidateSecrets performs pre-deploy validation that all required secrets are present.
