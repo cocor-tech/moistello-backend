@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -622,7 +623,12 @@ func loadDotEnv() {
 }
 
 func loadEnvFile(path string) (err error) {
-	f, err := os.Open(path)
+	cleanPath := filepath.Clean(path)
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid path traversal: %s", path)
+	}
+	// #nosec G304 -- path is validated to prevent path traversal and restricted to known safe dotfiles.
+	f, err := os.Open(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
